@@ -1,29 +1,41 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { Menu } from "@/components/games/Menu";
+import { LogicGame } from "@/components/games/LogicGame";
+import { CartesianGame } from "@/components/games/CartesianGame";
+import { loadStats, type AllStats, type GameId } from "@/lib/game-storage";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Your App" },
-      { name: "description", content: "Replace this with a one-sentence description of your app." },
-      { property: "og:title", content: "Your App" },
-      { property: "og:description", content: "Replace this with a one-sentence description of your app." },
+      { title: "Desafios de Lógica — Plataforma Educacional" },
+      { name: "description", content: "Jogos educativos de lógica matemática e plano cartesiano para alunos do 5º ano." },
+      { property: "og:title", content: "Desafios de Lógica" },
+      { property: "og:description", content: "Jogos educativos gamificados para o 5º ano do Ensino Fundamental." },
     ],
   }),
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
 function Index() {
+  const [view, setView] = useState<"menu" | GameId>("menu");
+  const [stats, setStats] = useState<AllStats>(() => loadStats());
+
+  useEffect(() => {
+    setStats(loadStats());
+  }, [view]);
+
+  const refreshStats = () => setStats(loadStats());
+
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
+    <main className="mx-auto max-w-5xl px-4 py-6 sm:py-10">
+      {view === "menu" && <Menu stats={stats} onSelect={(id) => setView(id)} />}
+      {view === "logica" && (
+        <LogicGame onExit={() => setView("menu")} onStatsChange={refreshStats} />
+      )}
+      {view === "cartesiano" && (
+        <CartesianGame onExit={() => setView("menu")} onStatsChange={refreshStats} />
+      )}
+    </main>
   );
 }
