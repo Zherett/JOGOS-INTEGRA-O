@@ -64,31 +64,37 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
       setFeedback("correct");
       setScore((s) => s + 10);
       setCorrect((c) => c + 1);
-      setStreak((s) => {
-        const next = s + 1;
-        if (next >= LEVEL_UP_STREAK && level < MAX_LEVEL) {
-          const newLevel = level + 1;
-          setLevel(newLevel);
-          setShowLevelUp(newLevel);
-          setTimeout(() => setShowLevelUp(null), 1100);
-          setTimeout(() => nextQuestion(newLevel), 450);
+      const newStreak = streak + 1;
+      const willLevelUp = newStreak >= LEVEL_UP_STREAK && level < MAX_LEVEL;
+      if (willLevelUp) {
+        const newLevel = level + 1;
+        setLevel(newLevel);
+        setStreak(0);
+        setShowLevelUp(newLevel);
+        setTimeout(() => {
+          setShowLevelUp(null);
+          setFeedback(null);
+          nextQuestion(newLevel);
           lockRef.current = false;
-          return 0;
-        }
-        return next;
-      });
+        }, 1100);
+      } else {
+        setStreak(newStreak);
+        setTimeout(() => {
+          setFeedback(null);
+          nextQuestion(level);
+          lockRef.current = false;
+        }, 500);
+      }
     } else {
       setFeedback("wrong");
       setWrong((w) => w + 1);
       setStreak(0);
+      setTimeout(() => {
+        setFeedback(null);
+        nextQuestion(level);
+        lockRef.current = false;
+      }, 500);
     }
-
-    setTimeout(() => {
-      setFeedback(null);
-      // only advance if we didn't already (level-up branch)
-      if (!showLevelUp) nextQuestion(streak + 1 >= LEVEL_UP_STREAK && level < MAX_LEVEL && ok ? level : level);
-      lockRef.current = false;
-    }, 450);
   }
 
   function reset() {
