@@ -3,29 +3,27 @@ import { useEffect, useRef, useState } from "react";
 export function useCountdown(seconds: number, running: boolean, onEnd: () => void) {
   const [remaining, setRemaining] = useState(seconds);
   const endedRef = useRef(false);
-
-  useEffect(() => {
-    setRemaining(seconds);
-    endedRef.current = false;
-  }, [seconds]);
+  const onEndRef = useRef(onEnd);
+  onEndRef.current = onEnd;
 
   useEffect(() => {
     if (!running) return;
+    // Reset on each start
+    setRemaining(seconds);
+    endedRef.current = false;
     const start = Date.now();
-    const initial = remaining;
     const id = window.setInterval(() => {
       const elapsed = (Date.now() - start) / 1000;
-      const left = Math.max(0, initial - elapsed);
+      const left = Math.max(0, seconds - elapsed);
       setRemaining(left);
       if (left <= 0 && !endedRef.current) {
         endedRef.current = true;
         window.clearInterval(id);
-        onEnd();
+        onEndRef.current();
       }
     }, 100);
     return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running]);
+  }, [running, seconds]);
 
   return remaining;
 }
