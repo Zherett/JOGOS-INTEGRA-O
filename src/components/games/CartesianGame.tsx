@@ -20,8 +20,8 @@ interface Props {
 
 type PlaneSize = 8 | 10 | 15;
 const SIZE_OPTIONS: PlaneSize[] = [8, 10, 15];
-// interpretation: total N => range from -floor(N/2) to +floor(N/2)
-const sizeToRange = (n: PlaneSize) => Math.floor(n / 2);
+// interpretation: NxN => eixos de -N a +N
+const sizeToRange = (n: PlaneSize) => n;
 
 export function CartesianGame({ onExit, onStatsChange }: Props) {
   const [phase, setPhase] = useState<"setup" | "playing">("setup");
