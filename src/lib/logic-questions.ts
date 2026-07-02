@@ -1,22 +1,26 @@
 // Question generators for Jogo 1 - Lógica Matemática
-// Levels 1-4, with thousands of possible combinations.
+// Levels 1-4, with support for selecting arithmetic operations.
 
 export interface Question {
   text: string;
   answer: boolean;
 }
 
+export type OpKind = "add" | "sub" | "mul" | "div";
+export const ALL_OPS: OpKind[] = ["add", "sub", "mul", "div"];
+
+const OP_SYMBOL: Record<OpKind, string> = {
+  add: "+",
+  sub: "−",
+  mul: "×",
+  div: "÷",
+};
+
 const rng = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
-function evalSimpleEq(a: number, b: number, res: number, op: "+" | "-"): boolean {
-  return op === "+" ? a + b === res : a - b === res;
-}
-
-// Maybe flip the stated result so ~50% are false
 function maybeFlip(actual: number): { shown: number; truth: boolean } {
   if (Math.random() < 0.5) return { shown: actual, truth: true };
-  // shift by 1-3
   const delta = pick([-3, -2, -1, 1, 2, 3]);
   return { shown: actual + delta, truth: false };
 }
@@ -30,30 +34,42 @@ function boolExpr(): { text: string; value: boolean } {
   return { text: `${s(a)} ${op} ${s(b)}`, value: val };
 }
 
-function simpleArith(): { text: string; value: boolean } {
-  const op = pick(["+", "-"] as const);
-  let a = rng(1, 10), b = rng(1, 10);
-  if (op === "-" && b > a) [a, b] = [b, a];
-  const actual = op === "+" ? a + b : a - b;
-  const { shown, truth } = maybeFlip(actual);
-  return { text: `${a} ${op} ${b} = ${shown}`, value: truth };
+// Build one arithmetic operation from allowed ops. Returns text + value.
+function arithOp(ops: OpKind[]): { text: string; value: number } {
+  const op = pick(ops.length ? ops : (["add"] as OpKind[]));
+  let a: number, b: number, value: number;
+  switch (op) {
+    case "add":
+      a = rng(1, 12); b = rng(1, 12); value = a + b; break;
+    case "sub":
+      a = rng(1, 15); b = rng(1, 15); if (b > a) [a, b] = [b, a]; value = a - b; break;
+    case "mul":
+      a = rng(1, 10); b = rng(1, 10); value = a * b; break;
+    case "div":
+      b = rng(1, 10); value = rng(1, 10); a = b * value; break; // a / b = value (inteiro)
+  }
+  return { text: `${a} ${OP_SYMBOL[op]} ${b}`, value };
 }
 
-// Level 1: V/F, E, OU, simple equalities
-function level1(): Question {
+function simpleArith(ops: OpKind[]): { text: string; value: boolean } {
+  const e = arithOp(ops);
+  const { shown, truth } = maybeFlip(e.value);
+  return { text: `${e.text} = ${shown}`, value: truth };
+}
+
+function level1(ops: OpKind[]): Question {
   const kind = pick(["bool", "arith", "arith"]);
   if (kind === "bool") {
     const e = boolExpr();
     return { text: e.text, answer: e.value };
   }
-  const a = simpleArith();
+  const a = simpleArith(ops);
   return { text: a.text, answer: a.value };
 }
 
-// Level 2: equalities combined with E / OU
-function level2(): Question {
-  const left = simpleArith();
-  const right = simpleArith();
+function level2(ops: OpKind[]): Question {
+  const left = simpleArith(ops);
+  const right = simpleArith(ops);
   const op = pick(["e", "ou"] as const);
   const value = op === "e" ? left.value && right.value : left.value || right.value;
   return { text: `${left.text} ${op} ${right.text}`, answer: value };
@@ -73,8 +89,7 @@ function comparison(): { text: string; value: boolean } {
   return { text: `${a} ${op} ${b}`, value: v };
 }
 
-// Level 3: comparisons with <, >, <=, >=, = combined
-function level3(): Question {
+function level3(_ops: OpKind[]): Question {
   const left = comparison();
   const right = comparison();
   const op = pick(["e", "ou"] as const);
@@ -82,19 +97,10 @@ function level3(): Question {
   return { text: `${left.text} ${op} ${right.text}`, answer: value };
 }
 
-function arithExpr(): { text: string; value: number } {
-  const op = pick(["+", "-"] as const);
-  let a = rng(1, 12), b = rng(1, 9);
-  if (op === "-" && b > a) [a, b] = [b, a];
-  return { text: `${a} ${op} ${b}`, value: op === "+" ? a + b : a - b };
-}
-
-// Level 4: full arithmetic expressions compared
-function level4(): Question {
-  // mix: arith COMP arith, or (arith COMP value) e/ou (comp)
+function level4(ops: OpKind[]): Question {
   const variant = pick(["compare", "combined"]);
   if (variant === "compare") {
-    const l = arithExpr(), r = arithExpr();
+    const l = arithOp(ops), r = arithOp(ops);
     const op = pick(["<", ">", "<=", ">=", "="] as const);
     let v = false;
     switch (op) {
@@ -106,7 +112,7 @@ function level4(): Question {
     }
     return { text: `${l.text} ${op} ${r.text}`, answer: v };
   }
-  const l = arithExpr();
+  const l = arithOp(ops);
   const target = l.value + pick([-2, -1, 0, 0, 1, 2]);
   const leftCmp = pick(["<", ">", "<=", ">=", "="] as const);
   let lv = false;
@@ -125,29 +131,30 @@ function level4(): Question {
 
 const GENERATORS = [level1, level2, level3, level4];
 
-export function generateQuestion(level: number, recent: string[]): Question {
+export function generateQuestion(level: number, recent: string[], ops: OpKind[]): Question {
+  const safeOps = ops.length ? ops : ["add"];
   const idx = Math.min(GENERATORS.length, Math.max(1, level)) - 1;
   const gen = GENERATORS[idx];
   for (let i = 0; i < 20; i++) {
-    const q = gen();
+    const q = gen(safeOps as OpKind[]);
     if (!recent.includes(q.text)) return q;
   }
-  return gen();
+  return gen(safeOps as OpKind[]);
 }
 
-// Try to balance true/false answers ~50/50 by retrying when imbalanced
 export function generateBalanced(
   level: number,
   recent: string[],
   recentAnswers: boolean[],
+  ops: OpKind[] = ALL_OPS,
 ): Question {
   const last = recentAnswers.slice(-6);
   const trues = last.filter(Boolean).length;
   const wantTrue = trues < last.length / 2;
   for (let i = 0; i < 8; i++) {
-    const q = generateQuestion(level, recent);
+    const q = generateQuestion(level, recent, ops);
     if (last.length < 3) return q;
     if (q.answer === wantTrue) return q;
   }
-  return generateQuestion(level, recent);
+  return generateQuestion(level, recent, ops);
 }
