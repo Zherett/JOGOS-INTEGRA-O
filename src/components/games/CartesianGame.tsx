@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { GameHud } from "./GameHud";
 import { ResultPanel } from "./ResultPanel";
 import { CartesianPlane } from "./CartesianPlane";
+import { StartScreen, OptionChip } from "./StartScreen";
 import { useCountdown } from "@/lib/use-countdown";
 import { generateCartQuestion, type CartQuestion } from "@/lib/cart-questions";
 import { updateBest } from "@/lib/game-storage";
@@ -17,15 +18,24 @@ interface Props {
   onStatsChange: () => void;
 }
 
+type PlaneSize = 8 | 10 | 15;
+const SIZE_OPTIONS: PlaneSize[] = [8, 10, 15];
+// interpretation: total N => range from -floor(N/2) to +floor(N/2)
+const sizeToRange = (n: PlaneSize) => Math.floor(n / 2);
+
 export function CartesianGame({ onExit, onStatsChange }: Props) {
-  const [running, setRunning] = useState(true);
+  const [phase, setPhase] = useState<"setup" | "playing">("setup");
+  const [planeSize, setPlaneSize] = useState<PlaneSize>(8);
+  const range = sizeToRange(planeSize);
+
+  const [running, setRunning] = useState(false);
   const [finished, setFinished] = useState(false);
   const [score, setScore] = useState(0);
   const [correct, setCorrect] = useState(0);
   const [wrong, setWrong] = useState(0);
   const [level, setLevel] = useState(1);
   const [streak, setStreak] = useState(0);
-  const [question, setQuestion] = useState<CartQuestion>(() => generateCartQuestion(1));
+  const [question, setQuestion] = useState<CartQuestion | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [showLevelUp, setShowLevelUp] = useState<number | null>(null);
   const lockRef = useRef(false);
@@ -43,13 +53,25 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [finished]);
 
+  function startGame() {
+    setScore(0); setCorrect(0); setWrong(0); setLevel(1); setStreak(0);
+    setSelected(null); setFinished(false);
+    setQuestion(generateCartQuestion(1, range));
+    setPhase("playing");
+    setRunning(true);
+  }
+
+  function backToSetup() {
+    setRunning(false); setFinished(false); setPhase("setup");
+  }
+
   function nextQuestion(lvl: number) {
     setSelected(null);
-    setQuestion(generateCartQuestion(lvl));
+    setQuestion(generateCartQuestion(lvl, range));
   }
 
   function answer(idx: number) {
-    if (lockRef.current || !running) return;
+    if (lockRef.current || !running || !question) return;
     lockRef.current = true;
     setSelected(idx);
     const ok = idx === question.correctIndex;
@@ -76,12 +98,31 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
     }
   }
 
-  function reset() {
-    setRunning(false); setFinished(false);
-    setScore(0); setCorrect(0); setWrong(0); setLevel(1); setStreak(0);
-    setSelected(null);
-    setQuestion(generateCartQuestion(1));
-    setTimeout(() => setRunning(true), 50);
+  if (phase === "setup") {
+    return (
+      <StartScreen
+        title="Plano Cartesiano"
+        description="Interprete posições no plano. Escolha o tamanho antes de começar."
+        onStart={startGame}
+        onExit={onExit}
+      >
+        <div>
+          <div className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 text-center">
+            Tamanho do plano
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {SIZE_OPTIONS.map((s) => (
+              <OptionChip key={s} active={planeSize === s} onClick={() => setPlaneSize(s)}>
+                {s}x{s}
+              </OptionChip>
+            ))}
+          </div>
+          <p className="mt-3 text-center text-xs text-muted-foreground">
+            Eixos de −{sizeToRange(planeSize)} a +{sizeToRange(planeSize)}
+          </p>
+        </div>
+      </StartScreen>
+    );
   }
 
   if (finished) {
@@ -90,14 +131,13 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
         <TopBar onExit={onExit} />
         <ResultPanel
           score={score} correct={correct} wrong={wrong} level={level}
-          onReplay={reset} onMenu={onExit}
+          onReplay={backToSetup} onMenu={onExit}
         />
       </div>
     );
   }
 
-  // For findLetter: highlight target position; for findPosition: highlight chosen letter
-  const target = question.points.find((p) => p.label === question.targetLabel);
+  const target = question?.points.find((p) => p.label === question.targetLabel);
 
   return (
     <div className="space-y-4">
@@ -115,14 +155,17 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
         )}
 
         <div className="grid lg:grid-cols-2 gap-6 items-center">
-          <CartesianPlane
-            points={question.points}
-            highlightLabel={question.mode === "findPosition" ? question.targetLabel : null}
-          />
+          {question && (
+            <CartesianPlane
+              points={question.points}
+              range={range}
+              highlightLabel={question.mode === "findPosition" ? question.targetLabel : null}
+            />
+          )}
 
           <div>
             <div className="rounded-2xl bg-secondary p-4 sm:p-6 text-center">
-              {question.mode === "findLetter" ? (
+              {question?.mode === "findLetter" ? (
                 <>
                   <p className="text-sm uppercase tracking-wider text-muted-foreground">Qual letra está em</p>
                   <div key={`${target?.x},${target?.y}`} className="animate-pop-in mt-2 font-display text-4xl sm:text-5xl font-extrabold text-primary">
@@ -132,15 +175,15 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
               ) : (
                 <>
                   <p className="text-sm uppercase tracking-wider text-muted-foreground">Em qual posição está a letra</p>
-                  <div key={question.targetLabel} className="animate-pop-in mt-2 font-display text-5xl sm:text-6xl font-extrabold text-primary">
-                    {question.targetLabel}?
+                  <div key={question?.targetLabel} className="animate-pop-in mt-2 font-display text-5xl sm:text-6xl font-extrabold text-primary">
+                    {question?.targetLabel}?
                   </div>
                 </>
               )}
             </div>
 
             <div className="mt-5 grid grid-cols-2 gap-3">
-              {question.options.map((opt, i) => {
+              {question?.options.map((opt, i) => {
                 const isCorrect = selected !== null && i === question.correctIndex;
                 const isWrongChoice = selected === i && i !== question.correctIndex;
                 const cls = isCorrect

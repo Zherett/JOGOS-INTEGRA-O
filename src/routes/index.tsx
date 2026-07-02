@@ -20,12 +20,15 @@ export const Route = createFileRoute("/")({
 function Index() {
   const [view, setView] = useState<"menu" | GameId>("menu");
   const [stats, setStats] = useState<AllStats>(() => loadStats());
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     setStats(loadStats());
   }, [view]);
 
   const refreshStats = () => setStats(loadStats());
+  const displayStats = mounted ? stats : loadStatsSSR();
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6 sm:py-10">
