@@ -3,28 +3,41 @@ import { Check, X, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GameHud } from "./GameHud";
 import { ResultPanel } from "./ResultPanel";
+import { StartScreen, OptionChip } from "./StartScreen";
 import { useCountdown } from "@/lib/use-countdown";
-import { generateBalanced, type Question } from "@/lib/logic-questions";
+import { generateBalanced, type Question, type OpKind, ALL_OPS } from "@/lib/logic-questions";
 import { updateBest } from "@/lib/game-storage";
 
-const DURATION = 120; // 2 min
+const DURATION = 120;
 const LEVEL_UP_STREAK = 5;
 const MAX_LEVEL = 4;
+const POINTS_CORRECT = 10;
+const POINTS_WRONG = 5;
 
 interface Props {
   onExit: () => void;
   onStatsChange: () => void;
 }
 
+const OP_LABELS: Record<OpKind, string> = {
+  add: "Adição (+)",
+  sub: "Subtração (−)",
+  mul: "Multiplicação (×)",
+  div: "Divisão (÷)",
+};
+
 export function LogicGame({ onExit, onStatsChange }: Props) {
-  const [running, setRunning] = useState(true);
+  const [phase, setPhase] = useState<"setup" | "playing">("setup");
+  const [ops, setOps] = useState<OpKind[]>([...ALL_OPS]);
+
   const [finished, setFinished] = useState(false);
+  const [running, setRunning] = useState(false);
   const [score, setScore] = useState(0);
   const [correct, setCorrect] = useState(0);
   const [wrong, setWrong] = useState(0);
   const [level, setLevel] = useState(1);
   const [streak, setStreak] = useState(0);
-  const [question, setQuestion] = useState<Question>(() => generateBalanced(1, [], []));
+  const [question, setQuestion] = useState<Question | null>(null);
   const [feedback, setFeedback] = useState<"correct" | "wrong" | null>(null);
   const [showLevelUp, setShowLevelUp] = useState<number | null>(null);
   const [floaters, setFloaters] = useState<{ id: number; text: string; ok: boolean }[]>([]);
@@ -45,24 +58,44 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [finished]);
 
+  function toggleOp(op: OpKind) {
+    setOps((cur) => (cur.includes(op) ? cur.filter((o) => o !== op) : [...cur, op]));
+  }
+
+  function startGame() {
+    recentTexts.current = [];
+    recentAnswers.current = [];
+    setScore(0); setCorrect(0); setWrong(0); setLevel(1); setStreak(0);
+    setFinished(false);
+    setQuestion(generateBalanced(1, [], [], ops));
+    setPhase("playing");
+    setRunning(true);
+  }
+
+  function backToSetup() {
+    setRunning(false);
+    setFinished(false);
+    setPhase("setup");
+  }
+
   function nextQuestion(currentLevel: number) {
-    const q = generateBalanced(currentLevel, recentTexts.current, recentAnswers.current);
+    const q = generateBalanced(currentLevel, recentTexts.current, recentAnswers.current, ops);
     recentTexts.current = [...recentTexts.current.slice(-15), q.text];
     recentAnswers.current = [...recentAnswers.current.slice(-15), q.answer];
     setQuestion(q);
   }
 
   function answer(value: boolean) {
-    if (lockRef.current || !running) return;
+    if (lockRef.current || !running || !question) return;
     lockRef.current = true;
     const ok = value === question.answer;
     const id = Date.now();
-    setFloaters((f) => [...f, { id, text: ok ? "+10" : "—", ok }]);
+    setFloaters((f) => [...f, { id, text: ok ? `+${POINTS_CORRECT}` : `−${POINTS_WRONG}`, ok }]);
     setTimeout(() => setFloaters((f) => f.filter((x) => x.id !== id)), 900);
 
     if (ok) {
       setFeedback("correct");
-      setScore((s) => s + 10);
+      setScore((s) => s + POINTS_CORRECT);
       setCorrect((c) => c + 1);
       const newStreak = streak + 1;
       const willLevelUp = newStreak >= LEVEL_UP_STREAK && level < MAX_LEVEL;
@@ -87,6 +120,7 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
       }
     } else {
       setFeedback("wrong");
+      setScore((s) => Math.max(0, s - POINTS_WRONG));
       setWrong((w) => w + 1);
       setStreak(0);
       setTimeout(() => {
@@ -97,13 +131,32 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
     }
   }
 
-  function reset() {
-    setRunning(false);
-    setFinished(false);
-    setScore(0); setCorrect(0); setWrong(0); setLevel(1); setStreak(0);
-    recentTexts.current = []; recentAnswers.current = [];
-    setQuestion(generateBalanced(1, [], []));
-    setTimeout(() => setRunning(true), 50);
+  if (phase === "setup") {
+    return (
+      <StartScreen
+        title="Lógica Matemática"
+        description="Responda Verdadeiro ou Falso antes o tempo acabar. Acerto: +10 • Erro: −5"
+        onStart={startGame}
+        onExit={onExit}
+        disabled={ops.length === 0}
+      >
+        <div>
+          <div className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 text-center">
+            Operações do jogo
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {ALL_OPS.map((op) => (
+              <OptionChip key={op} active={ops.includes(op)} onClick={() => toggleOp(op)}>
+                {OP_LABELS[op]}
+              </OptionChip>
+            ))}
+          </div>
+          {ops.length === 0 && (
+            <p className="mt-3 text-center text-sm text-destructive">Selecione pelo menos uma operação.</p>
+          )}
+        </div>
+      </StartScreen>
+    );
   }
 
   if (finished) {
@@ -112,7 +165,7 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
         <TopBar onExit={onExit} />
         <ResultPanel
           score={score} correct={correct} wrong={wrong} level={level}
-          onReplay={reset} onMenu={onExit}
+          onReplay={backToSetup} onMenu={onExit}
         />
       </div>
     );
@@ -137,9 +190,9 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
 
         <div className="text-center">
           <p className="text-sm uppercase tracking-wider text-muted-foreground">A proposição abaixo é...</p>
-          <div key={question.text} className="mt-4 mx-auto inline-block animate-pop-in rounded-2xl bg-secondary px-6 py-5 sm:px-10 sm:py-8">
+          <div key={question?.text} className="mt-4 mx-auto inline-block animate-pop-in rounded-2xl bg-secondary px-6 py-5 sm:px-10 sm:py-8">
             <div className="font-display text-3xl sm:text-5xl font-bold text-secondary-foreground break-words">
-              {question.text}
+              {question?.text}
             </div>
           </div>
         </div>

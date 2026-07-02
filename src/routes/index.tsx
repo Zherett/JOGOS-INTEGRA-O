@@ -17,19 +17,27 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
+const EMPTY_STATS: AllStats = {
+  logica: { bestScore: 0, bestLevel: 1 },
+  cartesiano: { bestScore: 0, bestLevel: 1 },
+};
+
 function Index() {
   const [view, setView] = useState<"menu" | GameId>("menu");
-  const [stats, setStats] = useState<AllStats>(() => loadStats());
+  const [stats, setStats] = useState<AllStats>(EMPTY_STATS);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     setStats(loadStats());
   }, [view]);
 
   const refreshStats = () => setStats(loadStats());
+  const displayStats = mounted ? stats : EMPTY_STATS;
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6 sm:py-10">
-      {view === "menu" && <Menu stats={stats} onSelect={(id) => setView(id)} />}
+      {view === "menu" && <Menu stats={displayStats} onSelect={(id) => setView(id)} />}
       {view === "logica" && (
         <LogicGame onExit={() => setView("menu")} onStatsChange={refreshStats} />
       )}
