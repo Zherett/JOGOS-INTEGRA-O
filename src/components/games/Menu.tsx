@@ -1,4 +1,4 @@
-import { Brain, Compass, Trophy, Star, Sparkles } from "lucide-react";
+import { Brain, Compass, Bot, Trophy, Star, Sparkles } from "lucide-react";
 import type { AllStats, GameId } from "@/lib/game-storage";
 
 interface Props {
@@ -20,6 +20,13 @@ const GAMES: { id: GameId; title: string; subtitle: string; icon: React.ReactNod
     subtitle: "Ache letras e coordenadas no plano",
     icon: <Compass className="h-10 w-10" />,
     gradient: "from-accent to-accent-glow",
+  },
+  {
+    id: "robogrid",
+    title: "RoboGrid",
+    subtitle: "Localização espacial em um tabuleiro colorido",
+    icon: <Bot className="h-10 w-10" />,
+    gradient: "from-primary to-accent",
   },
 ];
 

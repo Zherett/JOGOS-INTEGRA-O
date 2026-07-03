@@ -1,7 +1,7 @@
 // Storage helpers for best scores per game
 const KEY = "desafios-logica-stats-v1";
 
-export type GameId = "logica" | "cartesiano";
+export type GameId = "logica" | "cartesiano" | "robogrid";
 
 export interface GameStats {
   bestScore: number;
@@ -13,6 +13,7 @@ export type AllStats = Record<GameId, GameStats>;
 const DEFAULT: AllStats = {
   logica: { bestScore: 0, bestLevel: 1 },
   cartesiano: { bestScore: 0, bestLevel: 1 },
+  robogrid: { bestScore: 0, bestLevel: 1 },
 };
 
 export function loadStats(): AllStats {
