@@ -1,4 +1,4 @@
-import { Brain, Compass, Bot, Trophy, Star, Sparkles } from "lucide-react";
+import { Brain, Compass, Bot, Swords, Trophy, Star, Sparkles } from "lucide-react";
 import type { AllStats, GameId } from "@/lib/game-storage";
 
 interface Props {
@@ -27,6 +27,13 @@ const GAMES: { id: GameId; title: string; subtitle: string; icon: React.ReactNod
     subtitle: "Localização espacial em um tabuleiro colorido",
     icon: <Bot className="h-10 w-10" />,
     gradient: "from-primary to-accent",
+  },
+  {
+    id: "rpg",
+    title: "RPG da Lógica",
+    subtitle: "Aventura 2D: derrote monstros resolvendo desafios",
+    icon: <Swords className="h-10 w-10" />,
+    gradient: "from-accent to-primary",
   },
 ];
 
