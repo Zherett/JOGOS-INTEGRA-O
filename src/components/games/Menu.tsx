@@ -61,7 +61,7 @@ export function Menu({ stats, onSelect }: Props) {
       </header>
 
       <div className="grid sm:grid-cols-2 gap-5">
-        {GAMES.map((g) => {
+        {GAMES.filter((g) => ENABLED_GAMES[g.id]).map((g) => {
           const s = stats[g.id];
           return (
             <button
