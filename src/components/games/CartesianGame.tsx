@@ -25,9 +25,14 @@ const SIZE_OPTIONS: PlaneSize[] = [8, 10, 15];
 const sizeToRange = (n: PlaneSize) => n;
 
 export function CartesianGame({ onExit, onStatsChange }: Props) {
-  const [phase, setPhase] = useState<"setup" | "playing">("setup");
+  const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("setup");
   const [planeSize, setPlaneSize] = useState<PlaneSize>(8);
+  const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
   const range = sizeToRange(planeSize);
+
+  useEffect(() => {
+    setLastMatch(loadLastMatch("cartesiano"));
+  }, []);
 
   const [running, setRunning] = useState(false);
   const [finished, setFinished] = useState(false);
