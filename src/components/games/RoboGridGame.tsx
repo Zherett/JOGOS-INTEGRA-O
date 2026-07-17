@@ -22,7 +22,9 @@ const POINTS_WRONG = 5;
 interface Props { onExit: () => void; onStatsChange: () => void }
 
 export function RoboGridGame({ onExit, onStatsChange }: Props) {
-  const [phase, setPhase] = useState<"setup" | "playing">("setup");
+  const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("setup");
+  const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
+  useEffect(() => { setLastMatch(loadLastMatch("robogrid")); }, []);
   const [running, setRunning] = useState(false);
   const [finished, setFinished] = useState(false);
   const [score, setScore] = useState(0);
