@@ -10,9 +10,10 @@ interface Props {
   onExit: () => void;
   children?: React.ReactNode;
   disabled?: boolean;
+  lastMatch?: LastMatch | null;
 }
 
-export function StartScreen({ title, description, onStart, onExit, children, disabled }: Props) {
+export function StartScreen({ title, description, onStart, onExit, children, disabled, lastMatch }: Props) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
