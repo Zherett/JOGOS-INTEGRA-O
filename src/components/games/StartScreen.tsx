@@ -1,5 +1,7 @@
 import { Play, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { LastMatch } from "@/lib/game-storage";
+import { LastMatchCard } from "./LastMatchCard";
 
 interface Props {
   title: string;
