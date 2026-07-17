@@ -30,6 +30,12 @@ export function StartScreen({ title, description, onStart, onExit, children, dis
           {description && <p className="mt-2 text-muted-foreground">{description}</p>}
         </div>
 
+        {lastMatch && (
+          <div className="mt-6">
+            <LastMatchCard match={lastMatch} />
+          </div>
+        )}
+
         {children && <div className="mt-8">{children}</div>}
 
         <div className="mt-8 flex justify-center">
