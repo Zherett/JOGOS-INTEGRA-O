@@ -54,6 +54,9 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
   useEffect(() => {
     if (finished) {
       updateBest("cartesiano", score, level);
+      const m: LastMatch = { score, correct, wrong, level, at: Date.now() };
+      saveLastMatch("cartesiano", m);
+      setLastMatch(m);
       onStatsChange();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -65,6 +68,12 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
     setQuestion(generateCartQuestion(1, range));
     setPhase("playing");
     setRunning(true);
+  }
+
+  function replayWithCountdown() {
+    setFinished(false);
+    setRunning(false);
+    setPhase("countdown");
   }
 
   function backToSetup() {
@@ -98,6 +107,7 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
         return next;
       });
     } else {
+      setScore((s) => Math.max(0, s - 5));
       setWrong((w) => w + 1);
       setStreak(0);
       setTimeout(() => { nextQuestion(level); lockRef.current = false; }, 800);
