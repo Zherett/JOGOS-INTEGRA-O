@@ -36,8 +36,13 @@ export function ResultPanel({ score, correct, wrong, level, onReplay, onMenu, on
         <Button size="lg" className="flex-1 h-14 text-base font-bold" onClick={onReplay}>
           <RotateCcw className="mr-2 h-5 w-5" /> Jogar novamente
         </Button>
+        {onChangeSettings && (
+          <Button size="lg" variant="outline" className="flex-1 h-14 text-base font-bold" onClick={onChangeSettings}>
+            <Settings className="mr-2 h-5 w-5" /> Alterar
+          </Button>
+        )}
         <Button size="lg" variant="secondary" className="flex-1 h-14 text-base font-bold" onClick={onMenu}>
-          <Home className="mr-2 h-5 w-5" /> Voltar ao menu
+          <Home className="mr-2 h-5 w-5" /> Menu
         </Button>
       </div>
     </div>
