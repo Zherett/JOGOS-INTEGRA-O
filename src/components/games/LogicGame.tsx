@@ -154,6 +154,7 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
         onStart={startGame}
         onExit={onExit}
         disabled={ops.length === 0}
+        lastMatch={lastMatch}
       >
         <div>
           <div className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 text-center">
@@ -174,13 +175,22 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
     );
   }
 
+  if (phase === "countdown") {
+    return (
+      <div className="space-y-4">
+        <TopBar onExit={onExit} />
+        <Countdown onDone={startGame} />
+      </div>
+    );
+  }
+
   if (finished) {
     return (
       <div className="space-y-4">
         <TopBar onExit={onExit} />
         <ResultPanel
           score={score} correct={correct} wrong={wrong} level={level}
-          onReplay={backToSetup} onMenu={onExit}
+          onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />
       </div>
     );
