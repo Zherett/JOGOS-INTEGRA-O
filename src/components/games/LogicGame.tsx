@@ -4,9 +4,10 @@ import { Button } from "@/components/ui/button";
 import { GameHud } from "./GameHud";
 import { ResultPanel } from "./ResultPanel";
 import { StartScreen, OptionChip } from "./StartScreen";
+import { Countdown } from "./Countdown";
 import { useCountdown } from "@/lib/use-countdown";
 import { generateBalanced, type Question, type OpKind, ALL_OPS } from "@/lib/logic-questions";
-import { updateBest } from "@/lib/game-storage";
+import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
 
 const DURATION = 120;
 const LEVEL_UP_STREAK = 5;
@@ -27,8 +28,13 @@ const OP_LABELS: Record<OpKind, string> = {
 };
 
 export function LogicGame({ onExit, onStatsChange }: Props) {
-  const [phase, setPhase] = useState<"setup" | "playing">("setup");
+  const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("setup");
   const [ops, setOps] = useState<OpKind[]>([...ALL_OPS]);
+  const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
+
+  useEffect(() => {
+    setLastMatch(loadLastMatch("logica"));
+  }, []);
 
   const [finished, setFinished] = useState(false);
   const [running, setRunning] = useState(false);
@@ -53,6 +59,9 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
   useEffect(() => {
     if (finished) {
       updateBest("logica", score, level);
+      const m: LastMatch = { score, correct, wrong, level, at: Date.now() };
+      saveLastMatch("logica", m);
+      setLastMatch(m);
       onStatsChange();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -70,6 +79,12 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
     setQuestion(generateBalanced(1, [], [], ops));
     setPhase("playing");
     setRunning(true);
+  }
+
+  function replayWithCountdown() {
+    setFinished(false);
+    setRunning(false);
+    setPhase("countdown");
   }
 
   function backToSetup() {
@@ -139,6 +154,7 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
         onStart={startGame}
         onExit={onExit}
         disabled={ops.length === 0}
+        lastMatch={lastMatch}
       >
         <div>
           <div className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 text-center">
@@ -159,13 +175,22 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
     );
   }
 
+  if (phase === "countdown") {
+    return (
+      <div className="space-y-4">
+        <TopBar onExit={onExit} />
+        <Countdown onDone={startGame} />
+      </div>
+    );
+  }
+
   if (finished) {
     return (
       <div className="space-y-4">
         <TopBar onExit={onExit} />
         <ResultPanel
           score={score} correct={correct} wrong={wrong} level={level}
-          onReplay={backToSetup} onMenu={onExit}
+          onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />
       </div>
     );

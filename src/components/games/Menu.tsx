@@ -1,6 +1,14 @@
 import { Brain, Compass, Bot, Swords, Trophy, Star, Sparkles } from "lucide-react";
 import type { AllStats, GameId } from "@/lib/game-storage";
 
+// Toggle to re-enable games in the menu without deleting their code.
+const ENABLED_GAMES: Record<GameId, boolean> = {
+  logica: true,
+  cartesiano: true,
+  robogrid: true,
+  rpg: false, // temporariamente oculto
+};
+
 interface Props {
   stats: AllStats;
   onSelect: (id: GameId) => void;
@@ -53,7 +61,7 @@ export function Menu({ stats, onSelect }: Props) {
       </header>
 
       <div className="grid sm:grid-cols-2 gap-5">
-        {GAMES.map((g) => {
+        {GAMES.filter((g) => ENABLED_GAMES[g.id]).map((g) => {
           const s = stats[g.id];
           return (
             <button

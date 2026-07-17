@@ -5,9 +5,10 @@ import { GameHud } from "./GameHud";
 import { ResultPanel } from "./ResultPanel";
 import { CartesianPlane } from "./CartesianPlane";
 import { StartScreen, OptionChip } from "./StartScreen";
+import { Countdown } from "./Countdown";
 import { useCountdown } from "@/lib/use-countdown";
 import { generateCartQuestion, type CartQuestion } from "@/lib/cart-questions";
-import { updateBest } from "@/lib/game-storage";
+import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
 
 const DURATION = 120;
 const LEVEL_UP_STREAK = 4;
@@ -24,9 +25,14 @@ const SIZE_OPTIONS: PlaneSize[] = [8, 10, 15];
 const sizeToRange = (n: PlaneSize) => n;
 
 export function CartesianGame({ onExit, onStatsChange }: Props) {
-  const [phase, setPhase] = useState<"setup" | "playing">("setup");
+  const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("setup");
   const [planeSize, setPlaneSize] = useState<PlaneSize>(8);
+  const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
   const range = sizeToRange(planeSize);
+
+  useEffect(() => {
+    setLastMatch(loadLastMatch("cartesiano"));
+  }, []);
 
   const [running, setRunning] = useState(false);
   const [finished, setFinished] = useState(false);
@@ -48,6 +54,9 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
   useEffect(() => {
     if (finished) {
       updateBest("cartesiano", score, level);
+      const m: LastMatch = { score, correct, wrong, level, at: Date.now() };
+      saveLastMatch("cartesiano", m);
+      setLastMatch(m);
       onStatsChange();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -59,6 +68,12 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
     setQuestion(generateCartQuestion(1, range));
     setPhase("playing");
     setRunning(true);
+  }
+
+  function replayWithCountdown() {
+    setFinished(false);
+    setRunning(false);
+    setPhase("countdown");
   }
 
   function backToSetup() {
@@ -92,6 +107,7 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
         return next;
       });
     } else {
+      setScore((s) => Math.max(0, s - 5));
       setWrong((w) => w + 1);
       setStreak(0);
       setTimeout(() => { nextQuestion(level); lockRef.current = false; }, 800);
@@ -102,9 +118,10 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
     return (
       <StartScreen
         title="Plano Cartesiano"
-        description="Interprete posições no plano. Escolha o tamanho antes de começar."
+        description="Interprete posições no plano. Acerto: +10 • Erro: −5"
         onStart={startGame}
         onExit={onExit}
+        lastMatch={lastMatch}
       >
         <div>
           <div className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 text-center">
@@ -125,17 +142,27 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
     );
   }
 
+  if (phase === "countdown") {
+    return (
+      <div className="space-y-4">
+        <TopBar onExit={onExit} />
+        <Countdown onDone={startGame} />
+      </div>
+    );
+  }
+
   if (finished) {
     return (
       <div className="space-y-4">
         <TopBar onExit={onExit} />
         <ResultPanel
           score={score} correct={correct} wrong={wrong} level={level}
-          onReplay={backToSetup} onMenu={onExit}
+          onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />
       </div>
     );
   }
+
 
   const target = question?.points.find((p) => p.label === question.targetLabel);
 

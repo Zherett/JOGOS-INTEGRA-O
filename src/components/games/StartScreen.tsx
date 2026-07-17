@@ -1,5 +1,7 @@
 import { Play, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { LastMatch } from "@/lib/game-storage";
+import { LastMatchCard } from "./LastMatchCard";
 
 interface Props {
   title: string;
@@ -8,9 +10,10 @@ interface Props {
   onExit: () => void;
   children?: React.ReactNode;
   disabled?: boolean;
+  lastMatch?: LastMatch | null;
 }
 
-export function StartScreen({ title, description, onStart, onExit, children, disabled }: Props) {
+export function StartScreen({ title, description, onStart, onExit, children, disabled, lastMatch }: Props) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -26,6 +29,12 @@ export function StartScreen({ title, description, onStart, onExit, children, dis
           <h2 className="font-display text-3xl sm:text-4xl font-extrabold">{title}</h2>
           {description && <p className="mt-2 text-muted-foreground">{description}</p>}
         </div>
+
+        {lastMatch && (
+          <div className="mt-6">
+            <LastMatchCard match={lastMatch} />
+          </div>
+        )}
 
         {children && <div className="mt-8">{children}</div>}
 

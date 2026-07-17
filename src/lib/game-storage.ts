@@ -1,5 +1,6 @@
 // Storage helpers for best scores per game
 const KEY = "desafios-logica-stats-v1";
+const LAST_KEY = "desafios-logica-last-v1";
 
 export type GameId = "logica" | "cartesiano" | "robogrid" | "rpg";
 
@@ -9,6 +10,16 @@ export interface GameStats {
 }
 
 export type AllStats = Record<GameId, GameStats>;
+
+export interface LastMatch {
+  score: number;
+  correct: number;
+  wrong: number;
+  level: number;
+  at: number; // epoch ms
+}
+
+export type AllLastMatches = Partial<Record<GameId, LastMatch>>;
 
 const DEFAULT: AllStats = {
   logica: { bestScore: 0, bestLevel: 1 },
@@ -44,4 +55,26 @@ export function updateBest(id: GameId, score: number, level: number): AllStats {
   };
   saveStats(next);
   return next;
+}
+
+function loadAllLast(): AllLastMatches {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(LAST_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+export function loadLastMatch(id: GameId): LastMatch | null {
+  return loadAllLast()[id] ?? null;
+}
+
+export function saveLastMatch(id: GameId, match: Omit<LastMatch, "at"> & { at?: number }) {
+  if (typeof window === "undefined") return;
+  const all = loadAllLast();
+  all[id] = { ...match, at: match.at ?? Date.now() };
+  window.localStorage.setItem(LAST_KEY, JSON.stringify(all));
 }
