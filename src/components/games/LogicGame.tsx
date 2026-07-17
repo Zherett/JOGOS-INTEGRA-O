@@ -28,8 +28,13 @@ const OP_LABELS: Record<OpKind, string> = {
 };
 
 export function LogicGame({ onExit, onStatsChange }: Props) {
-  const [phase, setPhase] = useState<"setup" | "playing">("setup");
+  const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("setup");
   const [ops, setOps] = useState<OpKind[]>([...ALL_OPS]);
+  const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
+
+  useEffect(() => {
+    setLastMatch(loadLastMatch("logica"));
+  }, []);
 
   const [finished, setFinished] = useState(false);
   const [running, setRunning] = useState(false);
