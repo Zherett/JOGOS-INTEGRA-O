@@ -59,6 +59,9 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
   useEffect(() => {
     if (finished) {
       updateBest("logica", score, level);
+      const m: LastMatch = { score, correct, wrong, level, at: Date.now() };
+      saveLastMatch("logica", m);
+      setLastMatch(m);
       onStatsChange();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -76,6 +79,12 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
     setQuestion(generateBalanced(1, [], [], ops));
     setPhase("playing");
     setRunning(true);
+  }
+
+  function replayWithCountdown() {
+    setFinished(false);
+    setRunning(false);
+    setPhase("countdown");
   }
 
   function backToSetup() {
