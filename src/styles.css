@@ -157,4 +157,5 @@
 @utility animate-card-reveal { animation: card-reveal 0.55s cubic-bezier(.2,.9,.3,1.2); }
 @utility animate-shake-x { animation: shake-x 0.45s ease-in-out; }
 @utility animate-hit-flash { animation: hit-flash 0.4s ease-out; }
+@utility animate-countdown { animation: countdown-pop 0.8s ease-out forwards; }
 
