@@ -1,4 +1,4 @@
-import { Trophy, Target, XCircle, Star, TrendingUp, RotateCcw, Home } from "lucide-react";
+import { Trophy, Target, XCircle, Star, TrendingUp, RotateCcw, Home, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface Props {
@@ -8,9 +8,10 @@ interface Props {
   level: number;
   onReplay: () => void;
   onMenu: () => void;
+  onChangeSettings?: () => void;
 }
 
-export function ResultPanel({ score, correct, wrong, level, onReplay, onMenu }: Props) {
+export function ResultPanel({ score, correct, wrong, level, onReplay, onMenu, onChangeSettings }: Props) {
   const total = correct + wrong;
   const pct = total === 0 ? 0 : Math.round((correct / total) * 100);
   return (
