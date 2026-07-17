@@ -47,6 +47,9 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
   useEffect(() => {
     if (finished) {
       updateBest("robogrid", score, level);
+      const m: LastMatch = { score, correct, wrong, level, at: Date.now() };
+      saveLastMatch("robogrid", m);
+      setLastMatch(m);
       onStatsChange();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -61,6 +64,10 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
     setHighlight(null);
     setPhase("playing");
     setRunning(true);
+  }
+
+  function replayWithCountdown() {
+    setFinished(false); setRunning(false); setPhase("countdown");
   }
 
   function backToSetup() {
