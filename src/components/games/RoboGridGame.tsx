@@ -151,6 +151,7 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
         description="Localização espacial em um tabuleiro 10x10 com cores. Acerto: +10 • Erro: −5"
         onStart={startGame}
         onExit={onExit}
+        lastMatch={lastMatch}
       >
         <div className="rounded-2xl bg-secondary p-4 text-sm text-secondary-foreground">
           <p className="font-semibold mb-2">Como jogar:</p>
@@ -165,13 +166,22 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
     );
   }
 
+  if (phase === "countdown") {
+    return (
+      <div className="space-y-2">
+        <TopBar onExit={onExit} />
+        <Countdown onDone={startGame} />
+      </div>
+    );
+  }
+
   if (finished) {
     return (
       <div className="space-y-4">
         <TopBar onExit={onExit} />
         <ResultPanel
           score={score} correct={correct} wrong={wrong} level={level}
-          onReplay={backToSetup} onMenu={onExit}
+          onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />
       </div>
     );
@@ -182,11 +192,11 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
   const flashClass = feedback === "correct" ? "animate-flash-correct" : feedback === "wrong" ? "animate-flash-wrong" : "";
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2 sm:space-y-3">
       <TopBar onExit={onExit} />
       <GameHud time={time} score={score} level={level} streak={streak} />
 
-      <div className={`relative rounded-3xl border bg-card p-4 sm:p-6 shadow-lg overflow-hidden ${flashClass}`}>
+      <div className={`relative rounded-3xl border bg-card p-2 sm:p-3 shadow-lg overflow-hidden ${flashClass}`}>
         {showLevelUp && (
           <div className="absolute inset-0 z-10 grid place-items-center bg-background/85 backdrop-blur-sm">
             <div className="animate-level-up text-center">
@@ -197,13 +207,13 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
         )}
 
         {/* Question banner */}
-        <div className="rounded-2xl bg-secondary p-4 sm:p-5 text-center">
-          <p className="text-xs uppercase tracking-wider text-muted-foreground">
+        <div className="rounded-xl bg-secondary px-3 py-2 text-center">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
             {q.kind === "position" && "Clique na posição"}
             {q.kind === "color" && "Qual é a cor da posição"}
             {q.kind === "robot" && "Movimento do robô"}
           </p>
-          <div key={JSON.stringify(q)} className="animate-pop-in mt-1 font-display text-2xl sm:text-4xl font-extrabold text-primary">
+          <div key={JSON.stringify(q)} className="animate-pop-in font-display text-xl sm:text-2xl font-extrabold text-primary leading-tight">
             {q.kind === "position" && coordLabel(q.target)}
             {q.kind === "color" && `${coordLabel(q.target)}?`}
             {q.kind === "robot" && q.moves.text}
@@ -211,7 +221,7 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
         </div>
 
         {/* Board */}
-        <div className="mt-5 mx-auto w-full max-w-[560px]">
+        <div className="mt-2 mx-auto w-full max-w-[420px] sm:max-w-[460px]">
           <Grid
             board={board}
             robotAt={robotAt}
@@ -223,13 +233,13 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
 
         {/* Answer area */}
         {q.kind === "color" && (
-          <div className="mt-5 grid grid-cols-5 gap-2 sm:gap-3">
+          <div className="mt-2 grid grid-cols-5 gap-2">
             {q.options.map((c) => (
               <button
                 key={c}
                 onClick={() => onColorAnswer(c)}
                 disabled={!!feedback}
-                className={`h-14 sm:h-16 rounded-2xl border-2 border-black/10 font-display font-bold text-sm sm:text-base shadow-md transition-all hover:scale-[1.03] active:scale-95 disabled:cursor-not-allowed ${COLOR_BG[c]} ${COLOR_TEXT[c]}`}
+                className={`h-10 sm:h-12 rounded-xl border-2 border-black/10 font-display font-bold text-xs sm:text-sm shadow-md transition-all hover:scale-[1.03] active:scale-95 disabled:cursor-not-allowed ${COLOR_BG[c]} ${COLOR_TEXT[c]}`}
               >
                 {COLOR_LABEL[c]}
               </button>
@@ -238,7 +248,7 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
         )}
 
         {q.kind === "robot" && (
-          <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
             {q.options.map((opt, i) => {
               const isCorrect = feedback && i === q.correctIndex;
               const isWrong = feedback === "wrong" && highlight && !isCorrect && opt.col === highlight.col && opt.row === highlight.row;
@@ -252,7 +262,7 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
                   key={i}
                   onClick={() => onRobotAnswer(i)}
                   disabled={!!feedback}
-                  className={`h-16 rounded-2xl border-2 font-display text-xl sm:text-2xl font-bold transition-all hover:scale-[1.02] active:scale-95 disabled:cursor-not-allowed ${cls}`}
+                  className={`h-12 rounded-xl border-2 font-display text-lg sm:text-xl font-bold transition-all hover:scale-[1.02] active:scale-95 disabled:cursor-not-allowed ${cls}`}
                 >
                   {coordLabel(opt)}
                 </button>
