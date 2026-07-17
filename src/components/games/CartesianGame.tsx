@@ -5,9 +5,10 @@ import { GameHud } from "./GameHud";
 import { ResultPanel } from "./ResultPanel";
 import { CartesianPlane } from "./CartesianPlane";
 import { StartScreen, OptionChip } from "./StartScreen";
+import { Countdown } from "./Countdown";
 import { useCountdown } from "@/lib/use-countdown";
 import { generateCartQuestion, type CartQuestion } from "@/lib/cart-questions";
-import { updateBest } from "@/lib/game-storage";
+import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
 
 const DURATION = 120;
 const LEVEL_UP_STREAK = 4;
