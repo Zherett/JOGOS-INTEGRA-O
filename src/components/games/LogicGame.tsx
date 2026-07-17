@@ -4,9 +4,10 @@ import { Button } from "@/components/ui/button";
 import { GameHud } from "./GameHud";
 import { ResultPanel } from "./ResultPanel";
 import { StartScreen, OptionChip } from "./StartScreen";
+import { Countdown } from "./Countdown";
 import { useCountdown } from "@/lib/use-countdown";
 import { generateBalanced, type Question, type OpKind, ALL_OPS } from "@/lib/logic-questions";
-import { updateBest } from "@/lib/game-storage";
+import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
 
 const DURATION = 120;
 const LEVEL_UP_STREAK = 5;
