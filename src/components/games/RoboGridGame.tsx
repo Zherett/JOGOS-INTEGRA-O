@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { GameHud } from "./GameHud";
 import { ResultPanel } from "./ResultPanel";
 import { StartScreen } from "./StartScreen";
+import { Countdown } from "./Countdown";
 import { useCountdown } from "@/lib/use-countdown";
-import { updateBest } from "@/lib/game-storage";
+import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
 import {
   COLS, ROWS, COLOR_BG, COLOR_TEXT, COLOR_LABEL,
   type Board, type Coord, type Question,
