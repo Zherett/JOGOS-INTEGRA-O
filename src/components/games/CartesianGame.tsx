@@ -118,9 +118,10 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
     return (
       <StartScreen
         title="Plano Cartesiano"
-        description="Interprete posições no plano. Escolha o tamanho antes de começar."
+        description="Interprete posições no plano. Acerto: +10 • Erro: −5"
         onStart={startGame}
         onExit={onExit}
+        lastMatch={lastMatch}
       >
         <div>
           <div className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 text-center">
@@ -141,17 +142,27 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
     );
   }
 
+  if (phase === "countdown") {
+    return (
+      <div className="space-y-4">
+        <TopBar onExit={onExit} />
+        <Countdown onDone={startGame} />
+      </div>
+    );
+  }
+
   if (finished) {
     return (
       <div className="space-y-4">
         <TopBar onExit={onExit} />
         <ResultPanel
           score={score} correct={correct} wrong={wrong} level={level}
-          onReplay={backToSetup} onMenu={onExit}
+          onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />
       </div>
     );
   }
+
 
   const target = question?.points.find((p) => p.label === question.targetLabel);
 
