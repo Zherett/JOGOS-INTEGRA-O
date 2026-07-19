@@ -1,4 +1,4 @@
-import { Brain, Compass, Bot, Swords, Trophy, Star, Sparkles } from "lucide-react";
+import { Brain, Compass, Bot, Swords, Variable, Trophy, Star, Sparkles } from "lucide-react";
 import type { AllStats, GameId } from "@/lib/game-storage";
 
 // Toggle to re-enable games in the menu without deleting their code.
@@ -7,6 +7,7 @@ const ENABLED_GAMES: Record<GameId, boolean> = {
   cartesiano: true,
   robogrid: true,
   rpg: false, // temporariamente oculto
+  variaveis: true,
 };
 
 interface Props {
@@ -35,6 +36,13 @@ const GAMES: { id: GameId; title: string; subtitle: string; icon: React.ReactNod
     subtitle: "Localização espacial em um tabuleiro colorido",
     icon: <Bot className="h-10 w-10" />,
     gradient: "from-primary to-accent",
+  },
+  {
+    id: "variaveis",
+    title: "Caça às Variáveis",
+    subtitle: "Arraste o número certo para resolver a expressão",
+    icon: <Variable className="h-10 w-10" />,
+    gradient: "from-accent-glow to-primary",
   },
   {
     id: "rpg",
