@@ -5,6 +5,7 @@ import { LogicGame } from "@/components/games/LogicGame";
 import { CartesianGame } from "@/components/games/CartesianGame";
 import { RoboGridGame } from "@/components/games/RoboGridGame";
 import { RpgGame } from "@/components/games/RpgGame";
+import { VariableHuntGame } from "@/components/games/VariableHuntGame";
 import { loadStats, type AllStats, type GameId } from "@/lib/game-storage";
 
 export const Route = createFileRoute("/")({
@@ -24,6 +25,7 @@ const EMPTY_STATS: AllStats = {
   cartesiano: { bestScore: 0, bestLevel: 1 },
   robogrid: { bestScore: 0, bestLevel: 1 },
   rpg: { bestScore: 0, bestLevel: 1 },
+  variaveis: { bestScore: 0, bestLevel: 1 },
 };
 
 function Index() {
@@ -51,9 +53,13 @@ function Index() {
       {view === "robogrid" && (
         <RoboGridGame onExit={() => setView("menu")} onStatsChange={refreshStats} />
       )}
+      {view === "variaveis" && (
+        <VariableHuntGame onExit={() => setView("menu")} onStatsChange={refreshStats} />
+      )}
       {view === "rpg" && (
         <RpgGame onExit={() => setView("menu")} onStatsChange={refreshStats} />
       )}
     </main>
   );
 }
+
