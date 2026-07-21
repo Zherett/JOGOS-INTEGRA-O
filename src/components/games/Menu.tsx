@@ -1,4 +1,4 @@
-import { Brain, Compass, Bot, Swords, Variable, Trophy, Star, Sparkles } from "lucide-react";
+import { Brain, Compass, Bot, Swords, Variable, Trophy, Star, Sparkles, Shapes } from "lucide-react";
 import type { AllStats, GameId } from "@/lib/game-storage";
 
 // Toggle to re-enable games in the menu without deleting their code.
@@ -8,6 +8,7 @@ const ENABLED_GAMES: Record<GameId, boolean> = {
   robogrid: true,
   rpg: false, // temporariamente oculto
   variaveis: true,
+  formas: true,
 };
 
 interface Props {
@@ -43,6 +44,13 @@ const GAMES: { id: GameId; title: string; subtitle: string; icon: React.ReactNod
     subtitle: "Arraste o número certo para resolver a expressão",
     icon: <Variable className="h-10 w-10" />,
     gradient: "from-accent-glow to-primary",
+  },
+  {
+    id: "formas",
+    title: "Formas e Cores",
+    subtitle: "Arraste formas geométricas por cor, forma e tamanho",
+    icon: <Shapes className="h-10 w-10" />,
+    gradient: "from-primary-glow to-accent",
   },
   {
     id: "rpg",
