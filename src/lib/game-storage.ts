@@ -2,7 +2,7 @@
 const KEY = "desafios-logica-stats-v1";
 const LAST_KEY = "desafios-logica-last-v1";
 
-export type GameId = "logica" | "cartesiano" | "robogrid" | "rpg" | "variaveis" | "formas";
+export type GameId = "logica" | "cartesiano" | "robogrid" | "rpg" | "variaveis" | "formas" | "memoria";
 
 export interface GameStats {
   bestScore: number;
