@@ -273,10 +273,12 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
         </div>
 
         <div className="relative mx-auto aspect-square w-full max-w-[min(80vh,560px)]">
-          <Quadrant color="green"  position="top"    active={active === "green"}  disabled={sub !== "input"} onClick={() => handleClick("green")} />
-          <Quadrant color="red"    position="right"  active={active === "red"}    disabled={sub !== "input"} onClick={() => handleClick("red")} />
-          <Quadrant color="blue"   position="bottom" active={active === "blue"}   disabled={sub !== "input"} onClick={() => handleClick("blue")} />
-          <Quadrant color="yellow" position="left"   active={active === "yellow"} disabled={sub !== "input"} onClick={() => handleClick("yellow")} />
+          <div className="absolute inset-0 rounded-full overflow-hidden grid grid-cols-2 grid-rows-2 gap-2 bg-background shadow-2xl border-4 border-background">
+            <Quadrant color="green"  active={active === "green"}  disabled={sub !== "input"} onClick={() => handleClick("green")} />
+            <Quadrant color="red"    active={active === "red"}    disabled={sub !== "input"} onClick={() => handleClick("red")} />
+            <Quadrant color="yellow" active={active === "yellow"} disabled={sub !== "input"} onClick={() => handleClick("yellow")} />
+            <Quadrant color="blue"   active={active === "blue"}   disabled={sub !== "input"} onClick={() => handleClick("blue")} />
+          </div>
 
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
             <div className={`grid place-items-center rounded-full border-4 border-background bg-card shadow-2xl h-32 w-32 sm:h-40 sm:w-40 text-center px-3
@@ -297,39 +299,23 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
 }
 
 function Quadrant({
-  color, position, active, disabled, onClick,
+  color, active, disabled, onClick,
 }: {
   color: Color;
-  position: "top" | "right" | "bottom" | "left";
   active: boolean;
   disabled: boolean;
   onClick: () => void;
 }) {
   const styles = COLOR_STYLES[color];
-  const pos =
-    position === "top"    ? "top-0 left-0 w-full h-1/2 rounded-t-full origin-bottom" :
-    position === "bottom" ? "bottom-0 left-0 w-full h-1/2 rounded-b-full origin-top" :
-    position === "left"   ? "top-0 left-0 h-full w-1/2 rounded-l-full origin-right" :
-                            "top-0 right-0 h-full w-1/2 rounded-r-full origin-left";
-
-  // Clip each half to the circle by masking with a full circle overlay approach:
-  // We use a container with rounded-full and overflow-hidden.
-  const clipShape =
-    position === "top"    ? "clip-path-[inset(0_0_50%_0)]" :
-    position === "bottom" ? "" :
-    position === "left"   ? "" : "";
-  void clipShape;
-
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
       aria-label={styles.label}
-      className={`absolute transition-all duration-150 border-4 border-background
-        ${pos}
-        ${active ? `${styles.active} scale-[1.03] brightness-125` : `${styles.base} hover:brightness-110`}
-        ${disabled ? "cursor-not-allowed" : "cursor-pointer"}
+      className={`transition-all duration-150
+        ${active ? `${styles.active} brightness-125` : `${styles.base} hover:brightness-110`}
+        ${disabled ? "cursor-not-allowed" : "cursor-pointer active:brightness-125"}
       `}
     />
   );
