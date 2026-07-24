@@ -1,4 +1,4 @@
-import { Brain, Compass, Bot, Swords, Variable, Trophy, Star, Sparkles, Shapes } from "lucide-react";
+import { Brain, Compass, Bot, Swords, Variable, Trophy, Star, Sparkles, Shapes, Palette } from "lucide-react";
 import type { AllStats, GameId } from "@/lib/game-storage";
 
 // Toggle to re-enable games in the menu without deleting their code.
@@ -9,6 +9,7 @@ const ENABLED_GAMES: Record<GameId, boolean> = {
   rpg: false, // temporariamente oculto
   variaveis: true,
   formas: true,
+  memoria: true,
 };
 
 interface Props {
@@ -51,6 +52,13 @@ const GAMES: { id: GameId; title: string; subtitle: string; icon: React.ReactNod
     subtitle: "Arraste formas geométricas por cor, forma e tamanho",
     icon: <Shapes className="h-10 w-10" />,
     gradient: "from-primary-glow to-accent",
+  },
+  {
+    id: "memoria",
+    title: "Memória das Cores",
+    subtitle: "Repita a sequência antes do tempo acabar",
+    icon: <Palette className="h-10 w-10" />,
+    gradient: "from-primary to-accent-glow",
   },
   {
     id: "rpg",
