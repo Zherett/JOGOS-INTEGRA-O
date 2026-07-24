@@ -28,6 +28,7 @@ const DEFAULT: AllStats = {
   rpg: { bestScore: 0, bestLevel: 1 },
   variaveis: { bestScore: 0, bestLevel: 1 },
   formas: { bestScore: 0, bestLevel: 1 },
+  memoria: { bestScore: 0, bestLevel: 1 },
 };
 
 export function loadStats(): AllStats {
