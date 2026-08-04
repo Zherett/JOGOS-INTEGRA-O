@@ -1,4 +1,4 @@
-import { Brain, Compass, Bot, Swords, Variable, Trophy, Star, Sparkles, Shapes, Palette } from "lucide-react";
+import { Brain, Compass, Bot, Swords, Variable, Trophy, Star, Sparkles, Shapes, Palette, Grid3x3 } from "lucide-react";
 import type { AllStats, GameId } from "@/lib/game-storage";
 
 // Toggle to re-enable games in the menu without deleting their code.
@@ -10,6 +10,7 @@ const ENABLED_GAMES: Record<GameId, boolean> = {
   variaveis: true,
   formas: true,
   memoria: true,
+  minado: true,
 };
 
 interface Props {
@@ -59,6 +60,13 @@ const GAMES: { id: GameId; title: string; subtitle: string; icon: React.ReactNod
     subtitle: "Repita a sequência antes do tempo acabar",
     icon: <Palette className="h-10 w-10" />,
     gradient: "from-primary to-accent-glow",
+  },
+  {
+    id: "minado",
+    title: "Campo Minado Lógico",
+    subtitle: "Vire cartas do tabuleiro 8×8 e responda desafios",
+    icon: <Grid3x3 className="h-10 w-10" />,
+    gradient: "from-accent to-primary-glow",
   },
   {
     id: "rpg",

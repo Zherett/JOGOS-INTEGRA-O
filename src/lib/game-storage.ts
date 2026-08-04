@@ -2,7 +2,7 @@
 const KEY = "desafios-logica-stats-v1";
 const LAST_KEY = "desafios-logica-last-v1";
 
-export type GameId = "logica" | "cartesiano" | "robogrid" | "rpg" | "variaveis" | "formas" | "memoria";
+export type GameId = "logica" | "cartesiano" | "robogrid" | "rpg" | "variaveis" | "formas" | "memoria" | "minado";
 
 export interface GameStats {
   bestScore: number;
@@ -29,6 +29,7 @@ const DEFAULT: AllStats = {
   variaveis: { bestScore: 0, bestLevel: 1 },
   formas: { bestScore: 0, bestLevel: 1 },
   memoria: { bestScore: 0, bestLevel: 1 },
+  minado: { bestScore: 0, bestLevel: 1 },
 };
 
 export function loadStats(): AllStats {
