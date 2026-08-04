@@ -78,7 +78,6 @@ function genMystery(): QuestionCard {
     prompt = `${b} × X = ${b * x}`;
   } else {
     x = 1 + ri(9); const b = 2 + ri(8);
-    prompt = `X ÷ ${b} = ${Math.round((x * b) / b) === x ? x : x}`;
     prompt = `${x * b} ÷ X = ${b}`;
   }
   const opts = new Set<number>([x]);
