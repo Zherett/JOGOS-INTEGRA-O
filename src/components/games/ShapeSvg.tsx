@@ -6,10 +6,12 @@ interface Props {
   size: SizeIdx;
   outline?: boolean;
   className?: string;
+  /** Visual scale factor (used to fit many pieces on screen). */
+  scale?: number;
 }
 
-export function ShapeSvg({ shape, color = "azul", size, outline = false, className }: Props) {
-  const px = SIZE_PX[size];
+export function ShapeSvg({ shape, color = "azul", size, outline = false, className, scale = 1 }: Props) {
+  const px = Math.round(SIZE_PX[size] * scale);
   const fill = outline ? "transparent" : COLOR_HEX[color];
   const stroke = outline ? "#94a3b8" : "rgba(0,0,0,0.25)";
   const strokeWidth = outline ? 3 : 2;
