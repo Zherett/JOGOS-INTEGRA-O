@@ -8,6 +8,7 @@ import { RpgGame } from "@/components/games/RpgGame";
 import { VariableHuntGame } from "@/components/games/VariableHuntGame";
 import { ShapeColorGame } from "@/components/games/ShapeColorGame";
 import { ColorMemoryGame } from "@/components/games/ColorMemoryGame";
+import { MinefieldGame } from "@/components/games/MinefieldGame";
 import { loadStats, type AllStats, type GameId } from "@/lib/game-storage";
 
 export const Route = createFileRoute("/")({
@@ -30,6 +31,7 @@ const EMPTY_STATS: AllStats = {
   variaveis: { bestScore: 0, bestLevel: 1 },
   formas: { bestScore: 0, bestLevel: 1 },
   memoria: { bestScore: 0, bestLevel: 1 },
+  minado: { bestScore: 0, bestLevel: 1 },
 };
 
 function Index() {
@@ -66,6 +68,10 @@ function Index() {
       {view === "memoria" && (
         <ColorMemoryGame onExit={() => setView("menu")} onStatsChange={refreshStats} />
       )}
+      {view === "minado" && (
+        <MinefieldGame onExit={() => setView("menu")} onStatsChange={refreshStats} />
+      )}
+
       {view === "rpg" && (
         <RpgGame onExit={() => setView("menu")} onStatsChange={refreshStats} />
       )}

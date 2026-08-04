@@ -3,7 +3,10 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GameHud } from "./GameHud";
 import { ResultPanel } from "./ResultPanel";
-import { StartScreen } from "./StartScreen";
+import { StartScreen, OptionChip } from "./StartScreen";
+import { TeamSetup } from "./TeamSetup";
+import { TeamScoreBar, TeamResults } from "./TeamScoreBar";
+import { NORMAL_CONFIG, type TeamConfig } from "@/lib/teams";
 import { Countdown } from "./Countdown";
 import { useCountdown } from "@/lib/use-countdown";
 import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
@@ -11,7 +14,13 @@ import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/
 const DURATION = 120;
 const POINTS_CORRECT = 10;
 const POINTS_WRONG = 5;
-const START_LEN = 3;
+
+type Difficulty = "facil" | "normal" | "dificil";
+const DIFFICULTY: Record<Difficulty, { startLen: number; flash: number; gap: number; label: string; hint: string }> = {
+  facil:   { startLen: 2, flash: 780, gap: 380, label: "Fácil",  hint: "começa com 2 cores, bem devagar" },
+  normal:  { startLen: 3, flash: 620, gap: 300, label: "Normal", hint: "começa com 3 cores" },
+  dificil: { startLen: 4, flash: 480, gap: 220, label: "Difícil", hint: "começa com 4 cores, mais rápido" },
+};
 
 type Color = "green" | "red" | "blue" | "yellow";
 const COLORS: Color[] = ["green", "red", "blue", "yellow"];
@@ -60,7 +69,13 @@ function randomSeq(len: number, avoid?: Color[]): Color[] {
 
 export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
   const [phase, setPhase] = useState<Phase>("setup");
+  const [difficulty, setDifficulty] = useState<Difficulty>("facil");
+  const [teamConfig, setTeamConfig] = useState<TeamConfig>(NORMAL_CONFIG);
+  const [teamScores, setTeamScores] = useState<number[]>([]);
+  const [runId, setRunId] = useState(0);
   const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
+  const diffRef = useRef(DIFFICULTY.facil);
+  diffRef.current = DIFFICULTY[difficulty];
 
   useEffect(() => { setLastMatch(loadLastMatch("memoria")); }, []);
 
@@ -108,7 +123,8 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
     clearTimeouts();
     setScore(0); setCorrect(0); setWrong(0); setLevel(1); setBestStreak(0);
     setFinished(false);
-    const first = randomSeq(START_LEN);
+    setRunId((r) => r + 1);
+    const first = randomSeq(DIFFICULTY[difficulty].startLen);
     seqRef.current = first;
     setSeq(first);
     setUserIdx(0);
@@ -135,8 +151,9 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
     setSub("showing");
     setActive(null);
     // Speed scales gently with level
-    const flashDur = Math.max(320, 600 - (level - 1) * 25);
-    const gap = Math.max(140, 250 - (level - 1) * 10);
+    const d = diffRef.current;
+    const flashDur = Math.max(300, d.flash - (level - 1) * 25);
+    const gap = Math.max(140, d.gap - (level - 1) * 12);
     let t = 400;
     sequence.forEach((c) => {
       const onT = window.setTimeout(() => {
@@ -166,6 +183,7 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
     if (c !== target) {
       // Wrong
       setSub("wrong");
+      setUserIdx(0);
       setWrong((w) => w + 1);
       setScore((s) => Math.max(0, s - POINTS_WRONG));
       setShake(true);
@@ -218,6 +236,25 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
         onExit={onExit}
         lastMatch={lastMatch}
       >
+        <div className="space-y-4">
+          <div>
+            <div className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 text-center">
+              Dificuldade
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {(Object.keys(DIFFICULTY) as Difficulty[]).map((d) => (
+                <OptionChip key={d} active={difficulty === d} onClick={() => setDifficulty(d)}>
+                  {DIFFICULTY[d].label}
+                </OptionChip>
+              ))}
+            </div>
+            <p className="mt-2 text-center text-xs text-muted-foreground">
+              {DIFFICULTY[difficulty].hint}
+            </p>
+          </div>
+
+          <TeamSetup value={teamConfig} onChange={setTeamConfig} />
+
         <div className="rounded-2xl border bg-secondary/40 p-4 text-sm text-secondary-foreground">
           <p className="font-semibold mb-1">Como jogar</p>
           <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
@@ -226,6 +263,7 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
             <li>Cada acerto aumenta o tamanho da sequência.</li>
             <li>Você tem 2 minutos — quanto mais acertar, maior a pontuação.</li>
           </ul>
+        </div>
         </div>
       </StartScreen>
     );
@@ -248,6 +286,7 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
           score={score} correct={correct} wrong={wrong} level={level}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />
+        <TeamResults config={teamConfig} scores={teamScores} />
       </div>
     );
   }
@@ -263,6 +302,7 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
     <div className="space-y-4">
       <TopBar onExit={onExit} />
       <GameHud time={time} score={score} level={level} streak={bestStreak} />
+      <TeamScoreBar key={runId} config={teamConfig} score={score} onScoresChange={setTeamScores} />
 
       <div className={`relative rounded-3xl border bg-card p-4 sm:p-8 shadow-lg ${shake ? "animate-shake-x" : ""}`}>
         <div className="text-center text-sm text-muted-foreground mb-3">
