@@ -242,7 +242,7 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
 
       <div className="rounded-3xl border bg-card p-2 sm:p-4 shadow-lg">
         <div className="mx-auto w-full max-w-[560px]">
-          <div className="grid grid-cols-9 gap-1">
+          <div className="grid gap-1" style={{ gridTemplateColumns: "1.25rem repeat(8, minmax(0,1fr))" }}>
             <div />
             {COLS.map((c) => (
               <div key={c} className="text-center text-[10px] sm:text-xs font-bold text-muted-foreground">{c}</div>
