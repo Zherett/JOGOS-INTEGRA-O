@@ -375,6 +375,14 @@ function ExtraStat({ icon, label, value }: { icon: React.ReactNode; label: strin
   );
 }
 
+/** Shrinks pieces when there are many on screen so nothing overflows. */
+function scaleFor(n: number) {
+  if (n <= 6) return 1;
+  if (n <= 10) return 0.72;
+  if (n <= 14) return 0.6;
+  return 0.5;
+}
+
 /* ------------------------------ Play area ------------------------------- */
 
 interface PlayProps {
@@ -468,9 +476,10 @@ function Mode1View({ q, droppedIds, flashSlot }: {
 }) {
   const flashing = flashSlot === "m1-dropzone";
   const collected = q.pieces.filter((p) => droppedIds.has(p.id));
+  const sc = scaleFor(q.pieces.length);
   return (
     <div className="space-y-4">
-      <div className="rounded-3xl border bg-card p-4 sm:p-6 shadow-lg text-center">
+      <div className="rounded-3xl border bg-card p-3 sm:p-4 shadow-lg text-center">
         <div className="text-sm uppercase tracking-wider text-muted-foreground">Arraste todos os objetos da cor</div>
         <div
           className="mt-2 inline-flex items-center gap-3 font-display text-3xl sm:text-4xl font-extrabold uppercase"
@@ -488,10 +497,10 @@ function Mode1View({ q, droppedIds, flashSlot }: {
         {collected.length === 0 && (
           <span className="text-muted-foreground text-sm">Solte as figuras aqui</span>
         )}
-        <div className="flex flex-wrap items-center justify-center gap-3">
+        <div className="flex flex-wrap items-center justify-center gap-2">
           {collected.map((pc) => (
             <div key={pc.id} className="animate-snap-in">
-              <ShapeSvg shape={pc.shape} color={pc.color} size={pc.size} />
+              <ShapeSvg shape={pc.shape} color={pc.color} size={pc.size} scale={sc * 0.8} />
             </div>
           ))}
         </div>
@@ -499,7 +508,7 @@ function Mode1View({ q, droppedIds, flashSlot }: {
 
       <Tray>
         {q.pieces.filter((p) => !droppedIds.has(p.id)).map((piece) => (
-          <DraggablePiece key={piece.id} piece={piece} />
+          <DraggablePiece key={piece.id} piece={piece} scale={sc} />
         ))}
       </Tray>
     </div>
@@ -516,7 +525,7 @@ function ColorDropZone({ children, flashing }: { children: React.ReactNode; flas
   return (
     <div
       ref={setNodeRef}
-      className={`rounded-3xl border-4 border-dashed p-4 min-h-[140px] grid place-items-center transition-all ${tone}`}
+      className={`rounded-3xl border-4 border-dashed p-3 min-h-[110px] grid place-items-center transition-all ${tone}`}
     >
       {children}
     </div>
@@ -528,16 +537,17 @@ function Mode2View({ q, placed, flashSlot }: {
   q: Extract<Question, { mode: 2 }>; placed: Record<string, string>; flashSlot: string | null;
 }) {
   const usedIds = new Set(Object.values(placed));
+  const sc = scaleFor(q.pieces.length);
   return (
-    <div className="space-y-4">
-      <div className="rounded-3xl border bg-card p-4 sm:p-6 shadow-lg text-center">
-        <div className="font-display text-xl sm:text-2xl font-bold">
+    <div className="space-y-3">
+      <div className="rounded-3xl border bg-card p-3 shadow-lg text-center">
+        <div className="font-display text-lg sm:text-xl font-bold">
           Arraste cada figura para o contorno correspondente
         </div>
       </div>
 
-      <div className="rounded-3xl border-4 border-dashed border-primary/30 bg-primary/5 p-4 sm:p-6">
-        <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-8">
+      <div className="rounded-3xl border-4 border-dashed border-primary/30 bg-primary/5 p-3 sm:p-4">
+        <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6">
           {q.slots.map((slot) => {
             const pieceId = placed[slot.id];
             const piece = pieceId ? q.pieces.find((p) => p.id === pieceId) : null;
@@ -557,7 +567,7 @@ function Mode2View({ q, placed, flashSlot }: {
 
       <Tray>
         {q.pieces.filter((p) => !usedIds.has(p.id)).map((piece) => (
-          <DraggablePiece key={piece.id} piece={piece} />
+          <DraggablePiece key={piece.id} piece={piece} scale={sc} />
         ))}
       </Tray>
     </div>
@@ -573,17 +583,18 @@ function Mode3View({ q, placed, adjustPiece, flashSlot, onAdjustSize }: {
   onAdjustSize: (d: 1 | -1) => void;
 }) {
   const usedIds = new Set(Object.values(placed));
+  const sc = scaleFor(q.pieces.length);
   return (
-    <div className="space-y-4">
-      <div className="rounded-3xl border bg-card p-4 sm:p-6 shadow-lg text-center">
-        <div className="font-display text-xl sm:text-2xl font-bold">
+    <div className="space-y-3">
+      <div className="rounded-3xl border bg-card p-3 shadow-lg text-center">
+        <div className="font-display text-lg sm:text-xl font-bold">
           Ajuste a forma e o tamanho até caberem no contorno
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-        <div className="rounded-3xl border-4 border-dashed border-primary/30 bg-primary/5 p-4 sm:p-6">
-          <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-8">
+      <div className="grid gap-3 lg:grid-cols-[1fr_300px]">
+        <div className="rounded-3xl border-4 border-dashed border-primary/30 bg-primary/5 p-3 sm:p-4">
+          <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-6">
             {q.slots.map((slot) => {
               const pieceId = placed[slot.id];
               const piece = pieceId ? q.pieces.find((p) => p.id === pieceId) : null;
@@ -608,7 +619,7 @@ function Mode3View({ q, placed, adjustPiece, flashSlot, onAdjustSize }: {
         {q.pieces
           .filter((p) => !usedIds.has(p.id) && p.id !== adjustPiece?.id)
           .map((piece) => (
-            <DraggablePiece key={piece.id} piece={piece} />
+            <DraggablePiece key={piece.id} piece={piece} scale={sc} />
           ))}
       </Tray>
     </div>
@@ -622,7 +633,7 @@ function AdjustZone({ piece, onAdjustSize }: {
   return (
     <div
       ref={setNodeRef}
-      className={`rounded-3xl border-4 border-dashed p-4 min-h-[220px] flex flex-col items-center justify-center gap-3 transition-all ${
+      className={`rounded-3xl border-4 border-dashed p-3 min-h-[190px] flex flex-col items-center justify-center gap-3 transition-all ${
         isOver ? "border-accent bg-accent/10" : "border-accent/50 bg-accent/5"
       }`}
     >
@@ -669,15 +680,15 @@ function AdjustZone({ piece, onAdjustSize }: {
 
 function Tray({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-3xl border bg-card p-4 sm:p-5 shadow-md min-h-[160px]">
-      <div className="flex flex-wrap items-center justify-center gap-4">
+    <div className="rounded-3xl border bg-card p-3 shadow-md min-h-[110px]">
+      <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
         {children}
       </div>
     </div>
   );
 }
 
-function DraggablePiece({ piece }: { piece: Piece }) {
+function DraggablePiece({ piece, scale = 1 }: { piece: Piece; scale?: number }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: piece.id });
   return (
     <div
@@ -687,7 +698,7 @@ function DraggablePiece({ piece }: { piece: Piece }) {
       style={{ touchAction: "none", opacity: isDragging ? 0 : 1 }}
       className="cursor-grab active:cursor-grabbing hover:scale-105 transition-transform"
     >
-      <ShapeSvg shape={piece.shape} color={piece.color} size={piece.size} />
+      <ShapeSvg shape={piece.shape} color={piece.color} size={piece.size} scale={scale} />
     </div>
   );
 }
