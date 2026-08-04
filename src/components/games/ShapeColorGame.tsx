@@ -18,6 +18,9 @@ import { Countdown } from "./Countdown";
 import { ResultPanel } from "./ResultPanel";
 import { useCountdown, formatTime } from "@/lib/use-countdown";
 import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
+import { TeamSetup } from "./TeamSetup";
+import { TeamScoreBar, TeamResults } from "./TeamScoreBar";
+import { NORMAL_CONFIG, type TeamConfig } from "@/lib/teams";
 import { ShapeSvg } from "./ShapeSvg";
 import {
   generateQuestion,
@@ -63,6 +66,9 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
   const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("setup");
   const [startLevel, setStartLevel] = useState(1);
   const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
+  const [teamConfig, setTeamConfig] = useState<TeamConfig>(NORMAL_CONFIG);
+  const [teamScores, setTeamScores] = useState<number[]>([]);
+  const [runId, setRunId] = useState(0);
 
   useEffect(() => { setLastMatch(loadLastMatch("formas")); }, []);
 
@@ -117,6 +123,7 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
   }
 
   function startGame() {
+    setRunId((r) => r + 1);
     setScore(0); setCorrect(0); setWrong(0);
     setLevel(startLevel); setQInLevel(0);
     setFinished(false);
@@ -252,6 +259,9 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
         onExit={onExit}
         lastMatch={lastMatch}
       >
+        <div className="mb-4">
+          <TeamSetup value={teamConfig} onChange={setTeamConfig} />
+        </div>
         <div>
           <div className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 text-center">
             Nível inicial
@@ -291,6 +301,7 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
           score={score} correct={correct} wrong={wrong} level={level}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />
+        <TeamResults config={teamConfig} scores={teamScores} />
         <div className="mx-auto max-w-2xl">
           <ExtraStat icon={<Clock className="h-5 w-5" />} label="Tempo restante" value={formatTime(timeAtEnd)} />
         </div>
@@ -302,6 +313,7 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
     <div className="space-y-4">
       <TopBar onExit={onExit} />
       <Hud time={time} score={score} level={level} qInLevel={qInLevel} />
+      <TeamScoreBar key={runId} config={teamConfig} score={score} onScoresChange={setTeamScores} />
       {question && (
         <PlayArea
           question={question}

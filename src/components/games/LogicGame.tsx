@@ -8,6 +8,9 @@ import { Countdown } from "./Countdown";
 import { useCountdown } from "@/lib/use-countdown";
 import { generateBalanced, type Question, type OpKind, ALL_OPS } from "@/lib/logic-questions";
 import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
+import { TeamSetup } from "./TeamSetup";
+import { TeamScoreBar, TeamResults } from "./TeamScoreBar";
+import { NORMAL_CONFIG, type TeamConfig } from "@/lib/teams";
 
 const DURATION = 120;
 const LEVEL_UP_STREAK = 5;
@@ -31,6 +34,9 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
   const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("setup");
   const [ops, setOps] = useState<OpKind[]>([...ALL_OPS]);
   const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
+  const [teamConfig, setTeamConfig] = useState<TeamConfig>(NORMAL_CONFIG);
+  const [teamScores, setTeamScores] = useState<number[]>([]);
+  const [runId, setRunId] = useState(0);
 
   useEffect(() => {
     setLastMatch(loadLastMatch("logica"));
@@ -72,6 +78,7 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
   }
 
   function startGame() {
+    setRunId((r) => r + 1);
     recentTexts.current = [];
     recentAnswers.current = [];
     setScore(0); setCorrect(0); setWrong(0); setLevel(1); setStreak(0);
@@ -156,6 +163,9 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
         disabled={ops.length === 0}
         lastMatch={lastMatch}
       >
+        <div className="mb-4">
+          <TeamSetup value={teamConfig} onChange={setTeamConfig} />
+        </div>
         <div>
           <div className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 text-center">
             Operações do jogo
@@ -192,6 +202,7 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
           score={score} correct={correct} wrong={wrong} level={level}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />
+        <TeamResults config={teamConfig} scores={teamScores} />
       </div>
     );
   }
@@ -202,6 +213,7 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
     <div className="space-y-4">
       <TopBar onExit={onExit} />
       <GameHud time={time} score={score} level={level} streak={streak} />
+      <TeamScoreBar key={runId} config={teamConfig} score={score} onScoresChange={setTeamScores} />
 
       <div className={`relative rounded-3xl border bg-card p-6 sm:p-10 shadow-lg overflow-hidden ${flashClass}`}>
         {showLevelUp && (

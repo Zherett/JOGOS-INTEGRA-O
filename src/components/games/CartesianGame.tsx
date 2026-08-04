@@ -9,6 +9,9 @@ import { Countdown } from "./Countdown";
 import { useCountdown } from "@/lib/use-countdown";
 import { generateCartQuestion, type CartQuestion } from "@/lib/cart-questions";
 import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
+import { TeamSetup } from "./TeamSetup";
+import { TeamScoreBar, TeamResults } from "./TeamScoreBar";
+import { NORMAL_CONFIG, type TeamConfig } from "@/lib/teams";
 
 const DURATION = 120;
 const LEVEL_UP_STREAK = 4;
@@ -28,6 +31,9 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
   const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("setup");
   const [planeSize, setPlaneSize] = useState<PlaneSize>(8);
   const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
+  const [teamConfig, setTeamConfig] = useState<TeamConfig>(NORMAL_CONFIG);
+  const [teamScores, setTeamScores] = useState<number[]>([]);
+  const [runId, setRunId] = useState(0);
   const range = sizeToRange(planeSize);
 
   useEffect(() => {
@@ -63,6 +69,7 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
   }, [finished]);
 
   function startGame() {
+    setRunId((r) => r + 1);
     setScore(0); setCorrect(0); setWrong(0); setLevel(1); setStreak(0);
     setSelected(null); setFinished(false);
     setQuestion(generateCartQuestion(1, range));
@@ -123,6 +130,9 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
         onExit={onExit}
         lastMatch={lastMatch}
       >
+        <div className="mb-4">
+          <TeamSetup value={teamConfig} onChange={setTeamConfig} />
+        </div>
         <div>
           <div className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 text-center">
             Tamanho do plano
@@ -159,6 +169,7 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
           score={score} correct={correct} wrong={wrong} level={level}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />
+        <TeamResults config={teamConfig} scores={teamScores} />
       </div>
     );
   }
@@ -170,6 +181,7 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
     <div className="space-y-4">
       <TopBar onExit={onExit} />
       <GameHud time={time} score={score} level={level} streak={streak} />
+      <TeamScoreBar key={runId} config={teamConfig} score={score} onScoresChange={setTeamScores} />
 
       <div className="relative rounded-3xl border bg-card p-4 sm:p-6 shadow-lg overflow-hidden">
         {showLevelUp && (

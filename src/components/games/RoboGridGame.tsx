@@ -7,6 +7,9 @@ import { StartScreen } from "./StartScreen";
 import { Countdown } from "./Countdown";
 import { useCountdown } from "@/lib/use-countdown";
 import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
+import { TeamSetup } from "./TeamSetup";
+import { TeamScoreBar, TeamResults } from "./TeamScoreBar";
+import { NORMAL_CONFIG, type TeamConfig } from "@/lib/teams";
 import {
   COLS, ROWS, COLOR_BG, COLOR_TEXT, COLOR_LABEL,
   type Board, type Coord, type Question,
@@ -24,6 +27,9 @@ interface Props { onExit: () => void; onStatsChange: () => void }
 export function RoboGridGame({ onExit, onStatsChange }: Props) {
   const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("setup");
   const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
+  const [teamConfig, setTeamConfig] = useState<TeamConfig>(NORMAL_CONFIG);
+  const [teamScores, setTeamScores] = useState<number[]>([]);
+  const [runId, setRunId] = useState(0);
   useEffect(() => { setLastMatch(loadLastMatch("robogrid")); }, []);
   const [running, setRunning] = useState(false);
   const [finished, setFinished] = useState(false);
@@ -56,6 +62,7 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
   }, [finished]);
 
   function startGame() {
+    setRunId((r) => r + 1);
     setScore(0); setCorrect(0); setWrong(0); setLevel(1); setStreak(0);
     setFinished(false);
     const b = randomBoard();
@@ -153,6 +160,9 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
         onExit={onExit}
         lastMatch={lastMatch}
       >
+        <div className="mb-4">
+          <TeamSetup value={teamConfig} onChange={setTeamConfig} />
+        </div>
         <div className="rounded-2xl bg-secondary p-4 text-sm text-secondary-foreground">
           <p className="font-semibold mb-2">Como jogar:</p>
           <ul className="list-disc pl-5 space-y-1">
@@ -183,6 +193,7 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
           score={score} correct={correct} wrong={wrong} level={level}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />
+        <TeamResults config={teamConfig} scores={teamScores} />
       </div>
     );
   }
@@ -195,6 +206,7 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
     <div className="space-y-2 sm:space-y-3">
       <TopBar onExit={onExit} />
       <GameHud time={time} score={score} level={level} streak={streak} />
+      <TeamScoreBar key={runId} config={teamConfig} score={score} onScoresChange={setTeamScores} />
 
       <div className={`relative rounded-3xl border bg-card p-2 sm:p-3 shadow-lg overflow-hidden ${flashClass}`}>
         {showLevelUp && (

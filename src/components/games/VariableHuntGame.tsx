@@ -19,6 +19,9 @@ import { ResultPanel } from "./ResultPanel";
 import { useCountdown, formatTime } from "@/lib/use-countdown";
 import { generateVariableQuestion, type VarQuestion } from "@/lib/variable-questions";
 import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
+import { TeamSetup } from "./TeamSetup";
+import { TeamScoreBar, TeamResults } from "./TeamScoreBar";
+import { NORMAL_CONFIG, type TeamConfig } from "@/lib/teams";
 
 const DURATION = 120;
 const START_LIVES = 5;
@@ -66,6 +69,9 @@ export function VariableHuntGame({ onExit, onStatsChange }: Props) {
   const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("setup");
   const [startLevel, setStartLevel] = useState(1);
   const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
+  const [teamConfig, setTeamConfig] = useState<TeamConfig>(NORMAL_CONFIG);
+  const [teamScores, setTeamScores] = useState<number[]>([]);
+  const [runId, setRunId] = useState(0);
 
   useEffect(() => { setLastMatch(loadLastMatch("variaveis")); }, []);
 
@@ -119,6 +125,7 @@ export function VariableHuntGame({ onExit, onStatsChange }: Props) {
   }
 
   function startGame() {
+    setRunId((r) => r + 1);
     setScore(0); setCorrect(0); setWrong(0);
     setLevel(startLevel); setLevelHits(0);
     setStreak(0); setBestStreak(0);
@@ -210,6 +217,9 @@ export function VariableHuntGame({ onExit, onStatsChange }: Props) {
         onExit={onExit}
         lastMatch={lastMatch}
       >
+        <div className="mb-4">
+          <TeamSetup value={teamConfig} onChange={setTeamConfig} />
+        </div>
         <div>
           <div className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 text-center">
             Nível inicial
@@ -250,6 +260,7 @@ export function VariableHuntGame({ onExit, onStatsChange }: Props) {
           score={score} correct={correct} wrong={wrong} level={level}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />
+        <TeamResults config={teamConfig} scores={teamScores} />
         <div className="mx-auto max-w-2xl grid grid-cols-2 gap-3">
           <ExtraStat icon={<Clock className="h-5 w-5" />} label="Tempo restante" value={formatTime(timeAtEnd)} />
           <ExtraStat icon={<Flame className="h-5 w-5" />} label="Maior sequência" value={String(bestStreak)} />
@@ -262,6 +273,7 @@ export function VariableHuntGame({ onExit, onStatsChange }: Props) {
     <div className="space-y-4">
       <TopBar onExit={onExit} />
       <HudBar time={time} score={score} level={level} lives={lives} streak={streak} />
+      <TeamScoreBar key={runId} config={teamConfig} score={score} onScoresChange={setTeamScores} />
       <PlayArea
         question={question!}
         boxState={boxState}
