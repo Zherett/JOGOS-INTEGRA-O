@@ -16,7 +16,10 @@ import { Button } from "@/components/ui/button";
 import { StartScreen, OptionChip } from "./StartScreen";
 import { Countdown } from "./Countdown";
 import { ResultPanel } from "./ResultPanel";
-import { useCountdown, formatTime } from "@/lib/use-countdown";
+import { useRoundClock, formatTime } from "@/lib/use-countdown";
+import { GameTopBar } from "./GameTopBar";
+import { BonusTimeToggle } from "./BonusTimeToggle";
+import { useTeamSession } from "@/lib/use-team-session";
 import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
 import { TeamSetup } from "./TeamSetup";
 import { TeamScoreBar, TeamResults } from "./TeamScoreBar";
@@ -32,6 +35,7 @@ import {
 
 const DURATION = 120;
 const POINTS_CORRECT = 10;
+const POINTS_CORRECT_L4 = 5;
 const POINTS_WRONG = 5;
 const QUESTIONS_PER_LEVEL = 5;
 
@@ -67,7 +71,8 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
   const [startLevel, setStartLevel] = useState(1);
   const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
   const [teamConfig, setTeamConfig] = useState<TeamConfig>(NORMAL_CONFIG);
-  const [teamScores, setTeamScores] = useState<number[]>([]);
+  const team = useTeamSession();
+  const [bonusOn, setBonusOn] = useState(true);
   const [runId, setRunId] = useState(0);
 
   useEffect(() => { setLastMatch(loadLastMatch("formas")); }, []);
@@ -90,7 +95,7 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
   const [showLevelUp, setShowLevelUp] = useState<number | null>(null);
   const [timeAtEnd, setTimeAtEnd] = useState(0);
 
-  const time = useCountdown(DURATION, running, () => {
+  const clock = useRoundClock(DURATION, running, () => {
     setTimeAtEnd(0);
     endGame(0);
   });
@@ -124,6 +129,7 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
 
   function startGame() {
     setRunId((r) => r + 1);
+    team.begin(teamConfig);
     setScore(0); setCorrect(0); setWrong(0);
     setLevel(startLevel); setQInLevel(0);
     setFinished(false);
@@ -150,14 +156,22 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
     }
   }
 
-  function registerCorrect() {
+  /** Placement feedback only — points are awarded when the question is solved. */
+  function registerPlacement() {
     playCorrect();
-    setScore((s) => s + POINTS_CORRECT);
+  }
+
+  /** Awards the points for a fully solved question. */
+  function solveQuestion() {
+    const pts = level >= 4 ? POINTS_CORRECT_L4 : POINTS_CORRECT;
+    setScore((s) => s + pts);
     setCorrect((c) => c + 1);
+    if (bonusOn) clock.addBonus();
+    advanceQuestion();
   }
   function registerWrong(slotId?: string) {
     playWrong();
-    setScore((s) => Math.max(0, s - POINTS_WRONG));
+    setScore((s) => s - POINTS_WRONG);
     setWrong((w) => w + 1);
     if (slotId) {
       setFlashSlot(slotId);
@@ -170,11 +184,11 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
     if (droppedIds.has(pieceId)) return;
     const isTarget = question.targetIds.includes(pieceId);
     if (isTarget) {
-      registerCorrect();
+      registerPlacement();
       const next = new Set(droppedIds);
       next.add(pieceId);
       setDroppedIds(next);
-      if (next.size >= question.targetIds.length) advanceQuestion();
+      if (next.size >= question.targetIds.length) solveQuestion();
     } else {
       registerWrong("m1-dropzone");
     }
@@ -187,10 +201,10 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
     const piece = question.pieces.find((p) => p.id === pieceId);
     if (!slot || !piece) return;
     if (slot.shape === piece.shape && !placed[slotId]) {
-      registerCorrect();
+      registerPlacement();
       const next = { ...placed, [slotId]: pieceId };
       setPlaced(next);
-      if (Object.keys(next).length >= question.slots.length) advanceQuestion();
+      if (Object.keys(next).length >= question.slots.length) solveQuestion();
     } else {
       registerWrong(slotId);
     }
@@ -213,11 +227,11 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
       return;
     }
     if (adjustPiece.shape === slot.shape && adjustPiece.size === slot.size) {
-      registerCorrect();
+      registerPlacement();
       const next = { ...placed, [slotId]: pieceId };
       setPlaced(next);
       setAdjustPiece(null);
-      if (Object.keys(next).length >= question.slots.length) advanceQuestion();
+      if (Object.keys(next).length >= question.slots.length) solveQuestion();
     } else {
       registerWrong(slotId);
     }
@@ -248,19 +262,29 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
     setPhase("setup");
   }
 
+  function finishSession() {
+    team.finish();
+    setBonusOn(true);
+    backToSetup();
+  }
+
   /* ------------------------------ Screens ------------------------------- */
 
   if (phase === "setup") {
     return (
       <StartScreen
         title="Formas e Cores"
-        description="Arraste as figuras para as áreas corretas. Acerto: +10 • Erro: −5"
+        description="Arraste as figuras para as áreas corretas. Questão resolvida: +10 (nível 4: +5) • Erro: −5"
         onStart={startGame}
         onExit={onExit}
         lastMatch={lastMatch}
+        sessionActive={team.activeSession}
+        onFinishSession={finishSession}
+        bonusTime={bonusOn}
+        onBonusTimeChange={setBonusOn}
       >
         <div className="mb-4">
-          <TeamSetup value={teamConfig} onChange={setTeamConfig} />
+          <TeamSetup value={teamConfig} onChange={setTeamConfig} locked={team.activeSession} />
         </div>
         <div>
           <div className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 text-center">
@@ -277,7 +301,7 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
             <div>1: cores</div>
             <div>2: formas</div>
             <div>3: forma + tamanho</div>
-            <div>4+: misto</div>
+            <div>4+: formas avançadas (5 pts)</div>
           </div>
         </div>
       </StartScreen>
@@ -287,7 +311,7 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
   if (phase === "countdown") {
     return (
       <div className="space-y-4">
-        <TopBar onExit={onExit} />
+        <GameTopBar title="Formas e Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
         <Countdown onDone={startGame} />
       </div>
     );
@@ -296,12 +320,12 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
   if (finished) {
     return (
       <div className="space-y-4">
-        <TopBar onExit={onExit} />
+        <GameTopBar title="Formas e Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
         <ResultPanel
           score={score} correct={correct} wrong={wrong} level={level}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />
-        <TeamResults config={teamConfig} scores={teamScores} />
+        <TeamResults session={team} />
         <div className="mx-auto max-w-2xl">
           <ExtraStat icon={<Clock className="h-5 w-5" />} label="Tempo restante" value={formatTime(timeAtEnd)} />
         </div>
@@ -311,9 +335,10 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
 
   return (
     <div className="space-y-4">
-      <TopBar onExit={onExit} />
-      <Hud time={time} score={score} level={level} qInLevel={qInLevel} />
-      <TeamScoreBar key={runId} config={teamConfig} score={score} onScoresChange={setTeamScores} />
+      <GameTopBar title="Formas e Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+      <Hud time={clock.time} score={score} level={level} qInLevel={qInLevel} />
+      <BonusTimeToggle value={bonusOn} onChange={setBonusOn} earned={clock.bonus} />
+      <TeamScoreBar key={runId} session={team} score={score} />
       {question && (
         <PlayArea
           question={question}
@@ -335,17 +360,6 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
 
 /* ------------------------------ Chrome ------------------------------- */
 
-function TopBar({ onExit }: { onExit: () => void }) {
-  return (
-    <div className="flex items-center justify-between">
-      <Button variant="ghost" onClick={onExit} className="rounded-xl">
-        <ArrowLeft className="mr-2 h-4 w-4" /> Menu
-      </Button>
-      <div className="font-display text-lg sm:text-xl font-bold">Formas e Cores</div>
-      <div className="w-20" />
-    </div>
-  );
-}
 
 function Hud({ time, score, level, qInLevel }: {
   time: number; score: number; level: number; qInLevel: number;
