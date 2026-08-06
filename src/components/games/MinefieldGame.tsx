@@ -84,8 +84,6 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
     setRevealed(new Set());
     setOpenCard(null); setAnswered(null); setFlipping(null);
     setScore(0); setCorrect(0); setWrong(0);
-    setTeamScores([]);
-    setActiveTeam(0);
     setFinished(false);
     setRunId((r) => r + 1);
     team.begin(teamConfig);
