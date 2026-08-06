@@ -2,7 +2,9 @@
 
 export type Shape =
   | "square" | "circle" | "oval" | "triangle"
-  | "rectH" | "rectV" | "star" | "heart";
+  | "rectH" | "rectV"
+  | "pentagon" | "diamond" | "hexagon" | "trapezoid"
+  | "triIsosceles" | "triScalene" | "triEquilateral";
 
 export type ColorName =
   | "vermelho" | "azul" | "verde" | "amarelo" | "roxo"
@@ -22,7 +24,13 @@ export const COLOR_HEX: Record<ColorName, string> = {
 };
 
 export const SHAPES: Shape[] = [
-  "square", "circle", "oval", "triangle", "rectH", "rectV", "star", "heart",
+  "square", "circle", "oval", "triangle", "rectH", "rectV",
+];
+
+/** Extra shapes introduced at level 4. */
+export const ADVANCED_SHAPES: Shape[] = [
+  "pentagon", "diamond", "hexagon", "trapezoid",
+  "triIsosceles", "triScalene", "triEquilateral",
 ];
 
 export const SHAPE_LABEL: Record<Shape, string> = {
@@ -32,8 +40,13 @@ export const SHAPE_LABEL: Record<Shape, string> = {
   triangle: "triângulo",
   rectH: "retângulo horizontal",
   rectV: "retângulo vertical",
-  star: "estrela",
-  heart: "coração",
+  pentagon: "pentágono",
+  diamond: "losango",
+  hexagon: "hexágono",
+  trapezoid: "trapézio",
+  triIsosceles: "triângulo isósceles",
+  triScalene: "triângulo escaleno",
+  triEquilateral: "triângulo equilátero",
 };
 
 // Four size steps (in pixels of the visual box)
@@ -114,25 +127,25 @@ function genMode1(qInLevel: number): Mode1Question {
 }
 
 /* ---------- Mode 2: shape matching ---------- */
-function genMode2(qInLevel: number): Mode2Question {
+function genMode2(qInLevel: number, pool: Shape[] = SHAPES): Mode2Question {
   const slotCount = qInLevel <= 1 ? 1 : qInLevel <= 3 ? 2 : 3;
-  const chosen = shuffle([...SHAPES]).slice(0, slotCount);
+  const chosen = shuffle([...pool]).slice(0, slotCount);
   const slots: Mode2Slot[] = chosen.map((s) => ({ id: uid(), shape: s }));
   const correctPieces = chosen.map((s) => newPiece(s));
-  const otherShapes = SHAPES.filter((s) => !chosen.includes(s));
+  const otherShapes = pool.filter((s) => !chosen.includes(s));
   const distractorCount = Math.max(2, slotCount + 1);
   const distractors: Piece[] = Array.from({ length: distractorCount }, () =>
-    newPiece(otherShapes.length ? rand(otherShapes) : rand(SHAPES)),
+    newPiece(otherShapes.length ? rand(otherShapes) : rand(pool)),
   );
   return { mode: 2, slots, pieces: shuffle([...correctPieces, ...distractors]) };
 }
 
 /* ---------- Mode 3: shape + size ---------- */
-function genMode3(qInLevel: number): Mode3Question {
+function genMode3(qInLevel: number, pool: Shape[] = SHAPES): Mode3Question {
   const slotCount = qInLevel <= 1 ? 1 : qInLevel <= 3 ? 2 : 3;
   const slots: Mode3Slot[] = Array.from({ length: slotCount }, () => ({
     id: uid(),
-    shape: rand(SHAPES),
+    shape: rand(pool),
     size: ri(4) as SizeIdx,
   }));
   const correctPieces = slots.map((sl) => {
@@ -141,24 +154,22 @@ function genMode3(qInLevel: number): Mode3Question {
     do { sz = ri(4) as SizeIdx; } while (sz === sl.size);
     return newPiece(sl.shape, undefined, sz);
   });
-  const extras: Piece[] = Array.from({ length: slotCount + 2 }, () => newPiece());
+  const extras: Piece[] = Array.from({ length: slotCount + 2 }, () => newPiece(rand(pool)));
   return { mode: 3, slots, pieces: shuffle([...correctPieces, ...extras]) };
 }
 
 /**
  * Level → mode mapping:
- *   1 → mode 1, 2 → mode 2, 3 → mode 3, 4+ → alternate
+ *   1 → cores, 2 → formas, 3 → forma + tamanho,
+ *   4+ → formas avançadas (pentágono, losango, hexágono, trapézio, triângulos)
  */
 export function generateQuestion(level: number, qInLevel: number, prevMode?: 1 | 2 | 3): Question {
-  let mode: 1 | 2 | 3;
-  if (level === 1) mode = 1;
-  else if (level === 2) mode = 2;
-  else if (level === 3) mode = 3;
-  else {
-    const opts: (1 | 2 | 3)[] = [1, 2, 3];
-    const filtered = prevMode ? opts.filter((m) => m !== prevMode) : opts;
-    mode = filtered[ri(filtered.length)];
+  if (level >= 4) {
+    const pool = ADVANCED_SHAPES;
+    const mode: 2 | 3 = prevMode === 2 ? 3 : prevMode === 3 ? 2 : (ri(2) + 2) as 2 | 3;
+    return mode === 2 ? genMode2(qInLevel, pool) : genMode3(qInLevel, pool);
   }
+  const mode: 1 | 2 | 3 = level === 1 ? 1 : level === 2 ? 2 : 3;
   if (mode === 1) return genMode1(qInLevel);
   if (mode === 2) return genMode2(qInLevel);
   return genMode3(qInLevel);

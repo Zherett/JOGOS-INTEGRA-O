@@ -42,18 +42,13 @@ export function ShapeSvg({ shape, color = "azul", size, outline = false, classNa
       {shape === "triangle" && <polygon points="50,8 92,88 8,88" {...commonProps} />}
       {shape === "rectH" && <rect x="4" y="28" width="92" height="44" rx="8" {...commonProps} />}
       {shape === "rectV" && <rect x="28" y="4" width="44" height="92" rx="8" {...commonProps} />}
-      {shape === "star" && (
-        <polygon
-          points="50,6 61,38 95,38 67,58 78,92 50,72 22,92 33,58 5,38 39,38"
-          {...commonProps}
-        />
-      )}
-      {shape === "heart" && (
-        <path
-          d="M50 88 C 10 62, 10 22, 32 22 C 44 22, 50 32, 50 42 C 50 32, 56 22, 68 22 C 90 22, 90 62, 50 88 Z"
-          {...commonProps}
-        />
-      )}
+      {shape === "pentagon" && <polygon points="50,6 94,38 77,90 23,90 6,38" {...commonProps} />}
+      {shape === "diamond" && <polygon points="50,4 92,50 50,96 8,50" {...commonProps} />}
+      {shape === "hexagon" && <polygon points="28,10 72,10 94,50 72,90 28,90 6,50" {...commonProps} />}
+      {shape === "trapezoid" && <polygon points="26,18 74,18 94,84 6,84" {...commonProps} />}
+      {shape === "triIsosceles" && <polygon points="50,10 84,88 16,88" {...commonProps} />}
+      {shape === "triScalene" && <polygon points="18,14 94,62 6,90" {...commonProps} />}
+      {shape === "triEquilateral" && <polygon points="50,12 88,80 12,80" {...commonProps} />}
     </svg>
   );
 }
