@@ -8,7 +8,10 @@ import { TeamSetup } from "./TeamSetup";
 import { TeamScoreBar, TeamResults } from "./TeamScoreBar";
 import { NORMAL_CONFIG, type TeamConfig } from "@/lib/teams";
 import { Countdown } from "./Countdown";
-import { useCountdown } from "@/lib/use-countdown";
+import { useRoundClock } from "@/lib/use-countdown";
+import { GameTopBar } from "./GameTopBar";
+import { BonusTimeToggle } from "./BonusTimeToggle";
+import { useTeamSession } from "@/lib/use-team-session";
 import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
 
 const DURATION = 120;
@@ -71,7 +74,8 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
   const [phase, setPhase] = useState<Phase>("setup");
   const [difficulty, setDifficulty] = useState<Difficulty>("facil");
   const [teamConfig, setTeamConfig] = useState<TeamConfig>(NORMAL_CONFIG);
-  const [teamScores, setTeamScores] = useState<number[]>([]);
+  const team = useTeamSession();
+  const [bonusOn, setBonusOn] = useState(true);
   const [runId, setRunId] = useState(0);
   const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
   const diffRef = useRef(DIFFICULTY.facil);
@@ -81,7 +85,6 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
 
   const [finished, setFinished] = useState(false);
   const [running, setRunning] = useState(false);
-  const [score, setScore] = useState(0);
   const [correct, setCorrect] = useState(0);
   const [wrong, setWrong] = useState(0);
   const [level, setLevel] = useState(1);
@@ -95,7 +98,9 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
   const seqRef = useRef<Color[]>([]);
   const timeoutsRef = useRef<number[]>([]);
 
-  const time = useCountdown(DURATION, running, () => {
+  const score = correct * POINTS_CORRECT - wrong * POINTS_WRONG;
+
+  const clock = useRoundClock(DURATION, running, () => {
     setRunning(false);
     setFinished(true);
     clearTimeouts();
@@ -121,7 +126,8 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
 
   function startGame() {
     clearTimeouts();
-    setScore(0); setCorrect(0); setWrong(0); setLevel(1); setBestStreak(0);
+    team.begin(teamConfig);
+    setCorrect(0); setWrong(0); setLevel(1); setBestStreak(0);
     setFinished(false);
     setRunId((r) => r + 1);
     const first = randomSeq(DIFFICULTY[difficulty].startLen);
@@ -145,6 +151,12 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
     setRunning(false);
     setFinished(false);
     setPhase("setup");
+  }
+
+  function finishSession() {
+    team.finish();
+    setBonusOn(true);
+    backToSetup();
   }
 
   function playSequence(sequence: Color[], onDone?: () => void) {
@@ -185,7 +197,6 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
       setSub("wrong");
       setUserIdx(0);
       setWrong((w) => w + 1);
-      setScore((s) => Math.max(0, s - POINTS_WRONG));
       setShake(true);
       playTone(120, 0.5, "sawtooth");
       window.setTimeout(() => setShake(false), 450);
@@ -208,7 +219,7 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
       // Full sequence correct
       setSub("correct");
       setCorrect((n) => n + 1);
-      setScore((s) => s + POINTS_CORRECT);
+      if (bonusOn) clock.addBonus();
       const newLen = seqRef.current.length + 1;
       setBestStreak((b) => Math.max(b, seqRef.current.length));
       setLevel((l) => l + 1);
@@ -235,6 +246,10 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
         onStart={startGame}
         onExit={onExit}
         lastMatch={lastMatch}
+        sessionActive={team.activeSession}
+        onFinishSession={finishSession}
+        bonusTime={bonusOn}
+        onBonusTimeChange={setBonusOn}
       >
         <div className="space-y-4">
           <div>
@@ -253,7 +268,7 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
             </p>
           </div>
 
-          <TeamSetup value={teamConfig} onChange={setTeamConfig} />
+          <TeamSetup value={teamConfig} onChange={setTeamConfig} locked={team.activeSession} />
 
         <div className="rounded-2xl border bg-secondary/40 p-4 text-sm text-secondary-foreground">
           <p className="font-semibold mb-1">Como jogar</p>
@@ -272,7 +287,7 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
   if (phase === "countdown") {
     return (
       <div className="space-y-4">
-        <TopBar onExit={onExit} />
+        <GameTopBar title="Memória das Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
         <Countdown onDone={startGame} />
       </div>
     );
@@ -281,12 +296,12 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
   if (finished) {
     return (
       <div className="space-y-4">
-        <TopBar onExit={onExit} />
+        <GameTopBar title="Memória das Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
         <ResultPanel
           score={score} correct={correct} wrong={wrong} level={level}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />
-        <TeamResults config={teamConfig} scores={teamScores} />
+        <TeamResults session={team} />
       </div>
     );
   }
@@ -300,9 +315,10 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
 
   return (
     <div className="space-y-4">
-      <TopBar onExit={onExit} />
-      <GameHud time={time} score={score} level={level} streak={bestStreak} />
-      <TeamScoreBar key={runId} config={teamConfig} score={score} onScoresChange={setTeamScores} />
+      <GameTopBar title="Memória das Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+      <GameHud time={clock.time} score={score} level={level} streak={bestStreak} />
+      <BonusTimeToggle value={bonusOn} onChange={setBonusOn} earned={clock.bonus} />
+      <TeamScoreBar key={runId} session={team} score={score} />
 
       <div className={`relative rounded-3xl border bg-card p-4 sm:p-8 shadow-lg ${shake ? "animate-shake-x" : ""}`}>
         <div className="text-center text-sm text-muted-foreground mb-3">
@@ -361,14 +377,3 @@ function Quadrant({
   );
 }
 
-function TopBar({ onExit }: { onExit: () => void }) {
-  return (
-    <div className="flex items-center justify-between">
-      <Button variant="ghost" onClick={onExit} className="rounded-xl">
-        <ArrowLeft className="mr-2 h-4 w-4" /> Menu
-      </Button>
-      <div className="font-display text-lg sm:text-xl font-bold">Memória das Cores</div>
-      <div className="w-20" />
-    </div>
-  );
-}

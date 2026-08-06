@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, X, ArrowLeft } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GameHud } from "./GameHud";
 import { ResultPanel } from "./ResultPanel";
 import { StartScreen, OptionChip } from "./StartScreen";
 import { Countdown } from "./Countdown";
-import { useCountdown } from "@/lib/use-countdown";
+import { useRoundClock } from "@/lib/use-countdown";
+import { GameTopBar } from "./GameTopBar";
+import { BonusTimeToggle } from "./BonusTimeToggle";
+import { useTeamSession } from "@/lib/use-team-session";
 import { generateBalanced, type Question, type OpKind, ALL_OPS } from "@/lib/logic-questions";
 import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
 import { TeamSetup } from "./TeamSetup";
@@ -35,7 +38,8 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
   const [ops, setOps] = useState<OpKind[]>([...ALL_OPS]);
   const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
   const [teamConfig, setTeamConfig] = useState<TeamConfig>(NORMAL_CONFIG);
-  const [teamScores, setTeamScores] = useState<number[]>([]);
+  const team = useTeamSession();
+  const [bonusOn, setBonusOn] = useState(true);
   const [runId, setRunId] = useState(0);
 
   useEffect(() => {
@@ -44,7 +48,6 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
 
   const [finished, setFinished] = useState(false);
   const [running, setRunning] = useState(false);
-  const [score, setScore] = useState(0);
   const [correct, setCorrect] = useState(0);
   const [wrong, setWrong] = useState(0);
   const [level, setLevel] = useState(1);
@@ -57,7 +60,10 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
   const recentAnswers = useRef<boolean[]>([]);
   const lockRef = useRef(false);
 
-  const time = useCountdown(DURATION, running, () => {
+  // Derived score keeps hits and misses always in sync.
+  const score = correct * POINTS_CORRECT - wrong * POINTS_WRONG;
+
+  const clock = useRoundClock(DURATION, running, () => {
     setRunning(false);
     setFinished(true);
   });
@@ -79,9 +85,10 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
 
   function startGame() {
     setRunId((r) => r + 1);
+    team.begin(teamConfig);
     recentTexts.current = [];
     recentAnswers.current = [];
-    setScore(0); setCorrect(0); setWrong(0); setLevel(1); setStreak(0);
+    setCorrect(0); setWrong(0); setLevel(1); setStreak(0);
     setFinished(false);
     setQuestion(generateBalanced(1, [], [], ops));
     setPhase("playing");
@@ -95,6 +102,14 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
   }
 
   function backToSetup() {
+    setRunning(false);
+    setFinished(false);
+    setPhase("setup");
+  }
+
+  function finishSession() {
+    team.finish();
+    setBonusOn(true);
     setRunning(false);
     setFinished(false);
     setPhase("setup");
@@ -117,8 +132,8 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
 
     if (ok) {
       setFeedback("correct");
-      setScore((s) => s + POINTS_CORRECT);
       setCorrect((c) => c + 1);
+      if (bonusOn) clock.addBonus();
       const newStreak = streak + 1;
       const willLevelUp = newStreak >= LEVEL_UP_STREAK && level < MAX_LEVEL;
       if (willLevelUp) {
@@ -142,7 +157,6 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
       }
     } else {
       setFeedback("wrong");
-      setScore((s) => Math.max(0, s - POINTS_WRONG));
       setWrong((w) => w + 1);
       setStreak(0);
       setTimeout(() => {
@@ -162,9 +176,13 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
         onExit={onExit}
         disabled={ops.length === 0}
         lastMatch={lastMatch}
+        sessionActive={team.activeSession}
+        onFinishSession={finishSession}
+        bonusTime={bonusOn}
+        onBonusTimeChange={setBonusOn}
       >
         <div className="mb-4">
-          <TeamSetup value={teamConfig} onChange={setTeamConfig} />
+          <TeamSetup value={teamConfig} onChange={setTeamConfig} locked={team.activeSession} />
         </div>
         <div>
           <div className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 text-center">
@@ -188,7 +206,7 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
   if (phase === "countdown") {
     return (
       <div className="space-y-4">
-        <TopBar onExit={onExit} />
+        <GameTopBar title="Lógica Matemática" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
         <Countdown onDone={startGame} />
       </div>
     );
@@ -197,12 +215,12 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
   if (finished) {
     return (
       <div className="space-y-4">
-        <TopBar onExit={onExit} />
+        <GameTopBar title="Lógica Matemática" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
         <ResultPanel
           score={score} correct={correct} wrong={wrong} level={level}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />
-        <TeamResults config={teamConfig} scores={teamScores} />
+        <TeamResults session={team} />
       </div>
     );
   }
@@ -211,9 +229,10 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
 
   return (
     <div className="space-y-4">
-      <TopBar onExit={onExit} />
-      <GameHud time={time} score={score} level={level} streak={streak} />
-      <TeamScoreBar key={runId} config={teamConfig} score={score} onScoresChange={setTeamScores} />
+      <GameTopBar title="Lógica Matemática" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+      <GameHud time={clock.time} score={score} level={level} streak={streak} />
+      <BonusTimeToggle value={bonusOn} onChange={setBonusOn} earned={clock.bonus} />
+      <TeamScoreBar key={runId} session={team} score={score} />
 
       <div className={`relative rounded-3xl border bg-card p-6 sm:p-10 shadow-lg overflow-hidden ${flashClass}`}>
         {showLevelUp && (
@@ -266,14 +285,3 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
   );
 }
 
-function TopBar({ onExit }: { onExit: () => void }) {
-  return (
-    <div className="flex items-center justify-between">
-      <Button variant="ghost" onClick={onExit} className="rounded-xl">
-        <ArrowLeft className="mr-2 h-4 w-4" /> Menu
-      </Button>
-      <div className="font-display text-lg sm:text-xl font-bold">Lógica Matemática</div>
-      <div className="w-20" />
-    </div>
-  );
-}

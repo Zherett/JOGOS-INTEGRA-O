@@ -1,7 +1,9 @@
-import { Play, ArrowLeft } from "lucide-react";
+import { Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { LastMatch } from "@/lib/game-storage";
 import { LastMatchCard } from "./LastMatchCard";
+import { GameTopBar } from "./GameTopBar";
+import { BonusTimeToggle } from "./BonusTimeToggle";
 
 interface Props {
   title: string;
@@ -11,18 +13,19 @@ interface Props {
   children?: React.ReactNode;
   disabled?: boolean;
   lastMatch?: LastMatch | null;
+  sessionActive?: boolean;
+  onFinishSession?: () => void;
+  bonusTime?: boolean;
+  onBonusTimeChange?: (v: boolean) => void;
 }
 
-export function StartScreen({ title, description, onStart, onExit, children, disabled, lastMatch }: Props) {
+export function StartScreen({
+  title, description, onStart, onExit, children, disabled, lastMatch,
+  sessionActive, onFinishSession, bonusTime, onBonusTimeChange,
+}: Props) {
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <Button variant="ghost" onClick={onExit} className="rounded-xl">
-          <ArrowLeft className="mr-2 h-4 w-4" /> Menu
-        </Button>
-        <div className="font-display text-lg sm:text-xl font-bold">{title}</div>
-        <div className="w-20" />
-      </div>
+      <GameTopBar title={title} onExit={onExit} sessionActive={sessionActive} onFinishSession={onFinishSession} />
 
       <div className="mx-auto max-w-2xl rounded-3xl border bg-card p-6 sm:p-10 shadow-xl animate-pop-in">
         <div className="text-center">
@@ -33,6 +36,12 @@ export function StartScreen({ title, description, onStart, onExit, children, dis
         {lastMatch && (
           <div className="mt-6">
             <LastMatchCard match={lastMatch} />
+          </div>
+        )}
+
+        {typeof bonusTime === "boolean" && onBonusTimeChange && (
+          <div className="mt-6">
+            <BonusTimeToggle value={bonusTime} onChange={onBonusTimeChange} className="w-full" />
           </div>
         )}
 
