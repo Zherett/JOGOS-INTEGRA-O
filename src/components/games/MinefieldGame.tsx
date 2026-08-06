@@ -61,7 +61,6 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
   const [finished, setFinished] = useState(false);
 
   const timerRef = useRef<number | null>(null);
-  const teamCount = teamConfig.mode === "equipes" ? teamConfig.teams.length : 0;
 
   function clearTimer() {
     if (timerRef.current) { window.clearInterval(timerRef.current); timerRef.current = null; }
@@ -187,6 +186,8 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
         onStart={startGame}
         onExit={onExit}
         lastMatch={lastMatch}
+        sessionActive={team.activeSession}
+        onFinishSession={finishSession}
       >
         <div className="space-y-4">
           <TeamSetup value={teamConfig} onChange={setTeamConfig} locked={team.activeSession} />
