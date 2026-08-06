@@ -8,6 +8,8 @@ import { TeamSetup } from "./TeamSetup";
 import { TeamScoreBar, TeamResults } from "./TeamScoreBar";
 import { ShapeSvg } from "./ShapeSvg";
 import { NORMAL_CONFIG, type TeamConfig } from "@/lib/teams";
+import { GameTopBar } from "./GameTopBar";
+import { useTeamSession } from "@/lib/use-team-session";
 import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
 import {
   buildBoard,
@@ -39,8 +41,7 @@ function beep(freq: number, dur = 0.14, type: OscillatorType = "sine", vol = 0.0
 export function MinefieldGame({ onExit, onStatsChange }: Props) {
   const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("setup");
   const [teamConfig, setTeamConfig] = useState<TeamConfig>(NORMAL_CONFIG);
-  const [activeTeam, setActiveTeam] = useState(0);
-  const [teamScores, setTeamScores] = useState<number[]>([]);
+  const team = useTeamSession();
   const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
   const [runId, setRunId] = useState(0);
 
@@ -88,11 +89,12 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
     setActiveTeam(0);
     setFinished(false);
     setRunId((r) => r + 1);
+    team.begin(teamConfig);
     setPhase("playing");
   }
 
   function nextTeam() {
-    if (teamCount > 1) setActiveTeam((t) => (t + 1) % teamCount);
+    if (team.order.length > 1) team.setCurrent((team.current + 1) % team.order.length);
   }
 
   function openCell(card: MineCard) {
@@ -170,6 +172,11 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
     setPhase("setup");
   }
 
+  function finishSession() {
+    team.finish();
+    backToSetup();
+  }
+
   const remainingCards = useMemo(() => board.length - revealed.size, [board, revealed]);
 
   if (phase === "setup") {
@@ -182,7 +189,7 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
         lastMatch={lastMatch}
       >
         <div className="space-y-4">
-          <TeamSetup value={teamConfig} onChange={setTeamConfig} />
+          <TeamSetup value={teamConfig} onChange={setTeamConfig} locked={team.activeSession} />
           <div className="rounded-2xl border bg-secondary/40 p-4 text-sm">
             <p className="font-semibold mb-1">Como jogar</p>
             <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
@@ -201,7 +208,7 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
   if (phase === "countdown") {
     return (
       <div className="space-y-4">
-        <TopBar onExit={onExit} />
+        <GameTopBar title="Campo Minado Lógico" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
         <Countdown onDone={startGame} />
       </div>
     );
@@ -210,19 +217,19 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
   if (finished) {
     return (
       <div className="space-y-4">
-        <TopBar onExit={onExit} />
+        <GameTopBar title="Campo Minado Lógico" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
         <ResultPanel
           score={score} correct={correct} wrong={wrong} level={1}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />
-        <TeamResults config={teamConfig} scores={teamScores} />
+        <TeamResults session={team} />
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
-      <TopBar onExit={onExit} />
+      <GameTopBar title="Campo Minado Lógico" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <Stat icon={<Trophy className="h-4 w-4" />} label="Pontos" value={String(score)} />
@@ -231,14 +238,7 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
         <Stat icon={<LayoutGrid className="h-4 w-4" />} label="Cartas" value={String(remainingCards)} />
       </div>
 
-      <TeamScoreBar
-        key={runId}
-        config={teamConfig}
-        score={score}
-        activeIndex={activeTeam}
-        onActiveChange={setActiveTeam}
-        onScoresChange={setTeamScores}
-      />
+      <TeamScoreBar key={runId} session={team} score={score} />
 
       <div className="rounded-3xl border bg-card p-2 sm:p-4 shadow-lg">
         <div className="mx-auto w-full max-w-[560px]">
@@ -384,14 +384,3 @@ function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; va
   );
 }
 
-function TopBar({ onExit }: { onExit: () => void }) {
-  return (
-    <div className="flex items-center justify-between">
-      <Button variant="ghost" onClick={onExit} className="rounded-xl">
-        <ArrowLeft className="mr-2 h-4 w-4" /> Menu
-      </Button>
-      <div className="font-display text-lg sm:text-xl font-bold">Campo Minado Lógico</div>
-      <div className="w-20" />
-    </div>
-  );
-}
