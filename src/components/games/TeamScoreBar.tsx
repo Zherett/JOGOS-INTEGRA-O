@@ -1,46 +1,25 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { Users } from "lucide-react";
-import type { TeamConfig } from "@/lib/teams";
+import type { TeamSession } from "@/lib/use-team-session";
 
 interface Props {
-  config: TeamConfig;
+  session: TeamSession;
   /** Current total score of the run; deltas are credited to the active team. */
   score: number;
-  /** Optional external control of the active team index. */
-  activeIndex?: number;
-  onActiveChange?: (i: number) => void;
-  /** Notify the parent when team scores change (for results screens). */
-  onScoresChange?: (scores: number[]) => void;
 }
 
-export function TeamScoreBar({ config, score, activeIndex, onActiveChange, onScoresChange }: Props) {
-  const [internalActive, setInternalActive] = useState(0);
-  const active = activeIndex ?? internalActive;
-  const [scores, setScores] = useState<number[]>(() => config.teams.map(() => 0));
+export function TeamScoreBar({ session, score }: Props) {
   const prev = useRef(score);
-  const activeRef = useRef(active);
-  activeRef.current = active;
-  const changeRef = useRef(onScoresChange);
-  changeRef.current = onScoresChange;
+  const creditRef = useRef(session.credit);
+  creditRef.current = session.credit;
 
   useEffect(() => {
     const delta = score - prev.current;
     prev.current = score;
-    if (!delta) return;
-    setScores((s) => {
-      const next = [...s];
-      next[activeRef.current] = (next[activeRef.current] ?? 0) + delta;
-      changeRef.current?.(next);
-      return next;
-    });
+    if (delta) creditRef.current(delta);
   }, [score]);
 
-  if (config.mode !== "equipes" || config.teams.length === 0) return null;
-
-  function select(i: number) {
-    setInternalActive(i);
-    onActiveChange?.(i);
-  }
+  if (!session.activeSession) return null;
 
   return (
     <div className="rounded-2xl border bg-card p-3 shadow-sm">
@@ -48,20 +27,22 @@ export function TeamScoreBar({ config, score, activeIndex, onActiveChange, onSco
         <Users className="h-4 w-4" /> Equipe da vez — toque para trocar
       </div>
       <div className="flex flex-wrap gap-2">
-        {config.teams.map((t, i) => (
+        {session.order.map((t, i) => (
           <button
             key={t + i}
             type="button"
-            onClick={() => select(i)}
+            onClick={() => session.setCurrent(i)}
             className={`rounded-xl border-2 px-3 py-2 text-left transition-all ${
-              i === active
+              i === session.current
                 ? "border-primary bg-primary text-primary-foreground shadow-md scale-[1.03]"
                 : "border-border bg-background hover:bg-secondary"
             }`}
           >
-            <div className="font-display text-sm font-bold leading-tight">{t}</div>
-            <div className={`text-xs ${i === active ? "opacity-90" : "text-muted-foreground"}`}>
-              {scores[i] ?? 0} pts
+            <div className="font-display text-sm font-bold leading-tight">
+              {i + 1}º • {t}
+            </div>
+            <div className={`text-xs ${i === session.current ? "opacity-90" : "text-muted-foreground"}`}>
+              {session.scores[i] ?? 0} pts
             </div>
           </button>
         ))}
@@ -70,10 +51,10 @@ export function TeamScoreBar({ config, score, activeIndex, onActiveChange, onSco
   );
 }
 
-export function TeamResults({ config, scores }: { config: TeamConfig; scores: number[] }) {
-  if (config.mode !== "equipes" || config.teams.length === 0) return null;
-  const ranked = config.teams
-    .map((name, i) => ({ name, score: scores[i] ?? 0 }))
+export function TeamResults({ session }: { session: TeamSession }) {
+  if (!session.activeSession) return null;
+  const ranked = session.order
+    .map((name, i) => ({ name, score: session.scores[i] ?? 0 }))
     .sort((a, b) => b.score - a.score);
   return (
     <div className="mx-auto max-w-2xl rounded-3xl border bg-card p-5 shadow-md">
@@ -93,6 +74,9 @@ export function TeamResults({ config, scores }: { config: TeamConfig; scores: nu
           </div>
         ))}
       </div>
+      <p className="mt-3 text-center text-xs text-muted-foreground">
+        O placar acumula entre as rodadas até você tocar em "Finalizar jogo".
+      </p>
     </div>
   );
 }
