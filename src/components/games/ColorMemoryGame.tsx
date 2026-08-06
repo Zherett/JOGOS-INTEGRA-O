@@ -153,6 +153,12 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
     setPhase("setup");
   }
 
+  function finishSession() {
+    team.finish();
+    setBonusOn(true);
+    backToSetup();
+  }
+
   function playSequence(sequence: Color[], onDone?: () => void) {
     setSub("showing");
     setActive(null);
@@ -240,6 +246,10 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
         onStart={startGame}
         onExit={onExit}
         lastMatch={lastMatch}
+        sessionActive={team.activeSession}
+        onFinishSession={finishSession}
+        bonusTime={bonusOn}
+        onBonusTimeChange={setBonusOn}
       >
         <div className="space-y-4">
           <div>
