@@ -1,21 +1,24 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { GameHud } from "./GameHud";
 import { ResultPanel } from "./ResultPanel";
 import { CartesianPlane } from "./CartesianPlane";
 import { StartScreen, OptionChip } from "./StartScreen";
 import { Countdown } from "./Countdown";
-import { useCountdown } from "@/lib/use-countdown";
+import { GameTopBar } from "./GameTopBar";
+import { BonusTimeToggle } from "./BonusTimeToggle";
+import { useRoundClock } from "@/lib/use-countdown";
 import { generateCartQuestion, type CartQuestion } from "@/lib/cart-questions";
 import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
 import { TeamSetup } from "./TeamSetup";
 import { TeamScoreBar, TeamResults } from "./TeamScoreBar";
 import { NORMAL_CONFIG, type TeamConfig } from "@/lib/teams";
+import { useTeamSession } from "@/lib/use-team-session";
 
 const DURATION = 120;
 const LEVEL_UP_STREAK = 4;
 const MAX_LEVEL = 2;
+const POINTS_CORRECT = 10;
+const POINTS_WRONG = 5;
 
 interface Props {
   onExit: () => void;
@@ -32,7 +35,8 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
   const [planeSize, setPlaneSize] = useState<PlaneSize>(8);
   const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
   const [teamConfig, setTeamConfig] = useState<TeamConfig>(NORMAL_CONFIG);
-  const [teamScores, setTeamScores] = useState<number[]>([]);
+  const team = useTeamSession();
+  const [bonusOn, setBonusOn] = useState(true);
   const [runId, setRunId] = useState(0);
   const range = sizeToRange(planeSize);
 
@@ -42,7 +46,6 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
 
   const [running, setRunning] = useState(false);
   const [finished, setFinished] = useState(false);
-  const [score, setScore] = useState(0);
   const [correct, setCorrect] = useState(0);
   const [wrong, setWrong] = useState(0);
   const [level, setLevel] = useState(1);
@@ -52,7 +55,10 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
   const [showLevelUp, setShowLevelUp] = useState<number | null>(null);
   const lockRef = useRef(false);
 
-  const time = useCountdown(DURATION, running, () => {
+  // Score is always derived from hits/misses so errors are never lost.
+  const score = correct * POINTS_CORRECT - wrong * POINTS_WRONG;
+
+  const clock = useRoundClock(DURATION, running, () => {
     setRunning(false);
     setFinished(true);
   });
@@ -70,7 +76,8 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
 
   function startGame() {
     setRunId((r) => r + 1);
-    setScore(0); setCorrect(0); setWrong(0); setLevel(1); setStreak(0);
+    team.begin(teamConfig);
+    setCorrect(0); setWrong(0); setLevel(1); setStreak(0);
     setSelected(null); setFinished(false);
     setQuestion(generateCartQuestion(1, range));
     setPhase("playing");
@@ -87,6 +94,14 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
     setRunning(false); setFinished(false); setPhase("setup");
   }
 
+  function finishSession() {
+    team.finish();
+    setBonusOn(true);
+    setRunning(false);
+    setFinished(false);
+    setPhase("setup");
+  }
+
   function nextQuestion(lvl: number) {
     setSelected(null);
     setQuestion(generateCartQuestion(lvl, range));
@@ -98,23 +113,21 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
     setSelected(idx);
     const ok = idx === question.correctIndex;
     if (ok) {
-      setScore((s) => s + 10);
       setCorrect((c) => c + 1);
-      setStreak((s) => {
-        const next = s + 1;
-        if (next >= LEVEL_UP_STREAK && level < MAX_LEVEL) {
-          const nl = level + 1;
-          setLevel(nl);
-          setShowLevelUp(nl);
-          setTimeout(() => setShowLevelUp(null), 1100);
-          setTimeout(() => { nextQuestion(nl); lockRef.current = false; }, 700);
-          return 0;
-        }
-        setTimeout(() => { nextQuestion(level); lockRef.current = false; }, 700);
-        return next;
-      });
+      if (bonusOn) clock.addBonus();
+      const next = streak + 1;
+      if (next >= LEVEL_UP_STREAK && level < MAX_LEVEL) {
+        const nl = level + 1;
+        setLevel(nl);
+        setStreak(0);
+        setShowLevelUp(nl);
+        setTimeout(() => setShowLevelUp(null), 1100);
+        setTimeout(() => { nextQuestion(nl); lockRef.current = false; }, 700);
+        return;
+      }
+      setStreak(next);
+      setTimeout(() => { nextQuestion(level); lockRef.current = false; }, 700);
     } else {
-      setScore((s) => Math.max(0, s - 5));
       setWrong((w) => w + 1);
       setStreak(0);
       setTimeout(() => { nextQuestion(level); lockRef.current = false; }, 800);
@@ -129,9 +142,13 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
         onStart={startGame}
         onExit={onExit}
         lastMatch={lastMatch}
+        sessionActive={team.activeSession}
+        onFinishSession={finishSession}
+        bonusTime={bonusOn}
+        onBonusTimeChange={setBonusOn}
       >
         <div className="mb-4">
-          <TeamSetup value={teamConfig} onChange={setTeamConfig} />
+          <TeamSetup value={teamConfig} onChange={setTeamConfig} locked={team.activeSession} />
         </div>
         <div>
           <div className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 text-center">
@@ -155,7 +172,7 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
   if (phase === "countdown") {
     return (
       <div className="space-y-4">
-        <TopBar onExit={onExit} />
+        <GameTopBar title="Plano Cartesiano" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
         <Countdown onDone={startGame} />
       </div>
     );
@@ -164,12 +181,12 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
   if (finished) {
     return (
       <div className="space-y-4">
-        <TopBar onExit={onExit} />
+        <GameTopBar title="Plano Cartesiano" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
         <ResultPanel
           score={score} correct={correct} wrong={wrong} level={level}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />
-        <TeamResults config={teamConfig} scores={teamScores} />
+        <TeamResults session={team} />
       </div>
     );
   }
@@ -179,9 +196,10 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
 
   return (
     <div className="space-y-4">
-      <TopBar onExit={onExit} />
-      <GameHud time={time} score={score} level={level} streak={streak} />
-      <TeamScoreBar key={runId} config={teamConfig} score={score} onScoresChange={setTeamScores} />
+      <GameTopBar title="Plano Cartesiano" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+      <GameHud time={clock.time} score={score} level={level} streak={streak} />
+      <BonusTimeToggle value={bonusOn} onChange={setBonusOn} earned={clock.bonus} />
+      <TeamScoreBar key={runId} session={team} score={score} />
 
       <div className="relative rounded-3xl border bg-card p-4 sm:p-6 shadow-lg overflow-hidden">
         {showLevelUp && (
@@ -245,18 +263,6 @@ export function CartesianGame({ onExit, onStatsChange }: Props) {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function TopBar({ onExit }: { onExit: () => void }) {
-  return (
-    <div className="flex items-center justify-between">
-      <Button variant="ghost" onClick={onExit} className="rounded-xl">
-        <ArrowLeft className="mr-2 h-4 w-4" /> Menu
-      </Button>
-      <div className="font-display text-lg sm:text-xl font-bold">Plano Cartesiano</div>
-      <div className="w-20" />
     </div>
   );
 }
