@@ -11,6 +11,8 @@ export interface TeamSession {
   credit: (delta: number) => void;
   /** Starts (or keeps) a session based on the chosen configuration. */
   begin: (config: TeamConfig) => void;
+  /** Moves the turn to the next team in the order. */
+  advance: () => void;
   /** Ends the session: order and scores are cleared. */
   finish: () => void;
 }
@@ -40,11 +42,19 @@ export function useTeamSession(): TeamSession {
     });
   }, []);
 
+  const advance = useCallback(() => {
+    setOrder((o) => {
+      if (o.length > 1) setCurrent((currentRef.current + 1) % o.length);
+      return o;
+    });
+  }, [setCurrent]);
+
   const finish = useCallback(() => {
     setOrder([]);
     setScores([]);
     setCurrent(0);
   }, [setCurrent]);
+
 
   const begin = useCallback(
     (config: TeamConfig) => {
@@ -73,6 +83,8 @@ export function useTeamSession(): TeamSession {
     setCurrent,
     credit,
     begin,
+    advance,
+
     finish,
   };
 }

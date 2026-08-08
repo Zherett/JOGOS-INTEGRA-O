@@ -23,6 +23,8 @@ import { useTeamSession } from "@/lib/use-team-session";
 import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
 import { TeamSetup } from "./TeamSetup";
 import { TeamScoreBar, TeamResults } from "./TeamScoreBar";
+import { SessionSummary } from "./SessionSummary";
+import { useSessionEnd } from "@/lib/use-session-end";
 import { NORMAL_CONFIG, type TeamConfig } from "@/lib/teams";
 import { ShapeSvg } from "./ShapeSvg";
 import {
@@ -252,6 +254,7 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
   }
 
   function replayWithCountdown() {
+    team.advance();
     setFinished(false);
     setRunning(false);
     setPhase("countdown");
@@ -262,13 +265,18 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
     setPhase("setup");
   }
 
-  function finishSession() {
-    team.finish();
-    setBonusOn(true);
-    backToSetup();
-  }
+  const sessionEnd = useSessionEnd(team, backToSetup);
 
   /* ------------------------------ Screens ------------------------------- */
+
+  if (sessionEnd.showing) {
+    return (
+      <div className="space-y-4">
+        <GameTopBar title="Formas e Cores" onExit={onExit} />
+        <SessionSummary title="Formas e Cores" session={team} onClose={sessionEnd.close} />
+      </div>
+    );
+  }
 
   if (phase === "setup") {
     return (
@@ -279,7 +287,7 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
         onExit={onExit}
         lastMatch={lastMatch}
         sessionActive={team.activeSession}
-        onFinishSession={finishSession}
+        onFinishSession={sessionEnd.request}
         bonusTime={bonusOn}
         onBonusTimeChange={setBonusOn}
       >
@@ -311,7 +319,7 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
   if (phase === "countdown") {
     return (
       <div className="space-y-4">
-        <GameTopBar title="Formas e Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+        <GameTopBar title="Formas e Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
         <Countdown onDone={startGame} />
       </div>
     );
@@ -320,7 +328,7 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
   if (finished) {
     return (
       <div className="space-y-4">
-        <GameTopBar title="Formas e Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+        <GameTopBar title="Formas e Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
         <ResultPanel
           score={score} correct={correct} wrong={wrong} level={level}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
@@ -335,7 +343,7 @@ export function ShapeColorGame({ onExit, onStatsChange }: Props) {
 
   return (
     <div className="space-y-4">
-      <GameTopBar title="Formas e Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+      <GameTopBar title="Formas e Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
       <Hud time={clock.time} score={score} level={level} qInLevel={qInLevel} />
       <BonusTimeToggle value={bonusOn} onChange={setBonusOn} earned={clock.bonus} />
       <TeamScoreBar key={runId} session={team} score={score} />
