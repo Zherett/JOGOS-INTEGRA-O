@@ -24,6 +24,8 @@ import { generateVariableQuestion, type VarQuestion } from "@/lib/variable-quest
 import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
 import { TeamSetup } from "./TeamSetup";
 import { TeamScoreBar, TeamResults } from "./TeamScoreBar";
+import { SessionSummary } from "./SessionSummary";
+import { useSessionEnd } from "@/lib/use-session-end";
 import { NORMAL_CONFIG, type TeamConfig } from "@/lib/teams";
 
 const DURATION = 120;
@@ -144,6 +146,7 @@ export function VariableHuntGame({ onExit, onStatsChange }: Props) {
   }
 
   function replayWithCountdown() {
+    team.advance();
     setFinished(false);
     setRunning(false);
     setPhase("countdown");
@@ -155,13 +158,7 @@ export function VariableHuntGame({ onExit, onStatsChange }: Props) {
     setPhase("setup");
   }
 
-  function finishSession() {
-    team.finish();
-    setBonusOn(true);
-    setRunning(false);
-    setFinished(false);
-    setPhase("setup");
-  }
+  const sessionEnd = useSessionEnd(team, backToSetup);
 
   function spawnSparkles() {
     const items = Array.from({ length: 10 }, (_, i) => ({
@@ -221,6 +218,15 @@ export function VariableHuntGame({ onExit, onStatsChange }: Props) {
     }
   }
 
+  if (sessionEnd.showing) {
+    return (
+      <div className="space-y-4">
+        <GameTopBar title="Caça às Variáveis" onExit={onExit} />
+        <SessionSummary title="Caça às Variáveis" session={team} onClose={sessionEnd.close} />
+      </div>
+    );
+  }
+
   if (phase === "setup") {
     return (
       <StartScreen
@@ -229,7 +235,7 @@ export function VariableHuntGame({ onExit, onStatsChange }: Props) {
         onStart={startGame}
         onExit={onExit}
         sessionActive={team.activeSession}
-        onFinishSession={finishSession}
+        onFinishSession={sessionEnd.request}
         bonusTime={bonusOn}
         onBonusTimeChange={setBonusOn}
         lastMatch={lastMatch}
@@ -263,7 +269,7 @@ export function VariableHuntGame({ onExit, onStatsChange }: Props) {
   if (phase === "countdown") {
     return (
       <div className="space-y-4">
-        <GameTopBar title="Caça às Variáveis" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+        <GameTopBar title="Caça às Variáveis" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
         <Countdown onDone={startGame} />
       </div>
     );
@@ -272,7 +278,7 @@ export function VariableHuntGame({ onExit, onStatsChange }: Props) {
   if (finished) {
     return (
       <div className="space-y-4">
-        <GameTopBar title="Caça às Variáveis" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+        <GameTopBar title="Caça às Variáveis" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
         <ResultPanel
           score={score} correct={correct} wrong={wrong} level={level}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
@@ -288,7 +294,7 @@ export function VariableHuntGame({ onExit, onStatsChange }: Props) {
 
   return (
     <div className="space-y-4">
-      <GameTopBar title="Caça às Variáveis" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+      <GameTopBar title="Caça às Variáveis" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
       <HudBar time={clock.time} score={score} level={level} lives={lives} streak={streak} />
       <BonusTimeToggle value={bonusOn} onChange={setBonusOn} earned={clock.bonus} />
       <TeamScoreBar key={runId} session={team} score={score} />

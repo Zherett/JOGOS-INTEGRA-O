@@ -6,13 +6,17 @@ export const ROWS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 export const POINTS_CORRECT = 5;
 export const POINTS_WRONG = 3;
-export const ANSWER_SECONDS = 30;
+export const ANSWER_SECONDS = 15;
+export const ANSWER_TIME_OPTIONS = [10, 15, 20] as const;
 
 export type CardKind = "tf" | "mystery" | "shape" | "bonus";
 
 export interface QuestionCard {
   kind: "tf" | "mystery" | "shape";
+  /** Question sentence, shown above the highlighted expression. */
   prompt: string;
+  /** Highlighted math expression (optional). */
+  expr?: string;
   options: string[];
   answer: string;
   shape?: Shape;
@@ -56,7 +60,8 @@ function genTF(): QuestionCard {
   }
   return {
     kind: "tf",
-    prompt: `${prompt} — Verdadeiro ou Falso?`,
+    prompt: "Verdadeiro ou Falso?",
+    expr: prompt,
     options: ["Verdadeiro", "Falso"],
     answer: truth ? "Verdadeiro" : "Falso",
   };
@@ -87,7 +92,8 @@ function genMystery(): QuestionCard {
   }
   return {
     kind: "mystery",
-    prompt: `Quanto vale X?  ${prompt}`,
+    prompt: "Qual o valor de X?",
+    expr: prompt,
     options: shuffle([...opts]).map(String),
     answer: String(x),
   };

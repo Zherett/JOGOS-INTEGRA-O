@@ -12,6 +12,8 @@ import { useTeamSession } from "@/lib/use-team-session";
 import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
 import { TeamSetup } from "./TeamSetup";
 import { TeamScoreBar, TeamResults } from "./TeamScoreBar";
+import { SessionSummary } from "./SessionSummary";
+import { useSessionEnd } from "@/lib/use-session-end";
 import { NORMAL_CONFIG, type TeamConfig } from "@/lib/teams";
 import {
   COLS, ROWS, COLOR_BG, COLOR_TEXT, COLOR_LABEL,
@@ -24,6 +26,19 @@ const LEVEL_UP_STREAK = 4;
 const MAX_LEVEL = 4;
 const POINTS_CORRECT = 10;
 const POINTS_WRONG = 5;
+
+function beep(freq: number, dur = 0.14, type: OscillatorType = "sine", vol = 0.07) {
+  try {
+    const AC = (window as unknown as { AudioContext: typeof AudioContext }).AudioContext;
+    const ctx = new AC();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = type; o.frequency.value = freq; g.gain.value = vol;
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + dur);
+    o.onended = () => ctx.close();
+  } catch { /* silent */ }
+}
 
 interface Props { onExit: () => void; onStatsChange: () => void }
 
@@ -80,6 +95,7 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
   }
 
   function replayWithCountdown() {
+    team.advance();
     setFinished(false); setRunning(false); setPhase("countdown");
   }
 
@@ -87,11 +103,7 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
     setRunning(false); setFinished(false); setPhase("setup");
   }
 
-  function finishSession() {
-    team.finish();
-    setBonusOn(true);
-    setRunning(false); setFinished(false); setPhase("setup");
-  }
+  const sessionEnd = useSessionEnd(team, backToSetup);
 
   function nextRound(lvl: number) {
     const b = randomBoard();
@@ -104,6 +116,8 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
   function resolve(ok: boolean, revealCoord?: Coord) {
     setFeedback(ok ? "correct" : "wrong");
     if (ok) {
+      beep(660, 0.1, "triangle");
+      window.setTimeout(() => beep(990, 0.16, "triangle"), 90);
       setCorrect((c) => c + 1);
       if (bonusOn) clock.addBonus();
       const next = streak + 1;
@@ -122,6 +136,7 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
       }
       setStreak(next);
     } else {
+      beep(170, 0.28, "sawtooth");
       setWrong((w) => w + 1);
       setStreak(0);
       if (revealCoord) setHighlight(revealCoord);
@@ -134,6 +149,7 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
 
   function onCellClick(col: number, row: number) {
     if (!running || !question || feedback) return;
+    beep(520, 0.06, "triangle", 0.05);
     if (question.kind !== "position") return;
     if (lockRef.current) return;
     lockRef.current = true;
@@ -162,6 +178,15 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
     resolve(ok, question.answer);
   }
 
+  if (sessionEnd.showing) {
+    return (
+      <div className="space-y-4">
+        <GameTopBar title="RoboGrid" onExit={onExit} />
+        <SessionSummary title="RoboGrid" session={team} onClose={sessionEnd.close} />
+      </div>
+    );
+  }
+
   if (phase === "setup") {
     return (
       <StartScreen
@@ -171,7 +196,7 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
         onExit={onExit}
         lastMatch={lastMatch}
         sessionActive={team.activeSession}
-        onFinishSession={finishSession}
+        onFinishSession={sessionEnd.request}
         bonusTime={bonusOn}
         onBonusTimeChange={setBonusOn}
       >
@@ -194,7 +219,7 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
   if (phase === "countdown") {
     return (
       <div className="space-y-2">
-        <GameTopBar title="RoboGrid" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+        <GameTopBar title="RoboGrid" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
         <Countdown onDone={startGame} />
       </div>
     );
@@ -203,7 +228,7 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
   if (finished) {
     return (
       <div className="space-y-4">
-        <GameTopBar title="RoboGrid" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+        <GameTopBar title="RoboGrid" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
         <ResultPanel
           score={score} correct={correct} wrong={wrong} level={level}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
@@ -219,7 +244,7 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
 
   return (
     <div className="space-y-2 sm:space-y-3">
-      <GameTopBar title="RoboGrid" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+      <GameTopBar title="RoboGrid" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
       <GameHud time={clock.time} score={score} level={level} streak={streak} />
       <BonusTimeToggle value={bonusOn} onChange={setBonusOn} earned={clock.bonus} />
       <TeamScoreBar key={runId} session={team} score={score} />

@@ -1,19 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Clock, Trophy, Target, XCircle, LayoutGrid, Flag } from "lucide-react";
+import { Clock, LayoutGrid, Flag, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { StartScreen } from "./StartScreen";
+import { StartScreen, OptionChip } from "./StartScreen";
 import { Countdown } from "./Countdown";
 import { ResultPanel } from "./ResultPanel";
 import { TeamSetup } from "./TeamSetup";
 import { TeamScoreBar, TeamResults } from "./TeamScoreBar";
+import { SessionSummary } from "./SessionSummary";
 import { ShapeSvg } from "./ShapeSvg";
-import { NORMAL_CONFIG, type TeamConfig } from "@/lib/teams";
+import { NORMAL_CONFIG, teamColor, TEAM_COLOR_CLASSES, type TeamConfig } from "@/lib/teams";
 import { GameTopBar } from "./GameTopBar";
 import { useTeamSession } from "@/lib/use-team-session";
+import { useSessionEnd } from "@/lib/use-session-end";
 import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
 import {
   buildBoard,
   ANSWER_SECONDS,
+  ANSWER_TIME_OPTIONS,
   POINTS_CORRECT,
   POINTS_WRONG,
   COLS,
@@ -38,12 +41,19 @@ function beep(freq: number, dur = 0.14, type: OscillatorType = "sine", vol = 0.0
   } catch { /* silent */ }
 }
 
+function fmt(sec: number) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 export function MinefieldGame({ onExit, onStatsChange }: Props) {
   const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("setup");
   const [teamConfig, setTeamConfig] = useState<TeamConfig>(NORMAL_CONFIG);
   const team = useTeamSession();
   const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
   const [runId, setRunId] = useState(0);
+  const [answerSeconds, setAnswerSeconds] = useState<number>(ANSWER_SECONDS);
 
   useEffect(() => { setLastMatch(loadLastMatch("minado")); }, []);
 
@@ -52,8 +62,9 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
   const [flipping, setFlipping] = useState<string | null>(null);
   const [openCard, setOpenCard] = useState<MineCard | null>(null);
   const [answered, setAnswered] = useState<{ chosen: string; ok: boolean } | null>(null);
-  const [timeLeft, setTimeLeft] = useState(ANSWER_SECONDS);
+  const [timeLeft, setTimeLeft] = useState(answerSeconds);
   const [toast, setToast] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
 
   const [score, setScore] = useState(0);
   const [correct, setCorrect] = useState(0);
@@ -66,6 +77,13 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
     if (timerRef.current) { window.clearInterval(timerRef.current); timerRef.current = null; }
   }
   useEffect(() => () => clearTimer(), []);
+
+  // Elapsed match clock
+  useEffect(() => {
+    if (phase !== "playing" || finished) return;
+    const id = window.setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [phase, finished]);
 
   useEffect(() => {
     if (finished) {
@@ -84,6 +102,7 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
     setRevealed(new Set());
     setOpenCard(null); setAnswered(null); setFlipping(null);
     setScore(0); setCorrect(0); setWrong(0);
+    setElapsed(0);
     setFinished(false);
     setRunId((r) => r + 1);
     team.begin(teamConfig);
@@ -91,7 +110,7 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
   }
 
   function nextTeam() {
-    if (team.order.length > 1) team.setCurrent((team.current + 1) % team.order.length);
+    team.advance();
   }
 
   function openCell(card: MineCard) {
@@ -103,6 +122,7 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
       setRevealed((r) => new Set(r).add(card.id));
       if (card.kind === "bonus") {
         setScore((s) => s + card.points);
+        team.credit(card.points);
         if (card.points >= 0) { setCorrect((c) => c + 1); beep(760, 0.16, "triangle"); }
         else { setWrong((w) => w + 1); beep(180, 0.2, "sawtooth"); }
         setToast(`${card.label}: ${card.points > 0 ? "+" : ""}${card.points} pontos`);
@@ -111,7 +131,7 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
       } else {
         setOpenCard(card);
         setAnswered(null);
-        setTimeLeft(ANSWER_SECONDS);
+        setTimeLeft(answerSeconds);
         clearTimer();
         timerRef.current = window.setInterval(() => {
           setTimeLeft((t) => {
@@ -127,6 +147,7 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
     setAnswered({ chosen: "", ok: false });
     setWrong((w) => w + 1);
     setScore((s) => s - POINTS_WRONG);
+    team.credit(-POINTS_WRONG);
     beep(160, 0.3, "sawtooth");
     window.setTimeout(closeCard, 1800);
   }
@@ -139,11 +160,13 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
     if (ok) {
       setScore((s) => s + POINTS_CORRECT);
       setCorrect((c) => c + 1);
+      team.credit(POINTS_CORRECT);
       beep(660, 0.1, "triangle");
       window.setTimeout(() => beep(990, 0.16, "triangle"), 90);
     } else {
       setScore((s) => s - POINTS_WRONG);
       setWrong((w) => w + 1);
+      team.credit(-POINTS_WRONG);
       beep(170, 0.28, "sawtooth");
     }
     window.setTimeout(closeCard, 1500);
@@ -161,6 +184,7 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
 
   function replayWithCountdown() {
     setFinished(false);
+    nextTeam();
     setPhase("countdown");
   }
   function backToSetup() {
@@ -169,12 +193,20 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
     setPhase("setup");
   }
 
-  function finishSession() {
-    team.finish();
-    backToSetup();
-  }
+  const sessionEnd = useSessionEnd(team, backToSetup);
 
   const remainingCards = useMemo(() => board.length - revealed.size, [board, revealed]);
+  const activeTeam = team.activeSession ? team.order[team.current] : undefined;
+  const colors = TEAM_COLOR_CLASSES[teamColor(activeTeam)];
+
+  if (sessionEnd.showing) {
+    return (
+      <div className="space-y-4">
+        <GameTopBar title="Campo Minado Lógico" onExit={onExit} />
+        <SessionSummary title="Campo Minado Lógico" session={team} onClose={sessionEnd.close} />
+      </div>
+    );
+  }
 
   if (phase === "setup") {
     return (
@@ -185,18 +217,32 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
         onExit={onExit}
         lastMatch={lastMatch}
         sessionActive={team.activeSession}
-        onFinishSession={finishSession}
+        onFinishSession={sessionEnd.request}
       >
         <div className="space-y-4">
           <TeamSetup value={teamConfig} onChange={setTeamConfig} locked={team.activeSession} />
+
+          <div>
+            <p className="mb-2 font-display font-bold">Tempo para responder</p>
+            <div className="grid grid-cols-3 gap-2">
+              {ANSWER_TIME_OPTIONS.map((t) => (
+                <OptionChip key={t} active={answerSeconds === t} onClick={() => setAnswerSeconds(t)}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <Timer className="h-4 w-4" /> {t}s
+                  </span>
+                </OptionChip>
+              ))}
+            </div>
+          </div>
+
           <div className="rounded-2xl border bg-secondary/40 p-4 text-sm">
             <p className="font-semibold mb-1">Como jogar</p>
             <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
               <li>Tabuleiro 8×8 com colunas A–H e linhas 1–8.</li>
               <li>Ao clicar, a carta vira e revela um desafio (V ou F, conta misteriosa ou forma geométrica).</li>
-              <li>Você tem 30 segundos para responder cada questão.</li>
+              <li>Você tem {answerSeconds} segundos para responder cada questão.</li>
               <li>Algumas cartas são bônus: valem de +1 a +3 ou de −1 a −3 pontos, sem pergunta.</li>
-              <li>No modo equipes, a vez passa automaticamente para a próxima equipe.</li>
+              <li>No modo equipes, a vez passa automaticamente e as cartas ficam na cor da equipe.</li>
             </ul>
           </div>
         </div>
@@ -207,7 +253,7 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
   if (phase === "countdown") {
     return (
       <div className="space-y-4">
-        <GameTopBar title="Campo Minado Lógico" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+        <GameTopBar title="Campo Minado Lógico" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
         <Countdown onDone={startGame} />
       </div>
     );
@@ -216,7 +262,7 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
   if (finished) {
     return (
       <div className="space-y-4">
-        <GameTopBar title="Campo Minado Lógico" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+        <GameTopBar title="Campo Minado Lógico" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
         <ResultPanel
           score={score} correct={correct} wrong={wrong} level={1}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
@@ -228,116 +274,129 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
 
   return (
     <div className="space-y-3">
-      <GameTopBar title="Campo Minado Lógico" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+      <GameTopBar title="Campo Minado Lógico" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <Stat icon={<Trophy className="h-4 w-4" />} label="Pontos" value={String(score)} />
-        <Stat icon={<Target className="h-4 w-4" />} label="Acertos" value={String(correct)} />
-        <Stat icon={<XCircle className="h-4 w-4" />} label="Erros" value={String(wrong)} />
-        <Stat icon={<LayoutGrid className="h-4 w-4" />} label="Cartas" value={String(remainingCards)} />
+      <div className="grid grid-cols-2 gap-2">
+        <Stat icon={<Clock className="h-4 w-4" />} label="Tempo de partida" value={fmt(elapsed)} />
+        <Stat icon={<LayoutGrid className="h-4 w-4" />} label="Cartas restantes" value={String(remainingCards)} />
       </div>
 
-      <TeamScoreBar key={runId} session={team} score={score} />
+      <TeamScoreBar key={runId} session={team} />
 
-      <div className="rounded-3xl border bg-card p-2 sm:p-4 shadow-lg">
-        <div className="mx-auto w-full max-w-[560px]">
-          <div className="grid gap-1" style={{ gridTemplateColumns: "1.25rem repeat(8, minmax(0,1fr))" }}>
-            <div />
-            {COLS.map((c) => (
-              <div key={c} className="text-center text-[10px] sm:text-xs font-bold text-muted-foreground">{c}</div>
-            ))}
-            {board.length > 0 && Array.from({ length: 8 }, (_, row) => (
-              <FragmentRow
-                key={row}
-                row={row}
-                board={board}
-                revealed={revealed}
-                flipping={flipping}
-                disabled={!!openCard}
-                onOpen={openCell}
-              />
-            ))}
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
+        <div className="order-2 lg:order-1 rounded-3xl border bg-card p-2 sm:p-3 shadow-lg">
+          <div className="mx-auto w-full max-w-[520px]">
+            <div className="grid gap-1" style={{ gridTemplateColumns: "1.1rem repeat(8, minmax(0,1fr))" }}>
+              <div />
+              {COLS.map((c) => (
+                <div key={c} className="text-center text-[10px] sm:text-xs font-bold text-muted-foreground">{c}</div>
+              ))}
+              {board.length > 0 && Array.from({ length: 8 }, (_, row) => (
+                <FragmentRow
+                  key={row}
+                  row={row}
+                  board={board}
+                  revealed={revealed}
+                  flipping={flipping}
+                  disabled={!!openCard}
+                  cardClass={colors.card}
+                  onOpen={openCell}
+                />
+              ))}
+            </div>
           </div>
         </div>
-      </div>
 
-      {toast && (
-        <div className="animate-pop-in rounded-2xl border bg-accent/15 px-4 py-3 text-center font-display font-bold text-accent">
-          {toast}
-        </div>
-      )}
-
-      {openCard && openCard.kind !== "bonus" && (
-        <div className="animate-card-reveal rounded-3xl border-2 border-primary bg-card p-4 sm:p-6 shadow-xl">
-          <div className="flex items-center justify-between gap-3">
-            <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
-              Carta {openCard.label}
-            </span>
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold ${
-              timeLeft <= 10 ? "bg-destructive/15 text-destructive" : "bg-secondary text-secondary-foreground"
-            }`}>
-              <Clock className="h-4 w-4" /> {timeLeft}s
-            </span>
-          </div>
-
-          {openCard.kind === "shape" && openCard.shape && (
-            <div className="mt-4 grid place-items-center">
-              <ShapeSvg shape={openCard.shape} color="azul" size={3} />
+        <div className="order-1 lg:order-2 lg:sticky lg:top-3">
+          {toast && (
+            <div className="animate-pop-in mb-3 rounded-2xl border bg-accent/15 px-4 py-3 text-center font-display font-bold text-accent">
+              {toast}
             </div>
           )}
 
-          <p className="mt-4 text-center font-display text-2xl sm:text-3xl font-extrabold">
-            {openCard.prompt}
-          </p>
+          {openCard && openCard.kind !== "bonus" ? (
+            <div className="animate-card-reveal rounded-3xl border-2 border-primary bg-card p-4 shadow-xl">
+              <div className="flex items-center justify-between gap-3">
+                <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
+                  Carta {openCard.label}
+                </span>
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold ${
+                  timeLeft <= 5 ? "bg-destructive/15 text-destructive" : "bg-secondary text-secondary-foreground"
+                }`}>
+                  <Clock className="h-4 w-4" /> {timeLeft}s
+                </span>
+              </div>
 
-          <div className="mt-5 grid grid-cols-2 gap-3">
-            {openCard.options.map((o) => {
-              const chosen = answered?.chosen === o;
-              const isRight = answered && o === openCard.answer;
-              const tone = isRight
-                ? "border-success bg-success/15 text-success"
-                : chosen
-                  ? "border-destructive bg-destructive/15 text-destructive animate-shake-x"
-                  : "border-border bg-background hover:bg-secondary";
-              return (
-                <button
-                  key={o}
-                  type="button"
-                  disabled={!!answered}
-                  onClick={() => answer(o)}
-                  className={`rounded-2xl border-2 px-4 py-4 font-display text-lg font-bold transition-all active:scale-95 ${tone}`}
-                >
-                  {o}
-                </button>
-              );
-            })}
-          </div>
+              {openCard.kind === "shape" && openCard.shape && (
+                <div className="mt-3 grid place-items-center">
+                  <ShapeSvg shape={openCard.shape} color="azul" size={2} />
+                </div>
+              )}
 
-          {answered && (
-            <p className="mt-4 text-center font-bold">
-              {answered.ok
-                ? `Correto! +${POINTS_CORRECT} pontos`
-                : `Resposta certa: ${openCard.answer} (−${POINTS_WRONG} pontos)`}
-            </p>
+              <p className="mt-3 text-center font-display text-lg font-bold text-muted-foreground">
+                {openCard.prompt}
+              </p>
+              {openCard.expr && (
+                <p className="mt-1 rounded-2xl bg-primary/10 px-3 py-3 text-center font-display text-2xl sm:text-3xl font-extrabold tracking-wide text-primary">
+                  {openCard.expr}
+                </p>
+              )}
+
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {openCard.options.map((o) => {
+                  const chosen = answered?.chosen === o;
+                  const isRight = answered && o === openCard.answer;
+                  const tone = isRight
+                    ? "border-success bg-success/15 text-success"
+                    : chosen
+                      ? "border-destructive bg-destructive/15 text-destructive animate-shake-x"
+                      : "border-border bg-background hover:bg-secondary";
+                  return (
+                    <button
+                      key={o}
+                      type="button"
+                      disabled={!!answered}
+                      onClick={() => answer(o)}
+                      className={`rounded-2xl border-2 px-3 py-3 font-display text-base font-bold transition-all active:scale-95 ${tone}`}
+                    >
+                      {o}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {answered && (
+                <p className="mt-3 text-center text-sm font-bold">
+                  {answered.ok
+                    ? `Correto! +${POINTS_CORRECT} pontos`
+                    : `Resposta certa: ${openCard.answer} (−${POINTS_WRONG} pontos)`}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-3xl border border-dashed bg-card/60 p-6 text-center text-sm text-muted-foreground">
+              Escolha uma carta no tabuleiro — o desafio aparece aqui.
+            </div>
           )}
-        </div>
-      )}
 
-      <div className="flex justify-center">
-        <Button variant="outline" className="rounded-2xl" onClick={() => setFinished(true)}>
-          <Flag className="mr-2 h-4 w-4" /> Encerrar partida
-        </Button>
+          <div className="mt-3 flex justify-center">
+            <Button variant="outline" className="rounded-2xl" onClick={() => setFinished(true)}>
+              <Flag className="mr-2 h-4 w-4" /> Encerrar partida
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function FragmentRow({ row, board, revealed, flipping, disabled, onOpen }: {
+function FragmentRow({ row, board, revealed, flipping, disabled, cardClass, onOpen }: {
   row: number;
   board: MineCard[];
   revealed: Set<string>;
   flipping: string | null;
   disabled: boolean;
+  cardClass: string;
   onOpen: (c: MineCard) => void;
 }) {
   return (
@@ -359,7 +418,7 @@ function FragmentRow({ row, board, revealed, flipping, disabled, onOpen }: {
             } ${
               isRevealed
                 ? "bg-muted text-muted-foreground/60 border border-border"
-                : "bg-primary text-primary-foreground shadow-sm hover:brightness-110 hover:-translate-y-0.5 active:scale-95"
+                : `${cardClass} shadow-sm hover:-translate-y-0.5 active:scale-95`
             }`}
             style={{ transformStyle: "preserve-3d" }}
           >
@@ -382,4 +441,3 @@ function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; va
     </div>
   );
 }
-

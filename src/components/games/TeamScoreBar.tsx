@@ -1,23 +1,27 @@
 import { useEffect, useRef } from "react";
 import { Users } from "lucide-react";
 import type { TeamSession } from "@/lib/use-team-session";
+import { teamColor, TEAM_COLOR_CLASSES } from "@/lib/teams";
 
 interface Props {
   session: TeamSession;
-  /** Current total score of the run; deltas are credited to the active team. */
-  score: number;
+  /** Current total score of the run; deltas are credited to the active team.
+   *  Omit it when the game credits the session manually. */
+  score?: number;
 }
 
 export function TeamScoreBar({ session, score }: Props) {
-  const prev = useRef(score);
+  const prev = useRef(score ?? 0);
   const creditRef = useRef(session.credit);
   creditRef.current = session.credit;
 
   useEffect(() => {
+    if (score === undefined) return;
     const delta = score - prev.current;
     prev.current = score;
     if (delta) creditRef.current(delta);
   }, [score]);
+
 
   if (!session.activeSession) return null;
 
@@ -27,25 +31,29 @@ export function TeamScoreBar({ session, score }: Props) {
         <Users className="h-4 w-4" /> Equipe da vez — toque para trocar
       </div>
       <div className="flex flex-wrap gap-2">
-        {session.order.map((t, i) => (
-          <button
-            key={t + i}
-            type="button"
-            onClick={() => session.setCurrent(i)}
-            className={`rounded-xl border-2 px-3 py-2 text-left transition-all ${
-              i === session.current
-                ? "border-primary bg-primary text-primary-foreground shadow-md scale-[1.03]"
-                : "border-border bg-background hover:bg-secondary"
-            }`}
-          >
-            <div className="font-display text-sm font-bold leading-tight">
-              {i + 1}º • {t}
-            </div>
-            <div className={`text-xs ${i === session.current ? "opacity-90" : "text-muted-foreground"}`}>
-              {session.scores[i] ?? 0} pts
-            </div>
-          </button>
-        ))}
+        {session.order.map((t, i) => {
+          const c = TEAM_COLOR_CLASSES[teamColor(t)];
+          return (
+            <button
+              key={t + i}
+              type="button"
+              onClick={() => session.setCurrent(i)}
+              className={`rounded-xl border-2 px-3 py-2 text-left transition-all ${
+                i === session.current
+                  ? `${c.chip} border-transparent shadow-md scale-[1.03]`
+                  : "border-border bg-background hover:bg-secondary"
+              }`}
+            >
+              <div className="font-display text-sm font-bold leading-tight">
+                {i + 1}º • {t}
+              </div>
+              <div className={`text-xs ${i === session.current ? "opacity-90" : "text-muted-foreground"}`}>
+                {session.scores[i] ?? 0} pts
+              </div>
+            </button>
+          );
+        })}
+
       </div>
     </div>
   );

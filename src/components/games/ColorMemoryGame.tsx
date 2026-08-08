@@ -6,6 +6,8 @@ import { ResultPanel } from "./ResultPanel";
 import { StartScreen, OptionChip } from "./StartScreen";
 import { TeamSetup } from "./TeamSetup";
 import { TeamScoreBar, TeamResults } from "./TeamScoreBar";
+import { SessionSummary } from "./SessionSummary";
+import { useSessionEnd } from "@/lib/use-session-end";
 import { NORMAL_CONFIG, type TeamConfig } from "@/lib/teams";
 import { Countdown } from "./Countdown";
 import { useRoundClock } from "@/lib/use-countdown";
@@ -97,6 +99,8 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
   const [shake, setShake] = useState(false);
   const seqRef = useRef<Color[]>([]);
   const timeoutsRef = useRef<number[]>([]);
+  /** How many rounds were already played with the current sequence length. */
+  const roundAtLenRef = useRef(0);
 
   const score = correct * POINTS_CORRECT - wrong * POINTS_WRONG;
 
@@ -128,6 +132,7 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
     clearTimeouts();
     team.begin(teamConfig);
     setCorrect(0); setWrong(0); setLevel(1); setBestStreak(0);
+    roundAtLenRef.current = 0;
     setFinished(false);
     setRunId((r) => r + 1);
     const first = randomSeq(DIFFICULTY[difficulty].startLen);
@@ -140,6 +145,7 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
   }
 
   function replayWithCountdown() {
+    team.advance();
     clearTimeouts();
     setFinished(false);
     setRunning(false);
@@ -153,11 +159,7 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
     setPhase("setup");
   }
 
-  function finishSession() {
-    team.finish();
-    setBonusOn(true);
-    backToSetup();
-  }
+  const sessionEnd = useSessionEnd(team, backToSetup);
 
   function playSequence(sequence: Color[], onDone?: () => void) {
     setSub("showing");
@@ -193,23 +195,17 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
     window.setTimeout(() => setActive(null), 200);
 
     if (c !== target) {
-      // Wrong
+      // Wrong: repeat the SAME sequence and wait for the answer again
       setSub("wrong");
       setUserIdx(0);
       setWrong((w) => w + 1);
       setShake(true);
       playTone(120, 0.5, "sawtooth");
       window.setTimeout(() => setShake(false), 450);
-      // Show correct sequence quickly, then new sequence same length
       const revealT = window.setTimeout(() => {
         setSub("reveal");
-        playSequence(seqRef.current, () => {
-          const next = randomSeq(seqRef.current.length, seqRef.current);
-          seqRef.current = next;
-          setSeq(next);
-          playSequence(next);
-        });
-      }, 700);
+        playSequence(seqRef.current);
+      }, 800);
       timeoutsRef.current.push(revealT);
       return;
     }
@@ -220,8 +216,12 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
       setSub("correct");
       setCorrect((n) => n + 1);
       if (bonusOn) clock.addBonus();
-      const newLen = seqRef.current.length + 1;
-      setBestStreak((b) => Math.max(b, seqRef.current.length));
+      // Each length is played twice before growing
+      const currentLen = seqRef.current.length;
+      const grow = roundAtLenRef.current >= 1;
+      roundAtLenRef.current = grow ? 0 : roundAtLenRef.current + 1;
+      const newLen = grow ? currentLen + 1 : currentLen;
+      setBestStreak((b) => Math.max(b, currentLen));
       setLevel((l) => l + 1);
       playTone(523.25, 0.15);
       window.setTimeout(() => playTone(659.25, 0.15), 150);
@@ -233,9 +233,19 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
         playSequence(next);
       }, 900);
       timeoutsRef.current.push(nextT);
+
     } else {
       setUserIdx(nextIdx);
     }
+  }
+
+  if (sessionEnd.showing) {
+    return (
+      <div className="space-y-4">
+        <GameTopBar title="Memória das Cores" onExit={onExit} />
+        <SessionSummary title="Memória das Cores" session={team} onClose={sessionEnd.close} />
+      </div>
+    );
   }
 
   if (phase === "setup") {
@@ -247,7 +257,7 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
         onExit={onExit}
         lastMatch={lastMatch}
         sessionActive={team.activeSession}
-        onFinishSession={finishSession}
+        onFinishSession={sessionEnd.request}
         bonusTime={bonusOn}
         onBonusTimeChange={setBonusOn}
       >
@@ -287,7 +297,7 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
   if (phase === "countdown") {
     return (
       <div className="space-y-4">
-        <GameTopBar title="Memória das Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+        <GameTopBar title="Memória das Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
         <Countdown onDone={startGame} />
       </div>
     );
@@ -296,7 +306,7 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
   if (finished) {
     return (
       <div className="space-y-4">
-        <GameTopBar title="Memória das Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+        <GameTopBar title="Memória das Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
         <ResultPanel
           score={score} correct={correct} wrong={wrong} level={level}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
@@ -315,7 +325,7 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
 
   return (
     <div className="space-y-4">
-      <GameTopBar title="Memória das Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+      <GameTopBar title="Memória das Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
       <GameHud time={clock.time} score={score} level={level} streak={bestStreak} />
       <BonusTimeToggle value={bonusOn} onChange={setBonusOn} earned={clock.bonus} />
       <TeamScoreBar key={runId} session={team} score={score} />

@@ -13,6 +13,8 @@ import { generateBalanced, type Question, type OpKind, ALL_OPS } from "@/lib/log
 import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
 import { TeamSetup } from "./TeamSetup";
 import { TeamScoreBar, TeamResults } from "./TeamScoreBar";
+import { SessionSummary } from "./SessionSummary";
+import { useSessionEnd } from "@/lib/use-session-end";
 import { NORMAL_CONFIG, type TeamConfig } from "@/lib/teams";
 
 const DURATION = 120;
@@ -96,6 +98,7 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
   }
 
   function replayWithCountdown() {
+    team.advance();
     setFinished(false);
     setRunning(false);
     setPhase("countdown");
@@ -107,13 +110,7 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
     setPhase("setup");
   }
 
-  function finishSession() {
-    team.finish();
-    setBonusOn(true);
-    setRunning(false);
-    setFinished(false);
-    setPhase("setup");
-  }
+  const sessionEnd = useSessionEnd(team, backToSetup);
 
   function nextQuestion(currentLevel: number) {
     const q = generateBalanced(currentLevel, recentTexts.current, recentAnswers.current, ops);
@@ -167,6 +164,15 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
     }
   }
 
+  if (sessionEnd.showing) {
+    return (
+      <div className="space-y-4">
+        <GameTopBar title="Lógica Matemática" onExit={onExit} />
+        <SessionSummary title="Lógica Matemática" session={team} onClose={sessionEnd.close} />
+      </div>
+    );
+  }
+
   if (phase === "setup") {
     return (
       <StartScreen
@@ -177,7 +183,7 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
         disabled={ops.length === 0}
         lastMatch={lastMatch}
         sessionActive={team.activeSession}
-        onFinishSession={finishSession}
+        onFinishSession={sessionEnd.request}
         bonusTime={bonusOn}
         onBonusTimeChange={setBonusOn}
       >
@@ -206,7 +212,7 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
   if (phase === "countdown") {
     return (
       <div className="space-y-4">
-        <GameTopBar title="Lógica Matemática" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+        <GameTopBar title="Lógica Matemática" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
         <Countdown onDone={startGame} />
       </div>
     );
@@ -215,7 +221,7 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
   if (finished) {
     return (
       <div className="space-y-4">
-        <GameTopBar title="Lógica Matemática" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+        <GameTopBar title="Lógica Matemática" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
         <ResultPanel
           score={score} correct={correct} wrong={wrong} level={level}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
@@ -229,7 +235,7 @@ export function LogicGame({ onExit, onStatsChange }: Props) {
 
   return (
     <div className="space-y-4">
-      <GameTopBar title="Lógica Matemática" onExit={onExit} sessionActive={team.activeSession} onFinishSession={finishSession} />
+      <GameTopBar title="Lógica Matemática" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
       <GameHud time={clock.time} score={score} level={level} streak={streak} />
       <BonusTimeToggle value={bonusOn} onChange={setBonusOn} earned={clock.bonus} />
       <TeamScoreBar key={runId} session={team} score={score} />

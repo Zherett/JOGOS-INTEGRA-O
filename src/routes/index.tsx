@@ -9,6 +9,8 @@ import { VariableHuntGame } from "@/components/games/VariableHuntGame";
 import { ShapeColorGame } from "@/components/games/ShapeColorGame";
 import { ColorMemoryGame } from "@/components/games/ColorMemoryGame";
 import { MinefieldGame } from "@/components/games/MinefieldGame";
+import { CodeGate } from "@/components/games/CodeGate";
+import { loadUnlocked } from "@/lib/game-codes";
 import { loadStats, type AllStats, type GameId } from "@/lib/game-storage";
 
 export const Route = createFileRoute("/")({
@@ -38,18 +40,38 @@ function Index() {
   const [view, setView] = useState<"menu" | GameId>("menu");
   const [stats, setStats] = useState<AllStats>(EMPTY_STATS);
   const [mounted, setMounted] = useState(false);
+  const [unlocked, setUnlocked] = useState<GameId[]>([]);
+  const [addingCode, setAddingCode] = useState(false);
 
   useEffect(() => {
     setMounted(true);
     setStats(loadStats());
+    setUnlocked(loadUnlocked());
   }, [view]);
 
   const refreshStats = () => setStats(loadStats());
   const displayStats = mounted ? stats : EMPTY_STATS;
 
+  const showGate = mounted && (addingCode || unlocked.length === 0);
+
   return (
     <main className="mx-auto max-w-5xl px-4 py-6 sm:py-10">
-      {view === "menu" && <Menu stats={displayStats} onSelect={(id) => setView(id)} />}
+      {view === "menu" && showGate && (
+        <CodeGate
+          hasGames={unlocked.length > 0}
+          onUnlocked={() => { setUnlocked(loadUnlocked()); setAddingCode(false); }}
+          onBack={unlocked.length > 0 ? () => setAddingCode(false) : undefined}
+        />
+      )}
+      {view === "menu" && !showGate && (
+        <Menu
+          stats={displayStats}
+          unlocked={unlocked}
+          onSelect={(id) => setView(id)}
+          onAddCode={() => setAddingCode(true)}
+        />
+      )}
+
       {view === "logica" && (
         <LogicGame onExit={() => setView("menu")} onStatsChange={refreshStats} />
       )}
