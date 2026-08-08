@@ -132,6 +132,7 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
     clearTimeouts();
     team.begin(teamConfig);
     setCorrect(0); setWrong(0); setLevel(1); setBestStreak(0);
+    roundAtLenRef.current = 0;
     setFinished(false);
     setRunId((r) => r + 1);
     const first = randomSeq(DIFFICULTY[difficulty].startLen);
