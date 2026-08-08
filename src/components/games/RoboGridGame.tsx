@@ -136,6 +136,7 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
       }
       setStreak(next);
     } else {
+      beep(170, 0.28, "sawtooth");
       setWrong((w) => w + 1);
       setStreak(0);
       if (revealCoord) setHighlight(revealCoord);
