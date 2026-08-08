@@ -27,6 +27,19 @@ const MAX_LEVEL = 4;
 const POINTS_CORRECT = 10;
 const POINTS_WRONG = 5;
 
+function beep(freq: number, dur = 0.14, type: OscillatorType = "sine", vol = 0.07) {
+  try {
+    const AC = (window as unknown as { AudioContext: typeof AudioContext }).AudioContext;
+    const ctx = new AC();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = type; o.frequency.value = freq; g.gain.value = vol;
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + dur);
+    o.onended = () => ctx.close();
+  } catch { /* silent */ }
+}
+
 interface Props { onExit: () => void; onStatsChange: () => void }
 
 export function RoboGridGame({ onExit, onStatsChange }: Props) {
@@ -103,6 +116,8 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
   function resolve(ok: boolean, revealCoord?: Coord) {
     setFeedback(ok ? "correct" : "wrong");
     if (ok) {
+      beep(660, 0.1, "triangle");
+      window.setTimeout(() => beep(990, 0.16, "triangle"), 90);
       setCorrect((c) => c + 1);
       if (bonusOn) clock.addBonus();
       const next = streak + 1;
