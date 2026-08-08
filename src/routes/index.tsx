@@ -9,6 +9,8 @@ import { VariableHuntGame } from "@/components/games/VariableHuntGame";
 import { ShapeColorGame } from "@/components/games/ShapeColorGame";
 import { ColorMemoryGame } from "@/components/games/ColorMemoryGame";
 import { MinefieldGame } from "@/components/games/MinefieldGame";
+import { CodeGate } from "@/components/games/CodeGate";
+import { loadUnlocked } from "@/lib/game-codes";
 import { loadStats, type AllStats, type GameId } from "@/lib/game-storage";
 
 export const Route = createFileRoute("/")({
