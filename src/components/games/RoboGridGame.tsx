@@ -149,6 +149,7 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
 
   function onCellClick(col: number, row: number) {
     if (!running || !question || feedback) return;
+    beep(520, 0.06, "triangle", 0.05);
     if (question.kind !== "position") return;
     if (lockRef.current) return;
     lockRef.current = true;
