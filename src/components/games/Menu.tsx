@@ -1,5 +1,7 @@
-import { Brain, Compass, Bot, Swords, Variable, Trophy, Star, Sparkles, Shapes, Palette, Grid3x3 } from "lucide-react";
+import { Brain, Compass, Bot, Swords, Variable, Trophy, Star, Sparkles, Shapes, Palette, Grid3x3, KeyRound } from "lucide-react";
 import type { AllStats, GameId } from "@/lib/game-storage";
+import integracaoPreto from "@/assets/integracao-preto.asset.json";
+import semed from "@/assets/semed.asset.json";
 
 // Toggle to re-enable games in the menu without deleting their code.
 const ENABLED_GAMES: Record<GameId, boolean> = {
@@ -15,7 +17,9 @@ const ENABLED_GAMES: Record<GameId, boolean> = {
 
 interface Props {
   stats: AllStats;
+  unlocked: GameId[];
   onSelect: (id: GameId) => void;
+  onAddCode: () => void;
 }
 
 const GAMES: { id: GameId; title: string; subtitle: string; icon: React.ReactNode; gradient: string }[] = [
@@ -34,20 +38,6 @@ const GAMES: { id: GameId; title: string; subtitle: string; icon: React.ReactNod
     gradient: "from-accent to-accent-glow",
   },
   {
-    id: "robogrid",
-    title: "RoboGrid",
-    subtitle: "Localização espacial em um tabuleiro colorido",
-    icon: <Bot className="h-10 w-10" />,
-    gradient: "from-primary to-accent",
-  },
-  {
-    id: "variaveis",
-    title: "Caça às Variáveis",
-    subtitle: "Arraste o número certo para resolver a expressão",
-    icon: <Variable className="h-10 w-10" />,
-    gradient: "from-accent-glow to-primary",
-  },
-  {
     id: "formas",
     title: "Formas e Cores",
     subtitle: "Arraste formas geométricas por cor, forma e tamanho",
@@ -60,6 +50,20 @@ const GAMES: { id: GameId; title: string; subtitle: string; icon: React.ReactNod
     subtitle: "Repita a sequência antes do tempo acabar",
     icon: <Palette className="h-10 w-10" />,
     gradient: "from-primary to-accent-glow",
+  },
+  {
+    id: "variaveis",
+    title: "Caça às Variáveis",
+    subtitle: "Arraste o número certo para resolver a expressão",
+    icon: <Variable className="h-10 w-10" />,
+    gradient: "from-accent-glow to-primary",
+  },
+  {
+    id: "robogrid",
+    title: "RoboGrid",
+    subtitle: "Localização espacial em um tabuleiro colorido",
+    icon: <Bot className="h-10 w-10" />,
+    gradient: "from-primary to-accent",
   },
   {
     id: "minado",
@@ -77,9 +81,28 @@ const GAMES: { id: GameId; title: string; subtitle: string; icon: React.ReactNod
   },
 ];
 
-export function Menu({ stats, onSelect }: Props) {
+export function Menu({ stats, unlocked, onSelect, onAddCode }: Props) {
+  const visible = GAMES.filter((g) => ENABLED_GAMES[g.id] && unlocked.includes(g.id));
+
   return (
     <div className="space-y-8">
+      <div className="flex items-start justify-between gap-4">
+        <img
+          src={integracaoPreto.url}
+          alt="Logo do Projeto INTEGRAÇÃO"
+          width={160}
+          height={80}
+          className="h-12 w-auto sm:h-16 rounded-lg object-contain"
+        />
+        <img
+          src={semed.url}
+          alt="Logo da SEMED Coari"
+          width={160}
+          height={80}
+          className="h-12 w-auto sm:h-16 rounded-lg object-contain"
+        />
+      </div>
+
       <header className="text-center">
         <div className="inline-flex items-center gap-2 rounded-full border bg-card px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-primary shadow-sm">
           <Sparkles className="h-3.5 w-3.5" /> Plataforma Educacional
@@ -88,12 +111,12 @@ export function Menu({ stats, onSelect }: Props) {
           Desafios de <span className="text-primary">Lógica</span>
         </h1>
         <p className="mt-3 text-base sm:text-lg text-muted-foreground max-w-xl mx-auto">
-          Jogos rápidos para treinar raciocínio, matemática e o plano cartesiano. Escolha um desafio e comece!
+          Jogos rápidos para treinar raciocínio lógico, matemática e coordenação motora. Escolha um desafio e comece!
         </p>
       </header>
 
       <div className="grid sm:grid-cols-2 gap-5">
-        {GAMES.filter((g) => ENABLED_GAMES[g.id]).map((g) => {
+        {visible.map((g) => {
           const s = stats[g.id];
           return (
             <button
@@ -118,10 +141,21 @@ export function Menu({ stats, onSelect }: Props) {
             </button>
           );
         })}
+
+        <button
+          onClick={onAddCode}
+          className="group flex flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed bg-card/50 p-6 text-center transition-all hover:border-primary hover:bg-card"
+        >
+          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
+            <KeyRound className="h-7 w-7" />
+          </span>
+          <span className="font-display text-xl font-bold">Inserir novo código de jogo</span>
+          <span className="text-sm text-muted-foreground">Libere mais desafios na plataforma</span>
+        </button>
       </div>
 
       <p className="text-center text-xs text-muted-foreground">
-        Para alunos do 5º ano • Funciona no celular, tablet e computador
+        Idealizado para alunos do 5º ao 9º ano • Funciona no celular, tablet e computador. Projeto INTEGRAÇÃO — SEMED-COARI.
       </p>
     </div>
   );
