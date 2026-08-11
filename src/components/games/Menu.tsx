@@ -1,4 +1,4 @@
-import { Brain, Compass, Bot, Swords, Variable, Trophy, Star, Sparkles, Shapes, Palette, Grid3x3, KeyRound } from "lucide-react";
+import { Brain, Compass, Bot, Swords, Variable, Trophy, Star, Sparkles, Shapes, Palette, Grid3x3, KeyRound, Percent } from "lucide-react";
 import type { AllStats, GameId } from "@/lib/game-storage";
 import integracaoPreto from "@/assets/integracao-preto.asset.json";
 import semed from "@/assets/semed.asset.json";
@@ -13,6 +13,7 @@ const ENABLED_GAMES: Record<GameId, boolean> = {
   formas: true,
   memoria: true,
   minado: true,
+  porcentagem: true,
 };
 
 interface Props {
@@ -64,6 +65,13 @@ const GAMES: { id: GameId; title: string; subtitle: string; icon: React.ReactNod
     subtitle: "Localização espacial em um tabuleiro colorido",
     icon: <Bot className="h-10 w-10" />,
     gradient: "from-primary to-accent",
+  },
+  {
+    id: "porcentagem",
+    title: "Desafio das Porcentagens",
+    subtitle: "Barras, diagramas e situações do dia a dia com 10%, 25%, 50%…",
+    icon: <Percent className="h-10 w-10" />,
+    gradient: "from-primary-glow to-primary",
   },
   {
     id: "minado",

@@ -8,6 +8,7 @@ import { RpgGame } from "@/components/games/RpgGame";
 import { VariableHuntGame } from "@/components/games/VariableHuntGame";
 import { ShapeColorGame } from "@/components/games/ShapeColorGame";
 import { ColorMemoryGame } from "@/components/games/ColorMemoryGame";
+import { PercentGame } from "@/components/games/PercentGame";
 import { MinefieldGame } from "@/components/games/MinefieldGame";
 import { CodeGate } from "@/components/games/CodeGate";
 import { loadUnlocked } from "@/lib/game-codes";
@@ -34,6 +35,7 @@ const EMPTY_STATS: AllStats = {
   formas: { bestScore: 0, bestLevel: 1 },
   memoria: { bestScore: 0, bestLevel: 1 },
   minado: { bestScore: 0, bestLevel: 1 },
+  porcentagem: { bestScore: 0, bestLevel: 1 },
 };
 
 function Index() {
@@ -92,6 +94,10 @@ function Index() {
       )}
       {view === "minado" && (
         <MinefieldGame onExit={() => setView("menu")} onStatsChange={refreshStats} />
+      )}
+
+      {view === "porcentagem" && (
+        <PercentGame onExit={() => setView("menu")} onStatsChange={refreshStats} />
       )}
 
       {view === "rpg" && (

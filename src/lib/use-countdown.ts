@@ -36,12 +36,18 @@ export function useCountdown(seconds: number, running: boolean, onEnd: () => voi
 export interface RoundClock {
   time: number;
   bonus: number;
-  /** Adds BONUS_PER_CORRECT seconds (capped) — call only when the bonus is on. */
-  addBonus: () => void;
+  /** Adds bonus seconds (capped) — call only when the bonus is on. */
+  addBonus: (amount?: number) => void;
 }
 
 /** Countdown that can be extended with bonus seconds on correct answers. */
-export function useRoundClock(seconds: number, running: boolean, onEnd: () => void): RoundClock {
+export function useRoundClock(
+  seconds: number,
+  running: boolean,
+  onEnd: () => void,
+  step: number = BONUS_PER_CORRECT,
+  max: number = MAX_BONUS,
+): RoundClock {
   const [remaining, setRemaining] = useState(seconds);
   const [bonus, setBonus] = useState(0);
   const bonusRef = useRef(0);
@@ -69,15 +75,18 @@ export function useRoundClock(seconds: number, running: boolean, onEnd: () => vo
     return () => window.clearInterval(id);
   }, [running, seconds]);
 
-  const addBonus = useCallback(() => {
-    if (endedRef.current) return;
-    const next = Math.min(MAX_BONUS, bonusRef.current + BONUS_PER_CORRECT);
-    if (next === bonusRef.current) return;
-    const gained = next - bonusRef.current;
-    bonusRef.current = next;
-    setBonus(next);
-    setRemaining((r) => r + gained);
-  }, []);
+  const addBonus = useCallback(
+    (amount?: number) => {
+      if (endedRef.current) return;
+      const next = Math.min(max, bonusRef.current + (amount ?? step));
+      if (next === bonusRef.current) return;
+      const gained = next - bonusRef.current;
+      bonusRef.current = next;
+      setBonus(next);
+      setRemaining((r) => r + gained);
+    },
+    [step, max],
+  );
 
   return { time: remaining, bonus, addBonus };
 }
