@@ -330,7 +330,7 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
       <BonusTimeToggle value={bonusOn} onChange={setBonusOn} earned={clock.bonus} />
       <TeamScoreBar key={runId} session={team} score={score} />
 
-      <div className={`relative rounded-3xl border bg-card p-4 sm:p-8 shadow-lg ${shake ? "animate-shake-x" : ""}`}>
+      <div className={`relative rounded-3xl border bg-card p-3 sm:p-5 shadow-lg ${shake ? "animate-shake-x" : ""}`}>
         <div className="text-center text-sm text-muted-foreground mb-3">
           Sequência: <b className="text-foreground">{seq.length}</b> cores
           {sub === "input" && (
@@ -338,7 +338,7 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
           )}
         </div>
 
-        <div className="relative mx-auto aspect-square w-full max-w-[min(80vh,560px)]">
+        <div className="relative mx-auto aspect-square w-full max-w-[min(46vh,460px)]">
           <div className="absolute inset-0 rounded-full overflow-hidden grid grid-cols-2 grid-rows-2 gap-2 bg-background shadow-2xl border-4 border-background">
             <Quadrant color="green"  active={active === "green"}  disabled={sub !== "input"} onClick={() => handleClick("green")} />
             <Quadrant color="red"    active={active === "red"}    disabled={sub !== "input"} onClick={() => handleClick("red")} />
@@ -347,7 +347,7 @@ export function ColorMemoryGame({ onExit, onStatsChange }: Props) {
           </div>
 
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
-            <div className={`grid place-items-center rounded-full border-4 border-background bg-card shadow-2xl h-32 w-32 sm:h-40 sm:w-40 text-center px-3
+            <div className={`grid place-items-center rounded-full border-4 border-background bg-card shadow-2xl h-24 w-24 sm:h-32 sm:w-32 text-center px-3
               ${sub === "correct" ? "animate-pop-in ring-4 ring-success" : ""}
               ${sub === "wrong" ? "ring-4 ring-destructive" : ""}
             `}>
