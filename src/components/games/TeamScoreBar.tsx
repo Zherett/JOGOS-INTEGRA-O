@@ -26,11 +26,11 @@ export function TeamScoreBar({ session, score }: Props) {
   if (!session.activeSession) return null;
 
   return (
-    <div className="rounded-2xl border bg-card p-3 shadow-sm">
-      <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        <Users className="h-4 w-4" /> Equipe da vez — toque para trocar
-      </div>
-      <div className="flex flex-wrap gap-2">
+    <div className="rounded-2xl border bg-card px-3 py-2 shadow-sm">
+      <div className="flex items-center gap-2 overflow-x-auto">
+        <span className="flex shrink-0 items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <Users className="h-3.5 w-3.5" /> Equipe
+        </span>
         {session.order.map((t, i) => {
           const c = TEAM_COLOR_CLASSES[teamColor(t)];
           return (
@@ -38,16 +38,16 @@ export function TeamScoreBar({ session, score }: Props) {
               key={t + i}
               type="button"
               onClick={() => session.setCurrent(i)}
-              className={`rounded-xl border-2 px-3 py-2 text-left transition-all ${
+              className={`shrink-0 rounded-xl border-2 px-2.5 py-1 text-left transition-all ${
                 i === session.current
                   ? `${c.chip} border-transparent shadow-md scale-[1.03]`
                   : "border-border bg-background hover:bg-secondary"
               }`}
             >
-              <div className="font-display text-sm font-bold leading-tight">
+              <div className="font-display text-xs font-bold leading-tight">
                 {i + 1}º • {t}
               </div>
-              <div className={`text-xs ${i === session.current ? "opacity-90" : "text-muted-foreground"}`}>
+              <div className={`text-[10px] leading-tight ${i === session.current ? "opacity-90" : "text-muted-foreground"}`}>
                 {session.scores[i] ?? 0} pts
               </div>
             </button>
@@ -56,6 +56,7 @@ export function TeamScoreBar({ session, score }: Props) {
 
       </div>
     </div>
+
   );
 }
 
