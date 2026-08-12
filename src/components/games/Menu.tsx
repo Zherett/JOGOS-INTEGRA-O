@@ -68,8 +68,8 @@ const GAMES: { id: GameId; title: string; subtitle: string; icon: React.ReactNod
   },
   {
     id: "porcentagem",
-    title: "Desafio das Porcentagens",
-    subtitle: "Barras, diagramas e situações do dia a dia com 10%, 25%, 50%…",
+    title: "Desafio das Partes",
+    subtitle: "Descubra, represente e complete partes de um todo com porcentagens e frações",
     icon: <Percent className="h-10 w-10" />,
     gradient: "from-primary-glow to-primary",
   },
