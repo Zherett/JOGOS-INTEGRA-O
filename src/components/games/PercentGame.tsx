@@ -238,7 +238,7 @@ export function PercentGame({ onExit, onStatsChange }: Props) {
   function answer(opt: string) {
     if (!running || picked || feedback) return;
     const q = mode === "fracoes" ? fracQuestion : question;
-    if (!q || (q.kind !== "frac-id" && q.kind !== "bar" && q.kind !== "pie" && q.kind !== "objects" && q.kind !== "word")) return;
+    if (!q || (q.kind !== "frac-id" && q.kind !== "bar" && q.kind !== "pie" && q.kind !== "word")) return;
     soundClick();
     setPicked(opt);
     register(opt === q.answer);
