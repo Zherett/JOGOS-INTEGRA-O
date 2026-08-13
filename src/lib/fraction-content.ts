@@ -109,31 +109,42 @@ function idQuestion(parts: number): FractionIdQuestion {
 }
 
 const LEVEL_SPECS: Record<Exclude<FractionLevel, 6>, number[]> = {
-  1: [5],
-  2: [5, 5],
-  3: [5, 10],
-  4: [5, 5, 10],
-  5: [5, 5, 10, 10],
+  1: [4],
+  2: [3, 4],
+  3: [5, 5],
+  4: [4, 8],
+  5: [5, 8, 10],
 };
+
+/** Slice counts available per level (easier levels use 3/4/5). */
+const LEVEL_PARTS: Record<Exclude<FractionLevel, 6>, number[]> = {
+  1: [3, 4],
+  2: [3, 4],
+  3: [4, 5],
+  4: [5, 8],
+  5: [8, 10],
+};
+
+export const ALL_PARTS = [3, 4, 5, 8, 10] as const;
 
 /** Generates the next fraction question. */
 export function makeFractionQuestion(level: FractionLevel): FractionQuestion {
   if (level === 6) {
     const lv = pick([1, 2, 3, 4, 5] as const);
-    if (Math.random() < 0.3) return idQuestion(pick([5, 10]));
+    if (Math.random() < 0.3) return idQuestion(pick(ALL_PARTS));
     return buildQuestion(LEVEL_SPECS[lv]);
   }
   // Type C (identify) appears sometimes, mostly on single-pizza levels
-  if (Math.random() < (level === 1 ? 0.3 : 0.18)) return idQuestion(pick([5, 10]));
+  if (Math.random() < (level === 1 ? 0.3 : 0.18)) return idQuestion(pick(LEVEL_PARTS[level]));
   return buildQuestion(LEVEL_SPECS[level]);
 }
 
 export const FRACTION_LEVEL_LABELS: Record<FractionLevel, string> = {
-  1: "Uma pizza de 5",
-  2: "Duas pizzas de 5",
-  3: "Uma de 5 + uma de 10",
-  4: "Duas de 5 + uma de 10",
-  5: "Duas de 5 + duas de 10",
+  1: "Uma pizza de 4",
+  2: "Uma de 3 + uma de 4",
+  3: "Duas pizzas de 5",
+  4: "Uma de 4 + uma de 8",
+  5: "5 + 8 + 10 partes",
   6: "Desafio das Frações",
 };
 
