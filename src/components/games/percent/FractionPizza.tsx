@@ -19,7 +19,7 @@ function slicePath(cx: number, cy: number, r: number, start: number, end: number
   return `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
 }
 
-/** Interactive pizza divided in equal slices (5 or 10). */
+/** Interactive pizza divided in equal slices (3, 4, 5, 8 or 10). */
 export function FractionPizza({ parts, selected, onToggle, label, state = "idle", size = 200 }: Props) {
   const cx = 50, cy = 50, r = 46;
   const step = 360 / parts;
@@ -43,16 +43,26 @@ export function FractionPizza({ parts, selected, onToggle, label, state = "idle"
         <circle cx={cx} cy={cy} r={r + 2.5} className={`fill-[hsl(35_60%_82%)] ${ring}`} strokeWidth={2.5} />
         {Array.from({ length: parts }, (_, i) => {
           const on = selected[i];
+          const d = slicePath(cx, cy, r, i * step, (i + 1) * step);
           return (
-            <path
-              key={i}
-              d={slicePath(cx, cy, r, i * step, (i + 1) * step)}
-              className={`transition-all duration-200 ${
-                on ? "fill-accent" : "fill-muted"
-              } stroke-background ${onToggle ? "cursor-pointer hover:opacity-80" : ""}`}
-              strokeWidth={1.5}
-              onClick={onToggle ? () => onToggle(i) : undefined}
-            />
+            <g key={i}>
+              <path
+                d={d}
+                className={`transition-all duration-200 ${on ? "fill-accent" : "fill-muted"} ${
+                  onToggle ? "cursor-pointer hover:opacity-80" : ""
+                }`}
+                onClick={onToggle ? () => onToggle(i) : undefined}
+              />
+              {/* Silhouette outline so empty slices stay countable */}
+              <path
+                d={d}
+                fill="none"
+                className={on ? "stroke-background" : "stroke-foreground/55"}
+                strokeWidth={on ? 1.5 : 1.2}
+                strokeDasharray={on ? undefined : "3 2"}
+                pointerEvents="none"
+              />
+            </g>
           );
         })}
       </svg>
