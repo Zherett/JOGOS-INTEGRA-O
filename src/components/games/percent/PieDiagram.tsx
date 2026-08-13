@@ -18,7 +18,7 @@ function slicePath(cx: number, cy: number, r: number, start: number, end: number
   return `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
 }
 
-/** Circular diagram split into equal slices. */
+/** Circular diagram split into equal slices; empty slices keep a visible outline. */
 export function PieDiagram({ parts, filled, onToggle, selected, size = 260 }: Props) {
   const cx = 50, cy = 50, r = 46;
   const step = 360 / parts;
@@ -35,16 +35,25 @@ export function PieDiagram({ parts, filled, onToggle, selected, size = 260 }: Pr
       <circle cx={cx} cy={cy} r={r + 2} className="fill-background stroke-foreground/70" strokeWidth={2} />
       {Array.from({ length: parts }, (_, i) => {
         const on = selected ? selected[i] : i < filled;
+        const d = slicePath(cx, cy, r, i * step, (i + 1) * step);
         return (
-          <path
-            key={i}
-            d={slicePath(cx, cy, r, i * step, (i + 1) * step)}
-            className={`transition-all duration-200 ${
-              on ? "fill-primary" : "fill-muted"
-            } stroke-background ${onToggle ? "cursor-pointer hover:opacity-80" : ""}`}
-            strokeWidth={1.5}
-            onClick={onToggle ? () => onToggle(i) : undefined}
-          />
+          <g key={i}>
+            <path
+              d={d}
+              className={`transition-all duration-200 ${on ? "fill-primary" : "fill-muted"} ${
+                onToggle ? "cursor-pointer hover:opacity-80" : ""
+              }`}
+              onClick={onToggle ? () => onToggle(i) : undefined}
+            />
+            <path
+              d={d}
+              fill="none"
+              className={on ? "stroke-background" : "stroke-foreground/55"}
+              strokeWidth={on ? 1.5 : 1.2}
+              strokeDasharray={on ? undefined : "3 2"}
+              pointerEvents="none"
+            />
+          </g>
         );
       })}
     </svg>

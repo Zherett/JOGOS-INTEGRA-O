@@ -38,10 +38,14 @@ export interface PieBuildQuestion {
   tip: string;
 }
 
-export interface ObjectsQuestion extends BaseQuestion {
-  kind: "objects";
-  emoji: string;
-  count: number;
+export interface SliderQuestion {
+  kind: "slider";
+  id: number;
+  prompt: string;
+  highlight?: string;
+  /** Percentages the player must set on each bar. */
+  targets: number[];
+  tip: string;
 }
 
 export interface WordQuestion extends BaseQuestion {
@@ -53,7 +57,7 @@ export type PercentQuestion =
   | BarQuestion
   | PieQuestion
   | PieBuildQuestion
-  | ObjectsQuestion
+  | SliderQuestion
   | WordQuestion;
 
 export const PERCENTS = [10, 25, 50, 75, 100] as const;
@@ -191,34 +195,23 @@ function makePie(avoid?: number): PieQuestion | PieBuildQuestion {
   };
 }
 
-/* --------------------------- Level 3: quantities --------------------------- */
+/* --------------------------- Level 3: sliders ------------------------------ */
 
-const OBJECTS: { emoji: string; plural: string }[] = [
-  { emoji: "🍎", plural: "maçãs" },
-  { emoji: "✏️", plural: "lápis" },
-  { emoji: "⚽", plural: "bolas" },
-  { emoji: "⭐", plural: "estrelas" },
-  { emoji: "📚", plural: "livros" },
-  { emoji: "🪙", plural: "moedas" },
-  { emoji: "🧒", plural: "alunos" },
-];
+const SLIDER_VALUES = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100] as const;
 
-function makeObjects(avoid?: number): ObjectsQuestion {
-  const obj = pick(OBJECTS);
-  const pct = pickAvoid([10, 25, 50, 75] as const, avoid);
-  const totals = pct === 10 ? [10, 20, 30, 40] : pct === 25 || pct === 75 ? [8, 12, 16, 20] : [8, 10, 12, 16, 20];
-  const count = pick(totals);
-  const answer = Math.round((pct / 100) * count);
+function makeSliders(): SliderQuestion {
+  const targets: number[] = [];
+  while (targets.length < 3) {
+    const v = pick(SLIDER_VALUES);
+    if (!targets.includes(v)) targets.push(v);
+  }
   return {
-    kind: "objects",
+    kind: "slider",
     id: nextId(),
-    emoji: obj.emoji,
-    count,
-    prompt: `Quantas ${obj.plural} representam ${pct}%?`,
-    highlight: `${pct}% de ${count} ${obj.plural}`,
-    options: numberOptions(answer, count),
-    answer: String(answer),
-    tip: `${TIPS[pct]} ${pct}% de ${count} = ${answer}.`,
+    prompt: "Arraste cada barra até a porcentagem indicada",
+    highlight: targets.map((t) => `${t}%`).join(" • "),
+    targets,
+    tip: "Cada marca da régua vale 10%. Metade da barra é 50%.",
   };
 }
 
@@ -297,6 +290,7 @@ function makeWord(avoid?: number): WordQuestion {
 function valueOf(q: PercentQuestion): number | undefined {
   if (q.kind === "pie-build") return (q.target / q.parts) * 100;
   if (q.kind === "bar" || q.kind === "pie") return parseInt(q.answer, 10);
+  if (q.kind === "slider") return q.targets[0];
   const m = q.highlight?.match(/(\d+)%/);
   return m ? parseInt(m[1], 10) : undefined;
 }
@@ -313,7 +307,7 @@ export function makeQuestion(level: PercentLevel, previous?: PercentQuestion): P
   switch (target) {
     case 1: return makeBar(avoid);
     case 2: return makePie(avoid);
-    case 3: return makeObjects(avoid);
+    case 3: return makeSliders();
     default: return makeWord(avoid);
   }
 }
@@ -321,14 +315,14 @@ export function makeQuestion(level: PercentLevel, previous?: PercentQuestion): P
 function kindToLevel(q: PercentQuestion): PercentLevel {
   if (q.kind === "bar") return 1;
   if (q.kind === "pie" || q.kind === "pie-build") return 2;
-  if (q.kind === "objects") return 3;
+  if (q.kind === "slider") return 3;
   return 4;
 }
 
 export const LEVEL_LABELS: Record<PercentLevel, string> = {
   1: "Barras e Bateria",
   2: "Diagramas de Pizza",
-  3: "Porcentagem de Quantidades",
+  3: "Ajuste as Barras",
   4: "Situações do Cotidiano",
   5: "Modo Desafio",
 };

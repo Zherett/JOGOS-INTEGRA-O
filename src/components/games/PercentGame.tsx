@@ -17,7 +17,7 @@ import { useTeamSession } from "@/lib/use-team-session";
 import { updateBest, saveLastMatch, loadLastMatch, type LastMatch } from "@/lib/game-storage";
 import { PercentBar } from "./percent/PercentBar";
 import { PieDiagram } from "./percent/PieDiagram";
-import { ObjectGrid } from "./percent/ObjectGrid";
+import { PercentSliders } from "./percent/PercentSliders";
 import { FractionPizza } from "./percent/FractionPizza";
 import {
   makeQuestion, LEVEL_LABELS, QUESTIONS_PER_LEVEL,
@@ -98,6 +98,9 @@ export function PercentGame({ onExit, onStatsChange }: Props) {
   const [slices, setSlices] = useState<boolean[]>([]);
   const [pizzas, setPizzas] = useState<boolean[][]>([]);
   const [bonusFlash, setBonusFlash] = useState(0);
+  const [sliderValues, setSliderValues] = useState<number[]>([]);
+  const [sliderResults, setSliderResults] = useState<(boolean | null)[] | null>(null);
+  const [sliderMsg, setSliderMsg] = useState<string | null>(null);
 
   const timersRef = useRef<number[]>([]);
   const modeRef = useRef<Mode>("porcentagem");
@@ -159,6 +162,9 @@ export function PercentGame({ onExit, onStatsChange }: Props) {
       setQuestion(q);
       setFracQuestion(null);
       setSlices(q.kind === "pie-build" ? Array.from({ length: q.parts }, () => false) : []);
+      setSliderValues(q.kind === "slider" ? q.targets.map(() => 0) : []);
+      setSliderResults(null);
+      setSliderMsg(null);
     }
     setPicked(null);
     setFeedback(null);
@@ -232,7 +238,7 @@ export function PercentGame({ onExit, onStatsChange }: Props) {
   function answer(opt: string) {
     if (!running || picked || feedback) return;
     const q = mode === "fracoes" ? fracQuestion : question;
-    if (!q || (q.kind !== "frac-id" && q.kind !== "bar" && q.kind !== "pie" && q.kind !== "objects" && q.kind !== "word")) return;
+    if (!q || (q.kind !== "frac-id" && q.kind !== "bar" && q.kind !== "pie" && q.kind !== "word")) return;
     soundClick();
     setPicked(opt);
     register(opt === q.answer);
@@ -248,6 +254,22 @@ export function PercentGame({ onExit, onStatsChange }: Props) {
     if (!running || !question || question.kind !== "pie-build" || feedback) return;
     const count = slices.filter(Boolean).length;
     register(count === question.target);
+  }
+
+  function validateSliders() {
+    if (!running || !question || question.kind !== "slider" || feedback) return;
+    const res = question.targets.map((t, i) => (sliderValues[i] ?? 0) === t);
+    const misses = res.filter((r) => !r).length;
+    setSliderResults(res);
+    if (misses === 0) {
+      setSliderMsg(null);
+      register(true);
+      return;
+    }
+    soundWrong();
+    setWrong((w) => w + 1);
+    setStreak(0);
+    setSliderMsg(`${misses}/${question.targets.length} erradas, ajuste corretamente.`);
   }
 
   function togglePizza(p: number, i: number) {
@@ -295,14 +317,14 @@ export function PercentGame({ onExit, onStatsChange }: Props) {
                 onClick={() => setMode("porcentagem")}
                 icon={<Percent className="h-6 w-6" />}
                 title="Desafio da Porcentagem"
-                text="Barras, diagramas, quantidades e cotidiano."
+                text="Barras, diagramas, réguas e situações do dia a dia."
               />
               <ModeCard
                 active={mode === "fracoes"}
                 onClick={() => setMode("fracoes")}
                 icon={<PieChart className="h-6 w-6" />}
                 title="Desafio das Frações"
-                text="Pizzas de 5 e 10 partes para montar frações."
+                text="Pizzas de 3, 4, 5, 8 e 10 partes para montar frações."
               />
             </div>
             {lastMode && (
@@ -420,8 +442,26 @@ export function PercentGame({ onExit, onStatsChange }: Props) {
                   </Button>
                 </div>
               )}
-              {question?.kind === "objects" && (
-                <ObjectGrid emoji={question.emoji} count={question.count} />
+              {question?.kind === "slider" && (
+                <div className="flex w-full flex-col items-center gap-4">
+                  <PercentSliders
+                    targets={question.targets}
+                    values={sliderValues}
+                    results={sliderResults ?? undefined}
+                    disabled={!!feedback}
+                    onChange={(i, v) =>
+                      setSliderValues((arr) => arr.map((old, idx) => (idx === i ? v : old)))
+                    }
+                  />
+                  {sliderMsg && (
+                    <div className="animate-shake-x rounded-2xl bg-destructive/15 px-4 py-2 font-semibold text-destructive">
+                      {sliderMsg}
+                    </div>
+                  )}
+                  <Button size="lg" className="h-12 rounded-2xl px-8 text-base font-bold" onClick={validateSliders} disabled={!!feedback}>
+                    Validar
+                  </Button>
+                </div>
               )}
               {question?.kind === "word" && (
                 <div className="text-5xl sm:text-6xl">{question.emoji}</div>
