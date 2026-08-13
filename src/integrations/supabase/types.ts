@@ -14,13 +14,111 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      game_stats: {
+        Row: {
+          best_level: number
+          best_score: number
+          created_at: string
+          game_id: string
+          id: string
+          last_played_at: string
+          mode: string
+          plays: number
+          user_id: string
+        }
+        Insert: {
+          best_level?: number
+          best_score?: number
+          created_at?: string
+          game_id: string
+          id?: string
+          last_played_at?: string
+          mode?: string
+          plays?: number
+          user_id: string
+        }
+        Update: {
+          best_level?: number
+          best_score?: number
+          created_at?: string
+          game_id?: string
+          id?: string
+          last_played_at?: string
+          mode?: string
+          plays?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          badges: Json
+          birthdate: string
+          created_at: string
+          full_name: string
+          grade: string | null
+          id: string
+          level: number
+          nick: string
+          nick_normalized: string
+          school: string
+          updated_at: string
+          xp: number
+        }
+        Insert: {
+          badges?: Json
+          birthdate: string
+          created_at?: string
+          full_name: string
+          grade?: string | null
+          id: string
+          level?: number
+          nick: string
+          nick_normalized: string
+          school: string
+          updated_at?: string
+          xp?: number
+        }
+        Update: {
+          badges?: Json
+          birthdate?: string
+          created_at?: string
+          full_name?: string
+          grade?: string | null
+          id?: string
+          level?: number
+          nick?: string
+          nick_normalized?: string
+          school?: string
+          updated_at?: string
+          xp?: number
+        }
+        Relationships: []
+      }
+      unlocked_games: {
+        Row: {
+          game_id: string
+          unlocked_at: string
+          user_id: string
+        }
+        Insert: {
+          game_id: string
+          unlocked_at?: string
+          user_id: string
+        }
+        Update: {
+          game_id?: string
+          unlocked_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      nick_available: { Args: { _nick: string }; Returns: boolean }
     }
     Enums: {
       [_ in never]: never
