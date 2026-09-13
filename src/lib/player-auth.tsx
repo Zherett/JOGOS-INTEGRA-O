@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import type { GameId } from "./game-storage";
+import { onMatchSaved, type GameId } from "./game-storage";
 import { nickToEmail, nickSlug, levelFromXp, xpFromMatch, type Badge } from "./player-profile";
 
 export interface PlayerProfile {
@@ -192,6 +192,23 @@ export function PlayerAuthProvider({ children }: { children: ReactNode }) {
     },
     [user?.id, stats, profile?.xp, loadAll],
   );
+
+  useEffect(() => {
+    if (!user?.id) {
+      onMatchSaved(null);
+      return;
+    }
+    onMatchSaved((id, match) => {
+      void recordMatch({
+        gameId: id,
+        mode: match.mode ?? "padrao",
+        score: match.score,
+        level: match.level,
+        correct: match.correct,
+      });
+    });
+    return () => onMatchSaved(null);
+  }, [user?.id, recordMatch]);
 
   const value = useMemo<AuthValue>(
     () => ({ loading, user, profile, unlocked, stats, signUp, signIn, signOut, unlockGames, recordMatch, refresh }),

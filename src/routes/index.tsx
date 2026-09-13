@@ -11,7 +11,7 @@ import { ColorMemoryGame } from "@/components/games/ColorMemoryGame";
 import { PercentGame } from "@/components/games/PercentGame";
 import { MinefieldGame } from "@/components/games/MinefieldGame";
 import { CodeGate } from "@/components/games/CodeGate";
-import { loadUnlocked, GAME_CODES } from "@/lib/game-codes";
+import { loadUnlocked } from "@/lib/game-codes";
 import { PlayerAuthProvider, usePlayerAuth } from "@/lib/player-auth";
 import { PlayerMenu } from "@/components/games/PlayerMenu";
 import { loadStats, type AllStats, type GameId } from "@/lib/game-storage";
@@ -70,7 +70,7 @@ function Index() {
   const refreshStats = () => setStats(loadStats());
   const displayStats = mounted ? stats : EMPTY_STATS;
 
-  const showGate = mounted && (addingCode || unlocked.length === 0);
+  const showGate = mounted && !auth.loading && (addingCode || unlocked.length === 0);
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6 sm:py-10">

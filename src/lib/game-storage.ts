@@ -17,6 +17,16 @@ export interface LastMatch {
   wrong: number;
   level: number;
   at: number; // epoch ms
+  /** Optional game mode (games that have more than one). */
+  mode?: string;
+}
+
+type MatchListener = (id: GameId, match: LastMatch) => void;
+let matchListener: MatchListener | null = null;
+
+/** Lets the logged-in profile record every finished match. */
+export function onMatchSaved(fn: MatchListener | null) {
+  matchListener = fn;
 }
 
 export type AllLastMatches = Partial<Record<GameId, LastMatch>>;
@@ -80,6 +90,8 @@ export function loadLastMatch(id: GameId): LastMatch | null {
 export function saveLastMatch(id: GameId, match: Omit<LastMatch, "at"> & { at?: number }) {
   if (typeof window === "undefined") return;
   const all = loadAllLast();
-  all[id] = { ...match, at: match.at ?? Date.now() };
+  const full: LastMatch = { ...match, at: match.at ?? Date.now() };
+  all[id] = full;
   window.localStorage.setItem(LAST_KEY, JSON.stringify(all));
+  try { matchListener?.(id, full); } catch { /* ignore */ }
 }
