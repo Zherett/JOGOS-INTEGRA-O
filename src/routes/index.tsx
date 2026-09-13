@@ -11,7 +11,9 @@ import { ColorMemoryGame } from "@/components/games/ColorMemoryGame";
 import { PercentGame } from "@/components/games/PercentGame";
 import { MinefieldGame } from "@/components/games/MinefieldGame";
 import { CodeGate } from "@/components/games/CodeGate";
-import { loadUnlocked } from "@/lib/game-codes";
+import { loadUnlocked, GAME_CODES } from "@/lib/game-codes";
+import { PlayerAuthProvider, usePlayerAuth } from "@/lib/player-auth";
+import { PlayerMenu } from "@/components/games/PlayerMenu";
 import { loadStats, type AllStats, type GameId } from "@/lib/game-storage";
 
 export const Route = createFileRoute("/")({
@@ -23,8 +25,16 @@ export const Route = createFileRoute("/")({
       { property: "og:description", content: "Jogos educativos gamificados para o 5º ano do Ensino Fundamental." },
     ],
   }),
-  component: Index,
+  component: IndexPage,
 });
+
+function IndexPage() {
+  return (
+    <PlayerAuthProvider>
+      <Index />
+    </PlayerAuthProvider>
+  );
+}
 
 const EMPTY_STATS: AllStats = {
   logica: { bestScore: 0, bestLevel: 1 },
@@ -44,12 +54,18 @@ function Index() {
   const [mounted, setMounted] = useState(false);
   const [unlocked, setUnlocked] = useState<GameId[]>([]);
   const [addingCode, setAddingCode] = useState(false);
+  const auth = usePlayerAuth();
 
   useEffect(() => {
     setMounted(true);
     setStats(loadStats());
     setUnlocked(loadUnlocked());
   }, [view]);
+
+  useEffect(() => {
+    if (auth.unlocked.length === 0) return;
+    setUnlocked((cur) => [...new Set([...cur, ...auth.unlocked])]);
+  }, [auth.unlocked]);
 
   const refreshStats = () => setStats(loadStats());
   const displayStats = mounted ? stats : EMPTY_STATS;
@@ -58,10 +74,19 @@ function Index() {
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6 sm:py-10">
+      <div className="mb-4 flex justify-end">
+        <PlayerMenu />
+      </div>
+
       {view === "menu" && showGate && (
         <CodeGate
           hasGames={unlocked.length > 0}
-          onUnlocked={() => { setUnlocked(loadUnlocked()); setAddingCode(false); }}
+          onUnlocked={(game) => {
+            const list = loadUnlocked();
+            setUnlocked(list);
+            void auth.unlockGames(game ? [game] : list);
+            setAddingCode(false);
+          }}
           onBack={unlocked.length > 0 ? () => setAddingCode(false) : undefined}
         />
       )}
