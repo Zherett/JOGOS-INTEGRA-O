@@ -142,7 +142,7 @@ export function PercentGame({ onExit, onStatsChange }: Props) {
   useEffect(() => {
     if (!finished) return;
     updateBest("porcentagem", score, level);
-    const m: LastMatch = { score, correct, wrong, level, at: Date.now() };
+    const m: LastMatch = { score, correct, wrong, level, at: Date.now(), mode };
     saveLastMatch("porcentagem", m);
     setLastMatch(m);
     setLastMode(mode);
