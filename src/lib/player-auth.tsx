@@ -120,8 +120,7 @@ export function PlayerAuthProvider({ children }: { children: ReactNode }) {
       options: {
         emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
         data: {
-          nick: slug,
-          nick_display: data.nick.trim(),
+          nick: data.nick.trim(),
           full_name: data.fullName.trim(),
           school: data.school,
           grade: data.grade ?? "",
