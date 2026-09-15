@@ -1,5 +1,8 @@
 // Content generator for "Campo Minado Lógico" (8x8 board of hidden cards)
-import { SHAPES, SHAPE_LABEL, type Shape } from "./shapes-content";
+import { SHAPES, ADVANCED_SHAPES, SHAPE_LABEL, type Shape } from "./shapes-content";
+
+/** All geometric shapes that can appear on the board. */
+const BOARD_SHAPES: Shape[] = [...SHAPES, ...ADVANCED_SHAPES];
 
 export const COLS = ["A", "B", "C", "D", "E", "F", "G", "H"];
 export const ROWS = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -101,8 +104,8 @@ function genMystery(): QuestionCard {
 
 /* ---------- Forma geométrica ---------- */
 function genShape(): QuestionCard {
-  const shape = rand(SHAPES);
-  const others = shuffle(SHAPES.filter((s) => s !== shape)).slice(0, 3);
+  const shape = rand(BOARD_SHAPES);
+  const others = shuffle(BOARD_SHAPES.filter((s) => s !== shape)).slice(0, 3);
   return {
     kind: "shape",
     prompt: "Qual é o nome desta forma?",
@@ -129,8 +132,8 @@ export function buildBoard(): MineCard[] {
     const roll = Math.random();
     const base =
       roll < 0.25 ? genBonus()
-      : roll < 0.5 ? genTF()
-      : roll < 0.78 ? genMystery()
+      : roll < 0.47 ? genTF()
+      : roll < 0.72 ? genMystery()
       : genShape();
     cards.push({ ...base, id: `c${i}`, label: cellLabel(i) });
   }
