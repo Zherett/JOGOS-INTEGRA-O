@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Clock, LayoutGrid, Flag, Timer } from "lucide-react";
+import { Clock, LayoutGrid, Flag, Timer, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StartScreen, OptionChip } from "./StartScreen";
 import { Countdown } from "./Countdown";
@@ -72,6 +72,7 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
   const [finished, setFinished] = useState(false);
 
   const timerRef = useRef<number | null>(null);
+  const opening = useRef<Set<string>>(new Set());
 
   function clearTimer() {
     if (timerRef.current) { window.clearInterval(timerRef.current); timerRef.current = null; }
@@ -100,6 +101,7 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
     clearTimer();
     setBoard(buildBoard());
     setRevealed(new Set());
+    opening.current = new Set();
     setOpenCard(null); setAnswered(null); setFlipping(null);
     setScore(0); setCorrect(0); setWrong(0);
     setElapsed(0);
@@ -114,19 +116,25 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
   }
 
   function openCell(card: MineCard) {
-    if (openCard || revealed.has(card.id) || finished) return;
+    if (openCard || revealed.has(card.id) || finished || opening.current.has(card.id)) return;
+    opening.current.add(card.id);
     beep(520, 0.1, "triangle");
     setFlipping(card.id);
     window.setTimeout(() => {
       setFlipping(null);
+      opening.current.delete(card.id);
       setRevealed((r) => new Set(r).add(card.id));
       if (card.kind === "bonus") {
         setScore((s) => s + card.points);
         team.credit(card.points);
         if (card.points >= 0) { setCorrect((c) => c + 1); beep(760, 0.16, "triangle"); }
         else { setWrong((w) => w + 1); beep(180, 0.2, "sawtooth"); }
-        setToast(`${card.label}: ${card.points > 0 ? "+" : ""}${card.points} pontos`);
-        window.setTimeout(() => setToast(null), 1600);
+        setToast(
+          `Carta ${card.label}: ${card.points > 0 ? "+" : ""}${card.points} ${
+            Math.abs(card.points) === 1 ? "ponto" : "pontos"
+          }`,
+        );
+        window.setTimeout(() => setToast(null), 2400);
         nextTeam();
       } else {
         setOpenCard(card);
@@ -276,8 +284,9 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
     <div className="space-y-3">
       <GameTopBar title="Campo Minado Lógico" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         <Stat icon={<Clock className="h-4 w-4" />} label="Tempo de partida" value={fmt(elapsed)} />
+        <Stat icon={<Star className="h-4 w-4" />} label="Pontos" value={String(score)} />
         <Stat icon={<LayoutGrid className="h-4 w-4" />} label="Cartas restantes" value={String(remainingCards)} />
       </div>
 
@@ -417,12 +426,18 @@ function FragmentRow({ row, board, revealed, flipping, disabled, cardClass, onOp
               isFlipping ? "animate-card-flip" : ""
             } ${
               isRevealed
-                ? "bg-muted text-muted-foreground/60 border border-border"
+                ? card.kind === "bonus"
+                  ? `border ${card.points > 0 ? "border-success/40 bg-success/15 text-success" : "border-destructive/40 bg-destructive/15 text-destructive"}`
+                  : "bg-muted text-muted-foreground/60 border border-border"
                 : `${cardClass} shadow-sm hover:-translate-y-0.5 active:scale-95`
             }`}
             style={{ transformStyle: "preserve-3d" }}
           >
-            {isRevealed ? "✓" : card.label}
+            {isRevealed
+              ? card.kind === "bonus"
+                ? `${card.points > 0 ? "+" : ""}${card.points}`
+                : "✓"
+              : card.label}
           </button>
         );
       })}
