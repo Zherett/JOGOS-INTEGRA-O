@@ -33,10 +33,14 @@ export function useTeamSession(): TeamSession {
 
   const credit = useCallback((delta: number) => {
     if (!delta) return;
+    // Capture the owner of the turn before React processes the score update.
+    // The turn may advance immediately after credit() (instant cards), so
+    // reading currentRef inside the updater could credit the next team.
+    const creditedTeam = currentRef.current;
     setScores((s) => {
       if (!s.length) return s;
       const next = [...s];
-      const i = Math.min(currentRef.current, next.length - 1);
+      const i = Math.min(creditedTeam, next.length - 1);
       next[i] = (next[i] ?? 0) + delta;
       return next;
     });
