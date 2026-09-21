@@ -116,7 +116,7 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
   }
 
   function openCell(card: MineCard) {
-    if (openCard || revealed.has(card.id) || finished || opening.current.has(card.id)) return;
+    if (openCard || revealed.has(card.id) || finished || opening.current.size > 0) return;
     opening.current.add(card.id);
     beep(520, 0.1, "triangle");
     setFlipping(card.id);
@@ -307,7 +307,7 @@ export function MinefieldGame({ onExit, onStatsChange }: Props) {
                   board={board}
                   revealed={revealed}
                   flipping={flipping}
-                  disabled={!!openCard}
+                  disabled={!!openCard || flipping !== null}
                   cardClass={colors.card}
                   onOpen={openCell}
                 />

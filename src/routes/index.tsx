@@ -23,6 +23,8 @@ export const Route = createFileRoute("/")({
       { name: "description", content: "Jogos educativos de lógica matemática e plano cartesiano para alunos do 5º ano." },
       { property: "og:title", content: "Desafios de Lógica" },
       { property: "og:description", content: "Jogos educativos gamificados para o 5º ano do Ensino Fundamental." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: IndexPage,
