@@ -1,4 +1,4 @@
-import { Brain, Compass, Bot, Swords, Variable, Trophy, Star, Sparkles, Shapes, Palette, Grid3x3, KeyRound, Percent } from "lucide-react";
+import { Brain, Compass, Bot, Swords, Variable, Trophy, Star, Sparkles, Shapes, Palette, Grid3x3, KeyRound, Percent, PuzzleIcon } from "lucide-react";
 import type { AllStats, GameId } from "@/lib/game-storage";
 import integracaoPreto from "@/assets/integracao-preto.asset.json";
 import semed from "@/assets/semed.asset.json";
@@ -14,6 +14,7 @@ const ENABLED_GAMES: Record<GameId, boolean> = {
   memoria: true,
   minado: true,
   porcentagem: true,
+  completar: true,
 };
 
 interface Props {
@@ -79,6 +80,13 @@ const GAMES: { id: GameId; title: string; subtitle: string; icon: React.ReactNod
     subtitle: "Vire cartas do tabuleiro 8×8 e responda desafios",
     icon: <Grid3x3 className="h-10 w-10" />,
     gradient: "from-accent to-primary-glow",
+  },
+  {
+    id: "completar",
+    title: "Completando a Lógica",
+    subtitle: "Arraste operadores e digite números para completar a operação",
+    icon: <PuzzleIcon className="h-10 w-10" />,
+    gradient: "from-accent-glow to-primary-glow",
   },
   {
     id: "rpg",

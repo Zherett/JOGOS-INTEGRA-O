@@ -13,6 +13,7 @@ export const GAME_CODES: Record<GameId, string> = {
   robogrid: "R6RG26",
   minado: "N7CM26",
   porcentagem: "Q9PC26",
+  completar: "K0CL26",
   rpg: "P8RP26",
 };
 
