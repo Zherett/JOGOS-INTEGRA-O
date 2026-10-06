@@ -10,6 +10,7 @@ import { ShapeColorGame } from "@/components/games/ShapeColorGame";
 import { ColorMemoryGame } from "@/components/games/ColorMemoryGame";
 import { PercentGame } from "@/components/games/PercentGame";
 import { MinefieldGame } from "@/components/games/MinefieldGame";
+import { CompleteLogicGame } from "@/components/games/CompleteLogicGame";
 import { CodeGate } from "@/components/games/CodeGate";
 import { loadUnlocked } from "@/lib/game-codes";
 import { PlayerAuthProvider, usePlayerAuth } from "@/lib/player-auth";
@@ -48,7 +49,11 @@ const EMPTY_STATS: AllStats = {
   memoria: { bestScore: 0, bestLevel: 1 },
   minado: { bestScore: 0, bestLevel: 1 },
   porcentagem: { bestScore: 0, bestLevel: 1 },
+  completar: { bestScore: 0, bestLevel: 1 },
 };
+
+// Login temporariamente oculto.
+const SHOW_LOGIN = false;
 
 function Index() {
   const [view, setView] = useState<"menu" | GameId>("menu");
@@ -76,9 +81,11 @@ function Index() {
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6 sm:py-10">
-      <div className="mb-4 flex justify-end">
-        <PlayerMenu />
-      </div>
+      {SHOW_LOGIN && (
+        <div className="mb-4 flex justify-end">
+          <PlayerMenu />
+        </div>
+      )}
 
       {view === "menu" && showGate && (
         <CodeGate
@@ -125,6 +132,10 @@ function Index() {
 
       {view === "porcentagem" && (
         <PercentGame onExit={() => setView("menu")} onStatsChange={refreshStats} />
+      )}
+
+      {view === "completar" && (
+        <CompleteLogicGame onExit={() => setView("menu")} onStatsChange={refreshStats} />
       )}
 
       {view === "rpg" && (
