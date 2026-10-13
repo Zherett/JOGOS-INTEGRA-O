@@ -152,22 +152,26 @@ function uniqueOp(q: CQuestion): boolean {
 // ---------- Level 1: drag the operator ----------
 function level1(): CQuestion {
   for (;;) {
-    const v = pick(["arith", "arith", "cmp", "logic"]);
     let q: CQuestion;
-    if (v === "arith") {
-      const op = pick(ARITH);
-      const [a, b, c] = arithPair(op);
-      q = build(1, [N(a), SO, N(b)], c, ARITH);
-    } else if (v === "cmp") {
-      let a = rng(0, 15), b = rng(0, 15);
-      if (Math.random() < 0.2) b = a;
-      q = build(1, [N(a), SO, N(b)], true, [...CMP, pick(LOGIC)]);
-    } else {
+    if (Math.random() < 0.5) {
+      // Different truth values make e/ou distinguishable.
       const lt = Math.random() < 0.5;
       const [a, o1, b] = cmpTriple(lt);
       const [c, o2, d] = cmpTriple(!lt);
       const res = Math.random() < 0.5;
       q = build(1, [N(a), O(o1), N(b), SO, N(c), O(o2), N(d)], res, [...LOGIC, pick(["+", "×"]), pick(["−", "÷"])]);
+    } else {
+      // Keep the fixed comparison neutral so the missing comparator matters.
+      const connective = pick(LOGIC);
+      const [c, o2, d] = cmpTriple(connective === "e");
+      const a = rng(0, 15);
+      const b = Math.random() < 0.2 ? a : rng(0, 15);
+      const missing: Token[] = [N(a), SO, N(b)];
+      const fixed: Token[] = [N(c), O(o2), N(d)];
+      const tokens = Math.random() < 0.5
+        ? [...missing, O(connective), ...fixed]
+        : [...fixed, O(connective), ...missing];
+      q = build(1, tokens, Math.random() < 0.5, [...CMP, pick(ARITH)]);
     }
     if (uniqueOp(q)) return q;
   }

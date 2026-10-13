@@ -6,3 +6,4 @@
 - [x] Campo Minado: mais variedade de formas geométricas
 - [x] Novo jogo: Completando a Lógica (4 níveis, código K0CL26)
 - [x] Ocultar login temporariamente
+- [x] Completando a Lógica: nível 1 com comparações compostas e lacunas para conectivos ou comparadores, com testes de validação
