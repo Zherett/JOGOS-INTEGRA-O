@@ -8,3 +8,5 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+- Keep question generation and answer validation in browser-safe game logic modules, with adjacent Bun tests for rule changes, so UI and tests use the same evaluator.
