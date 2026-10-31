@@ -1,0 +1,129 @@
+import { useEffect, useState } from "react";
+
+const MUTE_KEY = "desafios-logica-muted-v1";
+
+type MuteListener = (muted: boolean) => void;
+const listeners = new Set<MuteListener>();
+
+export function isSoundMuted(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(MUTE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function setSoundMuted(muted: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    if (muted) window.localStorage.setItem(MUTE_KEY, "1");
+    else window.localStorage.removeItem(MUTE_KEY);
+  } catch {
+    /* ignore */
+  }
+  listeners.forEach((fn) => fn(muted));
+}
+
+export function toggleSoundMuted(): boolean {
+  const next = !isSoundMuted();
+  setSoundMuted(next);
+  return next;
+}
+
+export function useSoundMuted() {
+  const [muted, setMuted] = useState(false);
+
+  useEffect(() => {
+    setMuted(isSoundMuted());
+    const handler: MuteListener = (m) => setMuted(m);
+    listeners.add(handler);
+    return () => {
+      listeners.delete(handler);
+    };
+  }, []);
+
+  return {
+    muted,
+    toggle: () => toggleSoundMuted(),
+    setMuted: (m: boolean) => setSoundMuted(m),
+  };
+}
+
+let sharedCtx: AudioContext | null = null;
+
+function getAudioContext(): AudioContext | null {
+  if (typeof window === "undefined") return null;
+  try {
+    if (!sharedCtx || sharedCtx.state === "closed") {
+      const AC =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AC) return null;
+      sharedCtx = new AC();
+    }
+    if (sharedCtx.state === "suspended") {
+      void sharedCtx.resume().catch(() => {});
+    }
+    return sharedCtx;
+  } catch {
+    return null;
+  }
+}
+
+export function playTone(
+  freq: number,
+  dur = 0.14,
+  type: OscillatorType = "sine",
+  vol = 0.08,
+) {
+  if (isSoundMuted()) return;
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.01, vol), ctx.currentTime + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + dur + 0.03);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function playCorrect() {
+  playTone(587.33, 0.1, "triangle", 0.09);
+  if (typeof window !== "undefined") {
+    window.setTimeout(() => playTone(880, 0.16, "triangle", 0.1), 90);
+  }
+}
+
+export function playWrong() {
+  playTone(170, 0.25, "sawtooth", 0.06);
+}
+
+export function playClick() {
+  playTone(480, 0.06, "triangle", 0.05);
+}
+
+export function playVictory() {
+  playTone(523.25, 0.12, "triangle", 0.09);
+  if (typeof window !== "undefined") {
+    window.setTimeout(() => playTone(659.25, 0.12, "triangle", 0.09), 110);
+    window.setTimeout(() => playTone(783.99, 0.14, "triangle", 0.1), 220);
+    window.setTimeout(() => playTone(1046.5, 0.28, "triangle", 0.12), 340);
+  }
+}
+
+export function playSound(type: "correct" | "wrong" | "click" | "victory") {
+  if (type === "correct") playCorrect();
+  else if (type === "wrong") playWrong();
+  else if (type === "victory") playVictory();
+  else playClick();
+}

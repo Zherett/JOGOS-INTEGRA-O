@@ -1,0 +1,602 @@
+import { useState, useEffect } from "react";
+import {
+  User,
+  LogOut,
+  Cake,
+  School,
+  Trophy,
+  Star,
+  Award,
+  ShieldCheck,
+  Volume2,
+  VolumeX,
+  Flame,
+  Lock,
+  CheckCircle2,
+  Clock,
+  Zap,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
+  Send,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { PlayerAuthDialog } from "./PlayerAuthDialog";
+import { LeaderboardDialog } from "./LeaderboardDialog";
+import { AdminPanelDialog } from "./AdminPanelDialog";
+import { PlayerMedalsInventory } from "./PlayerMedalsInventory";
+import { usePlayerAuth } from "@/lib/player-auth";
+import {
+  ageFrom,
+  birthdayInfo,
+  DEFAULT_DAILY_XP_CAP,
+  getLocalDateKey,
+  levelProgress,
+  MAX_LEVEL,
+  stageFromBirthdate,
+  TOURNAMENT_DAILY_ENTRIES_LIMIT,
+  TOURNAMENT_DAILY_EXTRA_XP_CAP,
+  VALID_TURMAS,
+  X1_DAILY_EXTRA_XP_CAP,
+  type TurmaCode,
+} from "@/lib/player-profile";
+import { GAME_NAMES, type GameId } from "@/lib/game-storage";
+import { useSoundMuted } from "@/lib/sound";
+import {
+  fetchLeaderboard,
+  playfabSetInitialTurma,
+  playfabRequestTurmaChange,
+} from "@/lib/playfab";
+
+interface Props {
+  onConfigChanged?: () => void;
+}
+
+/** Discreet explanation tooltip */
+function HelpTip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-block align-middle ml-1">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-muted/90 text-[10px] font-black text-muted-foreground transition-colors hover:bg-primary hover:text-primary-foreground focus:outline-none"
+        title={text}
+        aria-label="Mais informações"
+      >
+        ?
+      </button>
+      {open && (
+        <span className="absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 w-52 rounded-xl border bg-popover px-2.5 py-1.5 text-center text-[11px] font-medium leading-snug text-popover-foreground shadow-2xl">
+          {text}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** Top navigation bar with Ranking, Sound Mute, Admin Panel and Player Profile. */
+export function PlayerMenu({ onConfigChanged }: Props) {
+  const auth = usePlayerAuth();
+  const sound = useSoundMuted();
+  const [authOpen, setAuthOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [rankingOpen, setRankingOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
+
+  // Accordion collapsible states
+  const [levelExpanded, setLevelExpanded] = useState(false);
+  const [medalsExpanded, setMedalsExpanded] = useState(false);
+
+  // Turma change request dialog state
+  const [turmaModalOpen, setTurmaModalOpen] = useState(false);
+  const [selectedNewTurma, setSelectedNewTurma] = useState<TurmaCode>("A");
+  const [turmaMsg, setTurmaMsg] = useState<string | null>(null);
+
+  // Player rank position in their stage
+  const [playerRank, setPlayerRank] = useState<number | null>(null);
+
+  const profile = auth.profile;
+  const age = profile ? ageFrom(profile.birthdate) : null;
+  const stageInfo = profile ? stageFromBirthdate(profile.birthdate, new Date(), profile.school) : null;
+  const bday = profile ? birthdayInfo(profile.birthdate) : null;
+  const distinctGames = profile
+    ? Math.max(
+        profile.distinctGamesPlayed ?? 0,
+        new Set(auth.stats.map((s) => s.game_id)).size,
+      )
+    : 0;
+  const progress = profile
+    ? levelProgress({
+        xp: profile.xp,
+        matchesPlayed: profile.matchesPlayed ?? 0,
+        wins: profile.wins ?? 0,
+        distinctGames,
+      })
+    : null;
+  const dailyCap = auth.adminConfig.dailyXpCap ?? DEFAULT_DAILY_XP_CAP;
+  const todayKey = getLocalDateKey();
+  const isTodayRecord = profile && profile.dailyXpDate === todayKey;
+  const dailyXp = isTodayRecord ? Math.max(0, profile.dailyXp ?? 0) : 0;
+  const dailyX1Xp = isTodayRecord ? Math.max(0, profile.dailyX1Xp ?? 0) : 0;
+  const dailyTournamentXp = isTodayRecord ? Math.max(0, profile.dailyTournamentXp ?? 0) : 0;
+  const dailyTournamentEntries = isTodayRecord
+    ? Math.max(0, profile.dailyTournamentEntries ?? 0)
+    : 0;
+  const dailyPercent = Math.min(100, Math.round((dailyXp / Math.max(1, dailyCap)) * 100));
+  const isDailyCapped = dailyXp >= dailyCap;
+
+  // Retrieve player's ranking position in their stage
+  useEffect(() => {
+    if (!profileOpen || !profile) return;
+    const stage = stageFromBirthdate(profile.birthdate, new Date(), profile.school).id;
+    fetchLeaderboard({ kind: "xp_season", stage }, 100)
+      .then((entries) => {
+        const found = entries.find(
+          (e) =>
+            e.playerId === profile.id ||
+            e.nick.toLowerCase() === profile.nick.toLowerCase(),
+        );
+        if (found) {
+          setPlayerRank(found.rank);
+        } else {
+          setPlayerRank(null);
+        }
+      })
+      .catch(() => setPlayerRank(null));
+  }, [profileOpen, profile]);
+
+  async function handleSetInitialTurma(t: TurmaCode) {
+    await playfabSetInitialTurma(t);
+    void auth.refresh();
+  }
+
+  async function handleSubmitTurmaRequest() {
+    if (!selectedNewTurma) return;
+    await playfabRequestTurmaChange(selectedNewTurma);
+    setTurmaMsg(`Solicitação para Turma ${selectedNewTurma} enviada ao Administrador!`);
+    void auth.refresh();
+    setTimeout(() => {
+      setTurmaModalOpen(false);
+      setTurmaMsg(null);
+    }, 2000);
+  }
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {/* Sound Mute Toggle */}
+        <button
+          type="button"
+          onClick={sound.toggle}
+          title={sound.muted ? "Ativar som" : "Silenciar som"}
+          aria-label={sound.muted ? "Ativar som" : "Silenciar som"}
+          className="grid h-11 w-11 place-items-center rounded-2xl border bg-card text-foreground shadow-sm transition-all hover:bg-secondary active:scale-95"
+        >
+          {sound.muted ? (
+            <VolumeX className="h-5 w-5 text-muted-foreground" />
+          ) : (
+            <Volume2 className="h-5 w-5 text-primary" />
+          )}
+        </button>
+
+        {/* Ranking Button */}
+        <button
+          type="button"
+          onClick={() => setRankingOpen(true)}
+          className="flex h-11 items-center gap-1.5 rounded-2xl border bg-card px-3 text-foreground shadow-sm transition-all hover:bg-secondary active:scale-95"
+          aria-label="Abrir Ranking"
+          title="Ranking da Temporada (Por Etapa e Geral)"
+        >
+          <Trophy className="h-5 w-5 text-amber-500" />
+          <span className="hidden font-display text-xs font-bold uppercase sm:inline">Ranking</span>
+        </button>
+
+        {/* Admin Panel Button — Only visible when Admin is already logged in */}
+        {auth.isAdmin && (
+          <button
+            type="button"
+            onClick={() => setAdminOpen(true)}
+            className="flex h-11 items-center gap-1.5 rounded-2xl border border-primary/50 bg-primary/10 text-primary px-3 shadow-sm transition-all hover:bg-primary/20 active:scale-95"
+            aria-label="Painel do Administrador"
+            title="Configurações do Administrador (ADM)"
+          >
+            <ShieldCheck className="h-4 w-4" />
+            <span className="font-display text-xs font-bold uppercase">ADM</span>
+          </button>
+        )}
+
+        {/* Player Profile / Login Button */}
+        <button
+          type="button"
+          onClick={() => (profile ? setProfileOpen(true) : setAuthOpen(true))}
+          className="flex items-center gap-2 rounded-2xl border bg-card px-3 py-1.5 text-left shadow-sm transition-all hover:bg-secondary active:scale-95"
+          aria-label={profile ? "Abrir meu perfil" : "Entrar na minha conta"}
+        >
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground">
+            <User className="h-5 w-5" />
+          </span>
+          <span className="min-w-0 pr-1">
+            <span className="block max-w-[9rem] truncate font-display text-sm font-bold leading-tight">
+              {profile ? profile.nick : "Entrar"}
+            </span>
+            <span className="block text-[11px] leading-tight text-muted-foreground">
+              {profile ? `Nível ${progress?.level} • ${profile.xp} XP` : "criar perfil"}
+            </span>
+          </span>
+        </button>
+      </div>
+
+      <PlayerAuthDialog open={authOpen} onOpenChange={setAuthOpen} />
+      <LeaderboardDialog open={rankingOpen} onOpenChange={setRankingOpen} />
+      <AdminPanelDialog
+        open={adminOpen}
+        onOpenChange={setAdminOpen}
+        onConfigSaved={onConfigChanged}
+      />
+
+      {/* Modal de Perfil do Jogador — Espaçoso, Estável e com Altura Fixa */}
+      <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
+        <DialogContent className="w-[95vw] md:w-[90vw] max-w-4xl h-[88vh] max-h-[88vh] flex flex-col p-0 overflow-hidden rounded-3xl border bg-background shadow-2xl">
+          <DialogHeader className="px-6 pt-5 pb-3 border-b shrink-0 flex flex-row items-center justify-between">
+            <DialogTitle className="font-display text-2xl font-extrabold text-foreground">
+              Meu Perfil
+            </DialogTitle>
+          </DialogHeader>
+
+          {profile && progress && (
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+              {/* Bloco de Informações do Jogador com Nível no Lugar do Ícone */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 rounded-3xl border bg-secondary/30 p-4">
+                {/* O nível do jogador aparece destacado no local onde estava o ícone */}
+                <div className="relative grid h-20 w-20 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-primary via-primary/95 to-primary/80 text-primary-foreground shadow-lg border-2 border-primary/50">
+                  <div className="flex flex-col items-center justify-center leading-none text-center">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-primary-foreground/80">
+                      NÍVEL
+                    </span>
+                    <span className="font-display text-3xl font-black">
+                      {progress.level}
+                    </span>
+                  </div>
+                  <span className="absolute -bottom-2 rounded-full bg-card px-2 py-0.5 text-[9px] font-black text-primary border shadow-sm truncate max-w-[4.8rem]">
+                    {progress.title.split(" ")[0]}
+                  </span>
+                </div>
+
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="truncate font-display text-2xl font-black text-foreground">
+                      {profile.nick}
+                    </h2>
+                    {/* Tag da Turma */}
+                    {profile.turma ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 border border-primary/30 px-2.5 py-0.5 text-xs font-bold text-primary">
+                        Turma {profile.turma}
+                        <button
+                          type="button"
+                          onClick={() => setTurmaModalOpen(true)}
+                          className="ml-1 text-[10px] underline hover:text-foreground"
+                          title="Solicitar mudança de turma"
+                        >
+                          trocar
+                        </button>
+                      </span>
+                    ) : (
+                      <div className="inline-flex items-center gap-1 rounded-xl bg-card border px-2 py-0.5 text-xs">
+                        <span className="text-muted-foreground text-[11px]">Escolher Turma:</span>
+                        {VALID_TURMAS.map((t) => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => void handleSetInitialTurma(t)}
+                            className="rounded px-1.5 py-0.5 text-xs font-bold hover:bg-primary hover:text-primary-foreground"
+                          >
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="truncate text-xs font-semibold uppercase text-muted-foreground">
+                    {profile.full_name}
+                  </p>
+
+                  <p className="text-xs text-muted-foreground">
+                    {profile.school}
+                    {profile.grade ? ` • ${profile.grade}` : ""} • {age} anos
+                  </p>
+
+                  {/* Badges de Informações Simplificadas com Ícones '?' */}
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    {/* Etapa */}
+                    {stageInfo && (
+                      <span className="inline-flex items-center rounded-full bg-secondary/90 border px-2.5 py-0.5 text-[11px] font-extrabold text-foreground">
+                        {stageInfo.emoji} {stageInfo.label}
+                        <HelpTip text="Faixa etária calculada a partir da data de nascimento para garantir disputas justas no ranking e torneio." />
+                      </span>
+                    )}
+
+                    {/* Quantidade de Medalhas */}
+                    <span className="inline-flex items-center rounded-full bg-amber-500/15 border border-amber-500/30 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-500 dark:text-amber-400">
+                      🏅 {profile.unlockedMedals?.length ?? 0} Medalhas
+                      <HelpTip text="Total de medalhas e troféus desbloqueados em partidas, níveis e desafios." />
+                    </span>
+
+                    {/* Colocação no Ranking */}
+                    <span className="inline-flex items-center rounded-full bg-primary/15 border border-primary/30 px-2.5 py-0.5 text-[11px] font-extrabold text-primary">
+                      🏆 {playerRank ? `#${playerRank} no Ranking` : "Sem colocação no Ranking"}
+                      <HelpTip text="Sua colocação oficial na temporada atual do Torneio Semanal da sua Etapa." />
+                    </span>
+                  </div>
+
+                  {/* Aviso de solicitação de turma pendente */}
+                  {profile.pendingTurmaRequest && (
+                    <p className="pt-1 text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                      ⏳ Solicitação para mudar para a <b>Turma {profile.pendingTurmaRequest}</b> enviada ao Administrador (aguardando aprovação).
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* ABA EXPANSÍVEL: NÍVEL & PROGRESSO */}
+              <div className="rounded-3xl border bg-card p-4 space-y-3 transition-all">
+                <div className="flex items-center justify-between text-sm font-bold">
+                  <span className="flex items-center gap-2">
+                    <Star className="h-4 w-4 text-accent" />
+                    Nível {progress.level}/{MAX_LEVEL} — {progress.title}
+                  </span>
+                  <span className="text-primary font-mono">{profile.xp} XP</span>
+                </div>
+
+                <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all duration-300"
+                    style={{ width: `${progress.percent}%` }}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>
+                    {progress.current}/{progress.needed} XP na faixa atual
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setLevelExpanded(!levelExpanded)}
+                    className="inline-flex items-center gap-1 font-display font-extrabold text-primary hover:underline"
+                  >
+                    {levelExpanded ? (
+                      <>
+                        Ocultar Detalhes <ChevronUp className="h-3.5 w-3.5" />
+                      </>
+                    ) : (
+                      <>
+                        Ver Detalhes do Nível & Requisitos <ChevronDown className="h-3.5 w-3.5" />
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Conteúdo Expansível do Nível */}
+                {levelExpanded && (
+                  <div className="mt-3 space-y-3 border-t pt-3 animate-in fade-in-50 duration-200">
+                    {/* Barra de Limite Diário de XP */}
+                    <div className="rounded-2xl border bg-secondary/30 p-3 space-y-2">
+                      <div className="flex items-center justify-between text-xs font-bold">
+                        <span className="flex items-center gap-1.5">
+                          <Zap className="h-3.5 w-3.5 text-accent" /> XP Diário de Hoje
+                          <HelpTip text="Limite diário de XP comum para garantir ritmo saudável de estudos." />
+                        </span>
+                        <span className={isDailyCapped ? "text-accent" : "text-foreground"}>
+                          {dailyXp} / {dailyCap} XP
+                        </span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            isDailyCapped ? "bg-accent" : "bg-success"
+                          }`}
+                          style={{ width: `${dailyPercent}%` }}
+                        />
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        {isDailyCapped
+                          ? `Limite diário de ${dailyCap} XP atingido hoje. O limite renova amanhã!`
+                          : `Você ainda pode ganhar até ${dailyCap - dailyXp} XP hoje.`}
+                      </p>
+
+                      {/* Bônus extras diários: Torneio & X1 */}
+                      <div className="grid grid-cols-1 gap-1.5 border-t pt-2 text-[11px] sm:grid-cols-2">
+                        <div className="rounded-xl bg-background/80 p-2">
+                          <div className="font-bold text-primary">
+                            🏆 XP Extra Torneio: {dailyTournamentXp}/{TOURNAMENT_DAILY_EXTRA_XP_CAP} XP
+                          </div>
+                          <div className="text-muted-foreground">
+                            Entradas hoje: <b>{dailyTournamentEntries}/{TOURNAMENT_DAILY_ENTRIES_LIMIT}</b>
+                          </div>
+                        </div>
+                        <div className="rounded-xl bg-background/80 p-2">
+                          <div className="font-bold text-accent">
+                            ⚔️ XP Extra Arena X1: {dailyX1Xp}/{X1_DAILY_EXTRA_XP_CAP} XP
+                          </div>
+                          <div className="text-muted-foreground">
+                            Partidas ilimitadas (Nível 5+)
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Requisitos para o Próximo Nível */}
+                    {!progress.isMaxLevel && progress.nextRequirement && (
+                      <div className="rounded-2xl border bg-background p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="flex items-center gap-1.5 font-display text-xs font-extrabold uppercase tracking-wider text-primary">
+                            <Lock className="h-3.5 w-3.5" /> Requisitos para o Nível{" "}
+                            {progress.nextRequirement.level} ({progress.nextRequirement.emoji}{" "}
+                            {progress.nextRequirement.title})
+                          </span>
+                        </div>
+
+                        {progress.isLockedByMissions && (
+                          <div className="rounded-xl bg-accent/15 px-2.5 py-1.5 text-[11px] font-semibold text-foreground">
+                            🔒 Você já tem o XP necessário! Conclua os requisitos pendentes abaixo para
+                            destravar o Nível {progress.nextRequirement.level}.
+                          </div>
+                        )}
+
+                        <ul className="space-y-1.5 text-xs">
+                          {progress.checklist.map((item) => (
+                            <li
+                              key={item.key}
+                              className="flex items-center justify-between gap-2 rounded-xl bg-secondary/40 px-2.5 py-1.5"
+                            >
+                              <span className="flex items-center gap-1.5 font-medium">
+                                {item.met ? (
+                                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
+                                ) : (
+                                  <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                )}
+                                {item.label}
+                              </span>
+                              <span
+                                className={`font-display font-bold ${
+                                  item.met ? "text-success" : "text-muted-foreground"
+                                }`}
+                              >
+                                {item.current} / {item.required}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* ABA EXPANSÍVEL: INVENTÁRIO & CATÁLOGO DE MEDALHAS */}
+              <div className="rounded-3xl border bg-card p-4 space-y-3 transition-all">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 font-display text-base font-extrabold text-foreground">
+                    <Award className="h-5 w-5 text-accent" />
+                    <span>Inventário de Medalhas</span>
+                    <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-bold text-muted-foreground">
+                      {profile.unlockedMedals?.length ?? 0} obtidas
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setMedalsExpanded(!medalsExpanded)}
+                    className="inline-flex items-center gap-1 font-display text-xs font-extrabold text-primary hover:underline"
+                  >
+                    {medalsExpanded ? (
+                      <>
+                        Recolher Inventário <ChevronUp className="h-3.5 w-3.5" />
+                      </>
+                    ) : (
+                      <>
+                        Abrir Catálogo de Medalhas <ChevronDown className="h-3.5 w-3.5" />
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {medalsExpanded && (
+                  <div className="border-t pt-3 animate-in fade-in-50 duration-200">
+                    <PlayerMedalsInventory
+                      unlockedMedals={profile.unlockedMedals}
+                      customMedals={auth.adminConfig.customMedals}
+                      profile={profile}
+                      stats={auth.stats}
+                      isOwner={true}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Botão de Logout */}
+              <div className="pt-2">
+                <Button
+                  variant="outline"
+                  className="w-full rounded-2xl py-2.5 font-display text-xs font-bold"
+                  onClick={async () => {
+                    await auth.signOut();
+                    setProfileOpen(false);
+                    onConfigChanged?.();
+                  }}
+                >
+                  <LogOut className="mr-2 h-4 w-4" /> Sair da conta
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Solicitação de Troca de Turma para o ADM */}
+      <Dialog open={turmaModalOpen} onOpenChange={setTurmaModalOpen}>
+        <DialogContent className="w-[90vw] max-w-sm rounded-3xl p-5">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg font-bold">
+              Solicitar Troca de Turma
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <p className="text-xs text-muted-foreground">
+              Sua turma atual é <b>Turma {profile?.turma || "Não definida"}</b>. Escolha a nova turma
+              desejada. A solicitação será enviada para aprovação do Administrador/Professor.
+            </p>
+
+            <div className="space-y-1.5">
+              <label htmlFor="new-turma" className="text-xs font-bold text-foreground">
+                Nova Turma Desejada
+              </label>
+              <select
+                id="new-turma"
+                value={selectedNewTurma}
+                onChange={(e) => setSelectedNewTurma(e.target.value as TurmaCode)}
+                className="h-10 w-full rounded-xl border bg-background px-3 text-sm font-bold"
+              >
+                {VALID_TURMAS.map((t) => (
+                  <option key={t} value={t}>
+                    Turma {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {turmaMsg && (
+              <div className="rounded-xl bg-success/15 p-2 text-center text-xs font-bold text-success">
+                {turmaMsg}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1 rounded-xl text-xs"
+                onClick={() => setTurmaModalOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                className="flex-1 rounded-xl text-xs font-bold"
+                onClick={() => void handleSubmitTurmaRequest()}
+              >
+                <Send className="mr-1 h-3.5 w-3.5" /> Enviar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}

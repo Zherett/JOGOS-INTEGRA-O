@@ -1,0 +1,257 @@
+// Access-code and platform game configuration system
+// Supports dynamic configuration by the Administrator (ADM) synced with PlayFab TitleData.
+import { ALL_GAME_IDS, type GameId } from "./game-storage.ts";
+import type { MedalDefinition, AdminMedalNotification } from "./medals-catalog.ts";
+
+const UNLOCK_KEY = "desafios-logica-unlocked-v1";
+const ADMIN_CONFIG_KEY = "desafios-logica-admin-config-v1";
+
+const STATIC_PRESETS: Record<string, string> = {
+  logica: "L1MT26",
+  cartesiano: "C2PL26",
+  formas: "F3FC26",
+  memoria: "M4CR26",
+  variaveis: "V5CV26",
+  robogrid: "R6RG26",
+  minado: "N7CM26",
+  porcentagem: "Q9PC26",
+  completar: "K0CL26",
+  rpg: "P8RP26",
+};
+
+/** Default codes for all games on the platform (dynamically populated). */
+export const DEFAULT_GAME_CODES: Record<GameId, string> = ALL_GAME_IDS.reduce(
+  (acc, id) => {
+    acc[id] = STATIC_PRESETS[id] || `${id.slice(0, 2).toUpperCase()}${Math.floor(1000 + Math.random() * 9000)}`;
+    return acc;
+  },
+  {} as Record<GameId, string>,
+);
+
+/** Default enabled status per game (dynamically populated). */
+export const DEFAULT_ENABLED_GAMES: Record<GameId, boolean> = ALL_GAME_IDS.reduce(
+  (acc, id) => {
+    acc[id] = true;
+    return acc;
+  },
+  {} as Record<GameId, boolean>,
+);
+
+/** Default Master code (unlocks all enabled games for teachers). */
+export const DEFAULT_MASTER_CODE = "SEMED26";
+
+/** Backwards-compatible exports */
+export const GAME_CODES = DEFAULT_GAME_CODES;
+export const MASTER_CODE = DEFAULT_MASTER_CODE;
+
+/** Reserved codes for games still in production (accepted, nothing to play yet). */
+const RESERVED_CODES = [
+  "X1AB26", "X2CD26", "X3EF26", "X4GH26", "X5IJ26",
+  "X6KL26", "X7MN26", "X8OP26", "X9QR26", "Y1ST26",
+];
+
+export interface ResetHistoryEntry {
+  id: string;
+  seasonId: number;
+  seasonName: string;
+  executedAt: string;
+  resetXp: boolean;
+  reason?: string;
+}
+
+export interface PlatformAdminConfig {
+  enabledGames: Record<GameId, boolean>;
+  gameCodes: Record<GameId, string>;
+  masterCode: string;
+  /** When false, all enabled games appear unlocked in the menu without requiring a code. */
+  requireCodeGate: boolean;
+  /** Current ranking season number (incremented on each reset). */
+  seasonId: number;
+  /** Human-readable name for the active ranking cycle/season. */
+  seasonName: string;
+  /** ISO timestamp of the last ranking reset. */
+  lastResetAt: string;
+  /** Optional ISO timestamp scheduled by the ADM for the next automatic reset. */
+  scheduledResetAt: string | null;
+  /** Whether the scheduled reset should also reset player XP/Level (true) or only Season/Game Rankings (false). */
+  scheduledResetClearXp: boolean;
+  /** History of executed ranking resets. */
+  resetHistory: ResetHistoryEntry[];
+  /** Whether the Arena X1 Online (1v1 Versus mode) is enabled for students (Level 5+). */
+  x1Enabled: boolean;
+  /** Opening hour for Arena X1 (0..23, default 7 = 07:00). */
+  x1OpenHour: number;
+  /** Closing hour for Arena X1 (0..23, default 19 = 19:00). */
+  x1CloseHour: number;
+  /** When true, ADM forces Arena X1 open regardless of the clock hour. */
+  x1ForceOpen: boolean;
+  /** 1 to 3 games available for X1 Arena battles (default: 3 games with rotation). */
+  x1AvailableGames?: GameId[];
+  /** Rotation interval in minutes for X1 Arena games (default: 10). */
+  x1RotationMinutes?: number;
+  /** Whether the Weekly Ranked Tournament is enabled (Level 3+). */
+  tournamentEnabled: boolean;
+  /** Optional ADM override for the Weekly Tournament game (`null` = automatic weekly rotation). */
+  tournamentGameOverride: GameId | null;
+  /** Daily XP limit per student (default: 1000 XP/day). Configurable by ADM. */
+  dailyXpCap: number;
+  /** Custom medals created or edited by the administrator */
+  customMedals?: MedalDefinition[];
+  /** In-game "mailbox" notifications of students who earned medals */
+  adminMedalNotifications?: AdminMedalNotification[];
+  /** Optional PlayFab Title ID configured via Admin UI. */
+  playfabTitleId?: string;
+  updatedAt: string;
+}
+
+export const DEFAULT_ADMIN_CONFIG: PlatformAdminConfig = {
+  enabledGames: { ...DEFAULT_ENABLED_GAMES },
+  gameCodes: { ...DEFAULT_GAME_CODES },
+  masterCode: DEFAULT_MASTER_CODE,
+  requireCodeGate: true,
+  seasonId: 1,
+  seasonName: "Temporada 1 • SEMED Coari",
+  lastResetAt: "2026-01-01T00:00:00.000Z",
+  scheduledResetAt: null,
+  scheduledResetClearXp: false,
+  resetHistory: [],
+  x1Enabled: true,
+  x1OpenHour: 7,
+  x1CloseHour: 19,
+  x1ForceOpen: false,
+  x1AvailableGames: ["rpg", "logica", "porcentagem"],
+  x1RotationMinutes: 10,
+  tournamentEnabled: true,
+  tournamentGameOverride: null,
+  dailyXpCap: 1000,
+  customMedals: [],
+  adminMedalNotifications: [],
+  updatedAt: "2026-01-01T00:00:00.000Z",
+};
+
+export function normalizeCode(raw: string): string {
+  return raw.trim().toUpperCase().replace(/\s+/g, "");
+}
+
+export function loadAdminConfig(): PlatformAdminConfig {
+  if (typeof window === "undefined") return { ...DEFAULT_ADMIN_CONFIG };
+  try {
+    const raw = window.localStorage.getItem(ADMIN_CONFIG_KEY);
+    if (!raw) return { ...DEFAULT_ADMIN_CONFIG };
+    const parsed = JSON.parse(raw) as Partial<PlatformAdminConfig>;
+    return {
+      ...DEFAULT_ADMIN_CONFIG,
+      ...parsed,
+      enabledGames: { ...DEFAULT_ENABLED_GAMES, ...(parsed.enabledGames ?? {}) },
+      gameCodes: { ...DEFAULT_GAME_CODES, ...(parsed.gameCodes ?? {}) },
+      masterCode: normalizeCode(parsed.masterCode || DEFAULT_MASTER_CODE) || DEFAULT_MASTER_CODE,
+      resetHistory: Array.isArray(parsed.resetHistory) ? parsed.resetHistory : [],
+      x1Enabled: typeof parsed.x1Enabled === "boolean" ? parsed.x1Enabled : true,
+      x1OpenHour: typeof parsed.x1OpenHour === "number" ? parsed.x1OpenHour : 7,
+      x1CloseHour: typeof parsed.x1CloseHour === "number" ? parsed.x1CloseHour : 19,
+      x1ForceOpen: typeof parsed.x1ForceOpen === "boolean" ? parsed.x1ForceOpen : false,
+      tournamentEnabled:
+        typeof parsed.tournamentEnabled === "boolean" ? parsed.tournamentEnabled : true,
+      tournamentGameOverride: parsed.tournamentGameOverride ?? null,
+      customMedals: Array.isArray(parsed.customMedals) ? parsed.customMedals : [],
+      adminMedalNotifications: Array.isArray(parsed.adminMedalNotifications)
+        ? parsed.adminMedalNotifications
+        : [],
+      dailyXpCap:
+        typeof parsed.dailyXpCap === "number" && parsed.dailyXpCap >= 100
+          ? Math.floor(parsed.dailyXpCap)
+          : 1000,
+    };
+  } catch {
+    return { ...DEFAULT_ADMIN_CONFIG };
+  }
+}
+
+export function saveAdminConfig(config: PlatformAdminConfig): PlatformAdminConfig {
+  const normalized: PlatformAdminConfig = {
+    ...config,
+    masterCode: normalizeCode(config.masterCode) || DEFAULT_MASTER_CODE,
+    gameCodes: Object.fromEntries(
+      (Object.keys(DEFAULT_GAME_CODES) as GameId[]).map((id) => [
+        id,
+        normalizeCode(config.gameCodes[id] || DEFAULT_GAME_CODES[id]) || DEFAULT_GAME_CODES[id],
+      ]),
+    ) as Record<GameId, string>,
+    updatedAt: new Date().toISOString(),
+  };
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(ADMIN_CONFIG_KEY, JSON.stringify(normalized));
+    } catch {
+      /* ignore */
+    }
+  }
+  return normalized;
+}
+
+export type CodeResult =
+  | { status: "ok"; game: GameId }
+  | { status: "all"; games: GameId[] }
+  | { status: "reserved" }
+  | { status: "already"; game: GameId }
+  | { status: "disabled"; game: GameId }
+  | { status: "invalid" };
+
+export function loadUnlocked(): GameId[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(UNLOCK_KEY);
+    if (!raw) return [];
+    const list = JSON.parse(raw) as GameId[];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveUnlocked(list: GameId[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(UNLOCK_KEY, JSON.stringify([...new Set(list)]));
+}
+
+export function clearUnlocked() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(UNLOCK_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Validates a code against the active Admin configuration and unlocks the matching game. */
+export function redeemCode(raw: string, customConfig?: PlatformAdminConfig): CodeResult {
+  const code = normalizeCode(raw);
+  if (!code) return { status: "invalid" };
+
+  const cfg = customConfig ?? loadAdminConfig();
+
+  if (code === cfg.masterCode) {
+    const allEnabled = (Object.keys(cfg.gameCodes) as GameId[]).filter(
+      (g) => cfg.enabledGames[g],
+    );
+    saveUnlocked([...loadUnlocked(), ...allEnabled]);
+    return { status: "all", games: allEnabled };
+  }
+
+  const entry = (Object.entries(cfg.gameCodes) as [GameId, string][]).find(
+    ([, c]) => normalizeCode(c) === code,
+  );
+  if (entry) {
+    const [game] = entry;
+    if (!cfg.enabledGames[game]) {
+      return { status: "disabled", game };
+    }
+    const current = loadUnlocked();
+    if (current.includes(game)) return { status: "already", game };
+    saveUnlocked([...current, game]);
+    return { status: "ok", game };
+  }
+
+  if (RESERVED_CODES.includes(code)) return { status: "reserved" };
+  return { status: "invalid" };
+}

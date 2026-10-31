@@ -1,0 +1,369 @@
+import { useState } from "react";
+import {
+  Trophy,
+  Award,
+  Medal,
+  Star,
+  Sparkles,
+  Lock,
+  Search,
+  CheckCircle,
+} from "lucide-react";
+import {
+  getAllAvailableMedals,
+  getTopShowcaseMedals,
+  calculateMedalProgress,
+  RARITY_INFO,
+  type MedalCategory,
+  type MedalDefinition,
+  type MedalRarity,
+  type PlayerUnlockedMedal,
+} from "@/lib/medals-catalog";
+import { MedalIcon } from "./MedalIcon";
+import { MedalDetailModal } from "./MedalDetailModal";
+import { Input } from "@/components/ui/input";
+import type { PlayerProfile, GameStatRow } from "@/lib/playfab";
+
+interface Props {
+  unlockedMedals?: PlayerUnlockedMedal[];
+  customMedals?: MedalDefinition[];
+  profile?: PlayerProfile | null;
+  stats?: GameStatRow[];
+  isOwner?: boolean;
+}
+
+const CATEGORY_LABELS: Record<MedalCategory, string> = {
+  nivel: "Níveis (1..10)",
+  jogo_nivel: "Desafio nos Jogos",
+  jogo_perfeito: "Zero Erros",
+  jogo_partidas: "Partidas Jogadas",
+  x1_vitorias: "Arena X1",
+  x1_semanal: "X1 Semanal",
+  exploracao: "Exploração",
+  sem_erros: "Mente Precisa",
+  atividade: "Dias & XP",
+  ranking: "Torneio",
+  meta: "Meta-Medalhas",
+  evento: "Eventos Especiais",
+};
+
+export function PlayerMedalsInventory({
+  unlockedMedals = [],
+  customMedals = [],
+  profile,
+  stats = [],
+  isOwner = false,
+}: Props) {
+  const [search, setSearch] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
+  const [selectedRarity, setSelectedRarity] = useState<string>("ALL");
+  const [activeTab, setActiveTab] = useState<"vitrine" | "catalogo">("vitrine");
+
+  // Selected medal for detail modal
+  const [selectedMedal, setSelectedMedal] = useState<MedalDefinition | null>(null);
+
+  const allMedals = getAllAvailableMedals(customMedals);
+  const unlockedMap = new Map<string, PlayerUnlockedMedal>();
+  unlockedMedals.forEach((u) => unlockedMap.set(u.medalId, u));
+
+  const showcase = getTopShowcaseMedals(unlockedMedals, allMedals);
+
+  // Map each medal to its progress and unlock state
+  const medalsWithProgress = allMedals.map((m) => {
+    const unlocked = unlockedMap.get(m.id) ?? null;
+    const progress = calculateMedalProgress(m, profile, stats);
+    return {
+      medal: m,
+      unlocked,
+      progress,
+    };
+  });
+
+  // Smart sorting:
+  // 1º) Conquistadas (obtidas) primeiro
+  // 2º) Mais próximas de serem obtidas (maior percentual de progresso)
+  // 3º) Raridade / Título
+  const sortedMedals = [...medalsWithProgress].sort((a, b) => {
+    const aUnlocked = Boolean(a.unlocked);
+    const bUnlocked = Boolean(b.unlocked);
+    if (aUnlocked && !bUnlocked) return -1;
+    if (!aUnlocked && bUnlocked) return 1;
+
+    // Both locked: sort by highest progress percent
+    if (!aUnlocked && !bUnlocked) {
+      if (b.progress.percent !== a.progress.percent) {
+        return b.progress.percent - a.progress.percent;
+      }
+    }
+
+    // Both unlocked: sort by rarity weight (Diamante -> Platina -> Ouro -> Prata -> Bronze)
+    const wA = RARITY_INFO[a.medal.rarity].weight;
+    const wB = RARITY_INFO[b.medal.rarity].weight;
+    if (wB !== wA) return wB - wA;
+
+    return a.medal.title.localeCompare(b.medal.title);
+  });
+
+  const filtered = sortedMedals.filter(({ medal: m }) => {
+    if (selectedCategory !== "ALL" && m.category !== selectedCategory) return false;
+    if (selectedRarity !== "ALL" && m.rarity !== selectedRarity) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      return (
+        m.title.toLowerCase().includes(q) ||
+        m.description.toLowerCase().includes(q) ||
+        RARITY_INFO[m.rarity].label.toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
+
+  const selectedMedalEntry = selectedMedal
+    ? medalsWithProgress.find((e) => e.medal.id === selectedMedal.id)
+    : null;
+
+  return (
+    <div className="space-y-4">
+      {/* Abas: Vitrine de Honra & Catálogo de Medalhas */}
+      <div className="flex items-center gap-2 border-b pb-2">
+        <button
+          type="button"
+          onClick={() => setActiveTab("vitrine")}
+          className={`flex items-center gap-2 rounded-xl px-3 py-1.5 font-display text-xs font-black transition-all ${
+            activeTab === "vitrine"
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
+          }`}
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          Vitrine de Honra ({unlockedMedals.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("catalogo")}
+          className={`flex items-center gap-2 rounded-xl px-3 py-1.5 font-display text-xs font-black transition-all ${
+            activeTab === "catalogo"
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
+          }`}
+        >
+          <Trophy className="h-3.5 w-3.5" />
+          Catálogo Completo ({allMedals.length} Medalhas)
+        </button>
+      </div>
+
+      {activeTab === "vitrine" && (
+        <div className="space-y-4">
+          {/* Vitrine de Destaque Automático */}
+          <div className="rounded-3xl border-2 border-primary/30 bg-gradient-to-br from-primary/10 via-card to-accent/10 p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 font-display text-xs font-black uppercase tracking-wider text-primary">
+                <Sparkles className="h-4 w-4 text-accent" /> Vitrine de Honra (Medalhas de Maior Prestígio)
+              </span>
+              <span className="rounded-full bg-primary/20 px-2.5 py-0.5 font-display text-xs font-bold text-primary">
+                {unlockedMedals.length} de {allMedals.length} Conquistadas
+              </span>
+            </div>
+
+            {showcase.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-primary/30 p-6 text-center text-xs text-muted-foreground">
+                <Medal className="mx-auto mb-2 h-8 w-8 text-muted-foreground/50" />
+                <p className="font-bold text-foreground">Inventário Vazio no Momento</p>
+                <p>
+                  Jogue partidas, atinja novos níveis e vença na Arena X1 para desbloquear medalhas!
+                  Clique na aba <b>"Catálogo Completo"</b> para ver os objetivos de cada uma.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {showcase.map((m, idx) => {
+                  const rarity = RARITY_INFO[m.rarity];
+                  const unlocked = unlockedMap.get(m.id);
+                  return (
+                    <div
+                      key={m.id}
+                      onClick={() => setSelectedMedal(m)}
+                      className={`relative flex flex-col items-center justify-center rounded-2xl border-2 p-3.5 text-center bg-card/90 cursor-pointer transition-all hover:scale-[1.03] active:scale-95 ${rarity.neonBorderClass}`}
+                      style={{ boxShadow: `0 0 15px ${rarity.glowHex}` }}
+                      role="button"
+                      tabIndex={0}
+                    >
+                      <span className="absolute -top-2 left-3 rounded-full bg-primary px-2 py-0.5 text-[9px] font-black uppercase text-primary-foreground">
+                        #{idx + 1} Vitrine
+                      </span>
+                      <div className={`mb-2 mt-1 ${rarity.textColor}`}>
+                        <MedalIcon name={m.iconName} className="h-8 w-8" />
+                      </div>
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase ${rarity.badgeBgClass}`}
+                      >
+                        {rarity.label}
+                      </span>
+                      <h4 className="mt-1 line-clamp-1 font-display text-xs font-black text-foreground">
+                        {m.title}
+                      </h4>
+                      <p className="line-clamp-2 text-[10px] text-muted-foreground leading-tight mt-0.5">
+                        {m.description}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Quick link to catalogue */}
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => setActiveTab("catalogo")}
+              className="inline-flex items-center gap-2 rounded-2xl border border-primary/40 bg-primary/10 px-4 py-2 font-display text-xs font-bold text-primary transition-all hover:bg-primary/20 active:scale-95"
+            >
+              <Trophy className="h-4 w-4" />
+              Ver Todas as {allMedals.length} Medalhas e Próximos Desbloqueios ▾
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activeTab === "catalogo" && (
+        <div className="space-y-3">
+          {/* Barra de Busca e Filtros */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[160px]">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar por nome ou objetivo..."
+                className="pl-9 h-9 rounded-xl text-xs"
+              />
+            </div>
+
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="h-9 rounded-xl border bg-card px-2.5 text-xs font-bold text-foreground"
+            >
+              <option value="ALL">Todas as Categorias</option>
+              {Object.entries(CATEGORY_LABELS).map(([cat, label]) => (
+                <option key={cat} value={cat}>
+                  {label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={selectedRarity}
+              onChange={(e) => setSelectedRarity(e.target.value)}
+              className="h-9 rounded-xl border bg-card px-2.5 text-xs font-bold text-foreground"
+            >
+              <option value="ALL">Todas as Raridades</option>
+              {(["bronze", "prata", "ouro", "platina", "diamante"] as MedalRarity[]).map((r) => (
+                <option key={r} value={r}>
+                  {RARITY_INFO[r].label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <p className="text-[11px] text-muted-foreground">
+            💡 <b>Dica:</b> As medalhas já conquistadas aparecem primeiro, seguidas pelas mais próximas de serem desbloqueadas. <b>Clique em qualquer medalha</b> para ver seus detalhes e data de conquista!
+          </p>
+
+          {/* Grade Geral de Medalhas */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-[48vh] overflow-y-auto pr-1">
+            {filtered.map(({ medal: m, unlocked, progress }) => {
+              const isUnlocked = Boolean(unlocked);
+              const rarity = RARITY_INFO[m.rarity];
+
+              return (
+                <div
+                  key={m.id}
+                  onClick={() => setSelectedMedal(m)}
+                  className={`group relative flex flex-col justify-between rounded-2xl border-2 p-3 transition-all cursor-pointer hover:scale-[1.01] active:scale-95 ${
+                    isUnlocked
+                      ? `bg-card ${rarity.neonBorderClass}`
+                      : "border-border/50 bg-secondary/20 hover:border-border hover:bg-secondary/40"
+                  }`}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <div className="flex items-start gap-2.5">
+                    <div
+                      className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl border ${
+                        isUnlocked ? rarity.badgeBgClass : "bg-muted text-muted-foreground border-border"
+                      }`}
+                    >
+                      {isUnlocked ? (
+                        <div className={rarity.textColor}>
+                          <MedalIcon name={m.iconName} className="h-5 w-5" />
+                        </div>
+                      ) : (
+                        <MedalIcon name={m.iconName} className="h-5 w-5 opacity-40" />
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <span
+                          className={`text-[9px] font-black uppercase tracking-wider ${
+                            isUnlocked ? rarity.textColor : "text-muted-foreground"
+                          }`}
+                        >
+                          {rarity.label}
+                        </span>
+                        {isUnlocked ? (
+                          <span className="flex items-center gap-1 text-[9px] font-extrabold text-emerald-500">
+                            <CheckCircle className="h-3 w-3" /> Obtida
+                          </span>
+                        ) : (
+                          <span className="text-[9px] font-bold text-muted-foreground">
+                            {progress.percent}%
+                          </span>
+                        )}
+                      </div>
+                      <h5 className="truncate font-display text-xs font-black text-foreground">
+                        {m.title}
+                      </h5>
+                      <p className="line-clamp-2 text-[10px] text-muted-foreground leading-tight mt-0.5">
+                        {m.description}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Barra de progresso para medalhas bloqueadas */}
+                  {!isUnlocked && progress.percent > 0 && (
+                    <div className="mt-2 space-y-1">
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-primary transition-all duration-300"
+                          style={{ width: `${progress.percent}%` }}
+                        />
+                      </div>
+                      <p className="truncate text-[9px] font-medium text-muted-foreground">
+                        {progress.progressText}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Modal Detalhes da Medalha */}
+      <MedalDetailModal
+        open={Boolean(selectedMedal)}
+        onOpenChange={(v) => {
+          if (!v) setSelectedMedal(null);
+        }}
+        medal={selectedMedal}
+        unlockedInfo={selectedMedalEntry?.unlocked}
+        progressText={selectedMedalEntry?.progress.progressText}
+        percentComplete={selectedMedalEntry?.progress.percent}
+      />
+    </div>
+  );
+}

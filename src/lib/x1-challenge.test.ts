@@ -1,0 +1,131 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import {
+  applyX1RobotBattleAnswer,
+  computeScoreRaceBlueShare,
+  generateRoomCode,
+  getActiveRotatedX1Game,
+  resolveX1Winner,
+  X1_ROBOT_INITIAL_HP,
+  type X1Room,
+} from "./x1-challenge.ts";
+
+function makeSampleRoom(): X1Room {
+  return {
+    code: "4829",
+    gameId: "rpg",
+    status: "playing",
+    seed: 12345,
+    createdAt: Date.now(),
+    startedAt: Date.now(),
+    finishedAt: null,
+    durationSec: 90,
+    blueShare: 50,
+    host: {
+      playerId: "host_1",
+      nick: "JoaoAzul",
+      school: "Raimundo Bezerra",
+      level: 3,
+      score: 0,
+      correct: 0,
+      wrong: 0,
+      hp: X1_ROBOT_INITIAL_HP,
+      maxHp: X1_ROBOT_INITIAL_HP,
+      finished: false,
+      updatedAt: Date.now(),
+    },
+    guest: {
+      playerId: "guest_2",
+      nick: "MariaVermelha",
+      school: "Elisângela Litaiff",
+      level: 3,
+      score: 0,
+      correct: 0,
+      wrong: 0,
+      hp: X1_ROBOT_INITIAL_HP,
+      maxHp: X1_ROBOT_INITIAL_HP,
+      finished: false,
+      updatedAt: Date.now(),
+    },
+    winnerId: null,
+  };
+}
+
+describe("Arena de Desafio X1 Online (1v1 Versus Mode)", () => {
+  it("gera códigos de sala de 4 dígitos únicos", () => {
+    const code = generateRoomCode(["1000", "1001"]);
+    assert.equal(code.length, 4);
+    assert.match(code, /^\d{4}$/);
+  });
+
+  it("rotaciona 1 a 3 jogos da Arena X1 a cada 10 minutos (ou intervalo customizado)", () => {
+    const games = ["rpg", "logica", "porcentagem"] as const;
+    const t0 = new Date("2026-10-31T10:00:00.000Z"); // minuto 0 -> jogo 0 (rpg)
+    const t1 = new Date("2026-10-31T10:10:00.000Z"); // minuto 10 -> jogo 1 (logica)
+    const t2 = new Date("2026-10-31T10:20:00.000Z"); // minuto 20 -> jogo 2 (porcentagem)
+    const t3 = new Date("2026-10-31T10:30:00.000Z"); // minuto 30 -> volta para jogo 0 (rpg)
+
+    const r0 = getActiveRotatedX1Game({ availableGames: [...games], rotationMinutes: 10, now: t0 });
+    assert.equal(r0.currentGame, "rpg");
+    assert.equal(r0.nextGame, "logica");
+    assert.equal(r0.secondsUntilNextRotation, 600);
+
+    const r1 = getActiveRotatedX1Game({ availableGames: [...games], rotationMinutes: 10, now: t1 });
+    assert.equal(r1.currentGame, "logica");
+    assert.equal(r1.nextGame, "porcentagem");
+
+    const r2 = getActiveRotatedX1Game({ availableGames: [...games], rotationMinutes: 10, now: t2 });
+    assert.equal(r2.currentGame, "porcentagem");
+    assert.equal(r2.nextGame, "rpg");
+
+    const r3 = getActiveRotatedX1Game({ availableGames: [...games], rotationMinutes: 10, now: t3 });
+    assert.equal(r3.currentGame, "rpg");
+  });
+
+  it("calcula a barra de vantagem Azul vs Vermelho na corrida de pontos", () => {
+    assert.equal(computeScoreRaceBlueShare(50, 50), 50);
+    assert.ok(computeScoreRaceBlueShare(90, 40) > 50);
+    assert.ok(computeScoreRaceBlueShare(20, 80) < 50);
+  });
+
+  it("empurra a barra para a direita quando o Anfitrião (Azul) acerta e para a esquerda quando o Desafiante (Vermelho) acerta", () => {
+    const initial = makeSampleRoom();
+
+    // Host (Azul) acerta -> blueShare sobe de 50% para 68% e Guest perde 1 HP
+    const afterHost = applyX1RobotBattleAnswer({
+      room: initial,
+      role: "host",
+      isCorrect: true,
+    });
+    assert.equal(afterHost.room.blueShare, 68);
+    assert.equal(afterHost.room.guest?.hp, X1_ROBOT_INITIAL_HP - 1);
+    assert.equal(afterHost.damageDealt, 1);
+
+    // Guest (Vermelho) acerta -> blueShare cai de 68% para 50% e Host perde 1 HP
+    const afterGuest = applyX1RobotBattleAnswer({
+      room: afterHost.room,
+      role: "guest",
+      isCorrect: true,
+    });
+    assert.equal(afterGuest.room.blueShare, 50);
+    assert.equal(afterGuest.room.host.hp, X1_ROBOT_INITIAL_HP - 1);
+  });
+
+  it("dispara Super Golpe (-3 HP) quando o Azul chega em 100% ou o Vermelho chega em 0% e encerra quando a vida zera", () => {
+    const room = makeSampleRoom();
+    room.blueShare = 88;
+    room.guest!.hp = 3;
+
+    const superRes = applyX1RobotBattleAnswer({
+      room,
+      role: "host",
+      isCorrect: true,
+    });
+    assert.equal(superRes.isSuperHit, true);
+    assert.equal(superRes.damageDealt, 3);
+    assert.equal(superRes.room.guest?.hp, 0);
+    assert.equal(superRes.room.status, "finished");
+    assert.equal(superRes.room.winnerId, "host_1");
+    assert.equal( resolveX1Winner(superRes.room), "host_1");
+  });
+});
