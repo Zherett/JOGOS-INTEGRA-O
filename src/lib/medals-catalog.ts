@@ -2,7 +2,7 @@ import { ALL_GAME_IDS, GAME_NAMES, type GameId } from "./game-storage.ts";
 import type { PlayerProfile } from "./playfab.ts";
 import type { GameStatRow } from "./playfab.ts";
 
-export type MedalRarity = "bronze" | "prata" | "ouro" | "platina" | "diamante";
+export type MedalRarity = "bronze" | "prata" | "ouro" | "platina" | "diamante" | "heroi";
 
 export type MedalCategory =
   | "nivel"
@@ -34,6 +34,11 @@ export interface MedalCondition {
     | "all_level_medals"
     | "all_game_medals"
     | "total_medals_count"
+    | "beta_tester_bronze"
+    | "beta_tester_prata"
+    | "beta_tester_ouro"
+    | "beta_tester_platina"
+    | "beta_tester_heroi"
     | "manual_event";
   threshold?: number;
   gameId?: GameId;
@@ -152,6 +157,14 @@ export const RARITY_INFO: Record<
     textColor: "text-fuchsia-400",
     glowHex: "#e879f9",
   },
+  heroi: {
+    label: "Herói",
+    weight: 6,
+    neonBorderClass: "border-red-500 shadow-[0_0_24px_rgba(239,68,68,0.95)] animate-pulse",
+    badgeBgClass: "bg-red-500/25 text-red-500 dark:text-red-400 border-red-500/50 font-black",
+    textColor: "text-red-500 dark:text-red-400",
+    glowHex: "#ef4444",
+  },
 };
 
 /** XP bonus granted to the player immediately upon unlocking a medal of each rarity tier */
@@ -161,7 +174,21 @@ export const MEDAL_XP_REWARDS: Record<MedalRarity, number> = {
   ouro: 30,
   platina: 40,
   diamante: 50,
+  heroi: 100,
 };
+
+/** Janela oficial de conquista das medalhas especiais de Beta Tester: 01 a 07 de Novembro de 2026 */
+export const BETA_TESTER_START = "2026-11-01T00:00:00.000Z";
+export const BETA_TESTER_END = "2026-11-07T23:59:59.999Z";
+
+export function isBetaTesterPeriodActive(now = new Date()): boolean {
+  const y = now.getFullYear();
+  const m = now.getMonth(); // 10 = Novembro (base 0)
+  const d = now.getDate();
+  if (y === 2026 && m === 10 && d >= 1 && d <= 7) return true;
+  const t = now.getTime();
+  return t >= new Date(BETA_TESTER_START).getTime() && t <= new Date(BETA_TESTER_END).getTime();
+}
 
 /**
  * Builds the complete base medals catalog requested by the user:
@@ -455,6 +482,55 @@ export function buildBaseMedalsCatalog(): MedalDefinition[] {
     },
   );
 
+  // 12. Medalhas Especiais Beta Tester (Válidas de 01 a 07 de Novembro)
+  medals.push(
+    {
+      id: "beta_tester_bronze",
+      title: "Beta Tester Bronze",
+      description: "Crie sua conta e complete pelo menos 1 partida finalizada durante o período Beta (01 a 07 de Novembro).",
+      rarity: "bronze",
+      category: "evento",
+      iconName: "Sparkles",
+      condition: { type: "beta_tester_bronze" },
+    },
+    {
+      id: "beta_tester_prata",
+      title: "Beta Tester Prata",
+      description: "Jogue e finalize pelo menos 2 partidas de 4 jogos diferentes durante o período Beta (01 a 07 de Novembro).",
+      rarity: "prata",
+      category: "evento",
+      iconName: "Sparkles",
+      condition: { type: "beta_tester_prata", threshold: 4 },
+    },
+    {
+      id: "beta_tester_ouro",
+      title: "Beta Tester Ouro",
+      description: "Jogue e finalize pelo menos 2 partidas de 6 jogos diferentes durante o período Beta (01 a 07 de Novembro).",
+      rarity: "ouro",
+      category: "evento",
+      iconName: "Sparkles",
+      condition: { type: "beta_tester_ouro", threshold: 6 },
+    },
+    {
+      id: "beta_tester_platina",
+      title: "Beta Tester Platina",
+      description: "Jogue e finalize pelo menos 2 partidas de todos os jogos da plataforma durante o período Beta (01 a 07 de Novembro).",
+      rarity: "platina",
+      category: "evento",
+      iconName: "Crown",
+      condition: { type: "beta_tester_platina", threshold: ALL_GAME_IDS.length },
+    },
+    {
+      id: "beta_tester_heroi",
+      title: "Beta Tester Herói",
+      description: "Jogue e finalize pelo menos 10 partidas de todos os jogos e alcance o Nível 5 durante o período Beta (01 a 07 de Novembro).",
+      rarity: "heroi",
+      category: "evento",
+      iconName: "Flame",
+      condition: { type: "beta_tester_heroi", threshold: 10 },
+    },
+  );
+
   return medals;
 }
 
@@ -515,6 +591,7 @@ export interface PlayerStatsContext {
 export function evaluatePlayerMedals(
   ctx: PlayerStatsContext,
   allMedals = getAllAvailableMedals(),
+  now = new Date(),
 ): MedalDefinition[] {
   const existingSet = new Set((ctx.profile.unlockedMedals ?? []).map((m) => m.medalId));
   const newlyAwarded: MedalDefinition[] = [];
@@ -538,6 +615,10 @@ export function evaluatePlayerMedals(
   }
 
   const currentLevelMedals = [2, 3, 4, 5, 6, 7, 8, 9, 10].filter((lvl) => p.level >= lvl).length;
+  const totalCompletedPlays = ctx.stats.reduce((acc, s) => acc + s.plays, 0);
+  const gamesWith2Plays = ctx.stats.filter((s) => s.plays >= 2).length;
+  const gamesWith10Plays = ctx.stats.filter((s) => s.plays >= 10).length;
+  const isBetaActive = isBetaTesterPeriodActive(now);
 
   for (const medal of allMedals) {
     if (existingSet.has(medal.id)) continue;
@@ -611,6 +692,36 @@ export function evaluatePlayerMedals(
 
       case "total_medals_count":
         if ((ctx.profile.unlockedMedals?.length ?? 0) >= (cond.threshold ?? 50)) earned = true;
+        break;
+
+      case "beta_tester_bronze":
+        if (isBetaActive && (totalCompletedPlays >= 1 || (p.totalPlays ?? 0) >= 1)) {
+          earned = true;
+        }
+        break;
+
+      case "beta_tester_prata":
+        if (isBetaActive && gamesWith2Plays >= 4) {
+          earned = true;
+        }
+        break;
+
+      case "beta_tester_ouro":
+        if (isBetaActive && gamesWith2Plays >= 6) {
+          earned = true;
+        }
+        break;
+
+      case "beta_tester_platina":
+        if (isBetaActive && gamesWith2Plays >= ALL_GAME_IDS.length) {
+          earned = true;
+        }
+        break;
+
+      case "beta_tester_heroi":
+        if (isBetaActive && gamesWith10Plays >= ALL_GAME_IDS.length && p.level >= 5) {
+          earned = true;
+        }
         break;
 
       case "manual_event":
@@ -725,6 +836,53 @@ export function calculateMedalProgress(
       return {
         percent: pct,
         progressText: `Nível ${cur}/10 para Lenda dos Níveis`,
+      };
+    }
+    case "beta_tester_bronze": {
+      const totalPlays = stats.reduce((acc, s) => acc + s.plays, 0);
+      const pct = totalPlays >= 1 || (profile.totalPlays ?? 0) >= 1 ? 100 : 0;
+      return {
+        percent: pct,
+        progressText: `${pct === 100 ? 1 : 0} de 1 partida finalizada`,
+      };
+    }
+    case "beta_tester_prata": {
+      const games = stats.filter((s) => s.plays >= 2).length;
+      const target = 4;
+      const pct = Math.min(100, Math.round((games / target) * 100));
+      return {
+        percent: pct,
+        progressText: `${games} de ${target} jogos com 2+ partidas finalizadas`,
+      };
+    }
+    case "beta_tester_ouro": {
+      const games = stats.filter((s) => s.plays >= 2).length;
+      const target = 6;
+      const pct = Math.min(100, Math.round((games / target) * 100));
+      return {
+        percent: pct,
+        progressText: `${games} de ${target} jogos com 2+ partidas finalizadas`,
+      };
+    }
+    case "beta_tester_platina": {
+      const games = stats.filter((s) => s.plays >= 2).length;
+      const target = ALL_GAME_IDS.length;
+      const pct = Math.min(100, Math.round((games / target) * 100));
+      return {
+        percent: pct,
+        progressText: `${games} de ${target} jogos com 2+ partidas finalizadas`,
+      };
+    }
+    case "beta_tester_heroi": {
+      const games = stats.filter((s) => s.plays >= 10).length;
+      const targetGames = ALL_GAME_IDS.length;
+      const lvlTarget = 5;
+      const lvlPct = Math.min(1, profile.level / lvlTarget);
+      const gamesPct = Math.min(1, games / targetGames);
+      const pct = Math.min(100, Math.round(((lvlPct + gamesPct) / 2) * 100));
+      return {
+        percent: pct,
+        progressText: `${games} de ${targetGames} jogos com 10+ partidas (Nível ${profile.level}/${lvlTarget})`,
       };
     }
     default:

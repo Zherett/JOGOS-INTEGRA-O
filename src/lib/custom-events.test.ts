@@ -220,13 +220,17 @@ describe("Eventos Personalizados Criados pelo Administrador", () => {
     // Evento pontual
     assert.equal(items[0].title, "Desafio Especial Relâmpago");
     assert.equal(items[0].bonusTitle, "BÔNUS DO EVENTO");
-    assert.equal(items[0].bonusHighlight, "🚀 Limite 2000 XP/dia");
+    assert.equal(items[0].bonusBadges.length, 2);
+    assert.equal(items[0].bonusBadges[0].label, "2x de XP (+100%)");
+    assert.equal(items[0].bonusBadges[1].label, "+1000 XP/dia (2000 total)");
     assert.equal(items[0].bonusScopeText, "Todos os Jogos");
 
     // Evento recorrente de sábado
     assert.equal(items[1].title, "+50% de XP do SÁBADO");
     assert.equal(items[1].bonusTitle, "BÔNUS DO EVENTO");
-    assert.equal(items[1].bonusHighlight, "🚀 Limite 1500 XP/dia");
+    assert.equal(items[1].bonusBadges.length, 2);
+    assert.equal(items[1].bonusBadges[0].label, "1.5x de XP (+50%)");
+    assert.equal(items[1].bonusBadges[1].label, "+500 XP/dia (1500 total)");
     assert.equal(items[1].bonusScopeText, "Todos os Jogos");
     assert.equal(items[1].isRecurring, true);
   });
@@ -271,7 +275,8 @@ describe("Eventos Personalizados Criados pelo Administrador", () => {
 
     const items = getAllActiveEvents([multOnlyEv], [], saturday);
     assert.equal(items.length, 1);
-    assert.equal(items[0].bonusHighlight, "🔥 Dobro de XP (2x XP)");
+    assert.equal(items[0].bonusBadges.length, 1);
+    assert.equal(items[0].bonusBadges[0].label, "2x de XP (+100%)");
 
     // Evento com APENAS teto por partida
     const matchOnlyEv: RecurringEvent = {
@@ -290,6 +295,47 @@ describe("Eventos Personalizados Criados pelo Administrador", () => {
 
     const itemsMatch = getAllActiveEvents([], [matchOnlyEv], saturday);
     assert.equal(itemsMatch.length, 1);
-    assert.equal(itemsMatch[0].bonusHighlight, "🎯 Limite 50 XP/partida");
+    assert.equal(itemsMatch[0].bonusBadges.length, 1);
+    assert.equal(itemsMatch[0].bonusBadges[0].label, "+30 XP/partida (50 máx)");
+  });
+
+  it("soma os bônus adicionais de múltiplos eventos ativos simultâneos (XP e Limites)", () => {
+    const saturday = new Date("2026-10-31T12:00:00Z");
+
+    // Evento A: +50% de XP (1.5x) e +500 XP no limite diário (1500)
+    const eventA: SpecialEvent = {
+      id: "ev_a",
+      title: "Evento A",
+      description: "",
+      scope: "todos",
+      bonusType: "personalizado",
+      xpMultiplier: 1.5,
+      dailyXpCap: 1500,
+      startsAt: "2026-10-31T00:00:00Z",
+      endsAt: "2026-10-31T23:59:59Z",
+      active: true,
+      createdAt: "2026-10-31T00:00:00Z",
+    };
+
+    // Evento B: 2.0x (+1.0x de XP) e +200 XP no limite diário (1200)
+    const eventB: SpecialEvent = {
+      id: "ev_b",
+      title: "Evento B",
+      description: "",
+      scope: "todos",
+      bonusType: "personalizado",
+      xpMultiplier: 2.0,
+      dailyXpCap: 1200,
+      startsAt: "2026-10-31T00:00:00Z",
+      endsAt: "2026-10-31T23:59:59Z",
+      active: true,
+      createdAt: "2026-10-31T00:00:00Z",
+    };
+
+    const bonuses = getActiveEventBonuses("todos" as any, 1000, 20, [eventA, eventB], saturday);
+    // Base 1.0 + 0.5 (A) + 1.0 (B) = 2.5x total
+    assert.equal(bonuses.multiplier, 2.5);
+    // Base 1000 + 500 (A) + 200 (B) = 1700 total
+    assert.equal(bonuses.dailyXpCap, 1700);
   });
 });

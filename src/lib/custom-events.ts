@@ -66,12 +66,26 @@ export interface ActiveEventBonuses {
   multiplier: number;
   matchXpCap: number; // default 20 XP
   dailyXpCap: number; // default 1000 XP
+  extraDailyXp: number;
+  extraMatchXp: number;
   activeEventNames: string[];
+}
+
+export interface CumulativeActiveBonuses {
+  totalMultiplier: number;
+  totalDailyCap: number;
+  totalMatchCap: number;
+  totalExtraDaily: number;
+  totalExtraMatch: number;
+  hasActiveBonuses: boolean;
+  activeEventsCount: number;
 }
 
 /**
  * Calculates combined 3 lines of bonuses (XP multiplier, match XP cap, daily XP cap)
- * for a specific game (or "todos") from all currently active special events.
+ * by summing additional gains from all currently active special events and recurring events.
+ * Example: base 1.0x + 0.5x (Ev 1) + 1.0x (Ev 2) = 2.5x total XP multiplier.
+ * Daily cap: base 1000 + 500 (Ev 1) + 200 (Ev 2) = 1700 total XP daily cap.
  */
 export function getActiveEventBonuses(
   gameId: GameId,
@@ -80,55 +94,80 @@ export function getActiveEventBonuses(
   activeEvents = getActiveSpecialEvents(),
   now = new Date(),
 ): ActiveEventBonuses {
-  let multiplier = 1;
-  let matchXpCap = baseMatchCap;
-  let dailyXpCap = baseDailyCap;
+  let extraMultiplier = 0;
+  let extraMatch = 0;
+  let extraDaily = 0;
   const activeEventNames: string[] = [];
 
-  for (const ev of activeEvents) {
+  const allActive = [
+    ...activeEvents.filter((e) => isEventActive(e, now)),
+    ...getActiveRecurringEvents(undefined, now),
+  ];
+
+  for (const ev of allActive) {
     if (ev.scope === "todos" || ev.scope === gameId) {
       if (!activeEventNames.includes(ev.title)) {
         activeEventNames.push(ev.title);
       }
 
-      // Linha 1: Multiplicador de XP
-      let mult = ev.xpMultiplier ?? 1;
-      if (ev.bonusType === "dobro_xp" && mult < 2) mult = 2;
-      if (ev.bonusType === "xp_1_5x" && mult < 1.5) mult = 1.5;
-      if (mult > multiplier) multiplier = mult;
-
-      // Linha 2: Limite de XP por partida
-      if (ev.matchXpCap && ev.matchXpCap > matchXpCap) {
-        matchXpCap = ev.matchXpCap;
+      // Linha 1: Multiplicador de XP (+0.5x, +1.0x, etc.)
+      let mult = ev.xpMultiplier;
+      if (ev.bonusType === "dobro_xp" && (!mult || mult < 2)) mult = 2;
+      if (ev.bonusType === "xp_1_5x" && (!mult || mult < 1.5)) mult = 1.5;
+      if (mult && mult > 1) {
+        extraMultiplier += (mult - 1);
       }
 
-      // Linha 3: Limite diário de XP
+      // Linha 2: Limite de XP por partida (adicional sobre 20)
+      if (ev.matchXpCap && ev.matchXpCap > baseMatchCap) {
+        extraMatch += (ev.matchXpCap - baseMatchCap);
+      }
+
+      // Linha 3: Limite diário de XP (adicional sobre 1000)
       const dCap = ev.dailyXpCap ?? (ev.bonusType === "aumentar_limite_diario" ? ev.bonusValue : undefined);
-      if (dCap && dCap > dailyXpCap) {
-        dailyXpCap = dCap;
+      if (dCap && dCap > baseDailyCap) {
+        extraDaily += (dCap - baseDailyCap);
       }
     }
   }
 
-  // Combine bonuses from active recurring events
-  const activeRecurring = getActiveRecurringEvents(undefined, now);
-  for (const ev of activeRecurring) {
-    if (ev.scope === "todos" || ev.scope === gameId) {
-      if (!activeEventNames.includes(ev.title)) {
-        activeEventNames.push(ev.title);
-      }
-      const mult = ev.xpMultiplier ?? 1;
-      if (mult > multiplier) multiplier = mult;
-      if (ev.matchXpCap && ev.matchXpCap > matchXpCap) {
-        matchXpCap = ev.matchXpCap;
-      }
-      if (ev.dailyXpCap && ev.dailyXpCap > dailyXpCap) {
-        dailyXpCap = ev.dailyXpCap;
-      }
-    }
-  }
+  const multiplier = Number((1 + extraMultiplier).toFixed(2));
+  const matchXpCap = baseMatchCap + extraMatch;
+  const dailyXpCap = baseDailyCap + extraDaily;
 
-  return { multiplier, matchXpCap, dailyXpCap, activeEventNames };
+  return {
+    multiplier,
+    matchXpCap,
+    dailyXpCap,
+    extraDailyXp: extraDaily,
+    extraMatchXp: extraMatch,
+    activeEventNames,
+  };
+}
+
+/**
+ * Retorna os bônus acumulados de todos os eventos ativos para exibição em blocos no topo do menu.
+ */
+export function calculateCumulativeActiveBonuses(
+  activeEvents = getActiveSpecialEvents(),
+  recurringEvents = getActiveRecurringEvents(),
+  now = new Date(),
+): CumulativeActiveBonuses {
+  const bonuses = getActiveEventBonuses("todos" as GameId, 1000, 20, activeEvents, now);
+  const activeList = getAllActiveEvents(activeEvents, recurringEvents, now);
+
+  const hasActiveBonuses =
+    bonuses.multiplier > 1 || bonuses.dailyXpCap > 1000 || bonuses.matchXpCap > 20;
+
+  return {
+    totalMultiplier: bonuses.multiplier,
+    totalDailyCap: bonuses.dailyXpCap,
+    totalMatchCap: bonuses.matchXpCap,
+    totalExtraDaily: bonuses.extraDailyXp,
+    totalExtraMatch: bonuses.extraMatchXp,
+    hasActiveBonuses,
+    activeEventsCount: activeList.length,
+  };
 }
 
 /**
@@ -151,15 +190,9 @@ export function calculateEventXpMultiplier(
 export function getEffectiveDailyXpCap(
   baseCap = 1000,
   activeEvents = getActiveSpecialEvents(),
+  now = new Date(),
 ): number {
-  let maxCap = baseCap;
-  for (const ev of activeEvents) {
-    const dCap = ev.dailyXpCap ?? (ev.bonusType === "aumentar_limite_diario" ? ev.bonusValue : undefined);
-    if (dCap && dCap > maxCap) {
-      maxCap = dCap;
-    }
-  }
-  return maxCap;
+  return getActiveEventBonuses("todos" as GameId, baseCap, 20, activeEvents, now).dailyXpCap;
 }
 
 export function formatEventRemainingTime(endsAt: string, now = new Date()): string {
@@ -413,6 +446,12 @@ export function createRecurringEvent(args: {
 
 /* ---------------------- MODELO UNIFICADO DE EXIBIÇÃO NO MENU ---------------------- */
 
+export interface ActiveEventBonusBadge {
+  type: "multiplier" | "match" | "daily";
+  label: string;
+  icon: string;
+}
+
 export interface ActiveEventDisplayItem {
   id: string;
   title: string;
@@ -422,11 +461,63 @@ export interface ActiveEventDisplayItem {
   remainingTime: string;
   bonusTitle: string;
   bonusHighlight: string;
+  bonusBadges: ActiveEventBonusBadge[];
   bonusScopeText: string;
   activePeriodLabel?: string;
   linkedMedalId?: string | null;
   objectiveDescription?: string | null;
   isRecurring: boolean;
+}
+
+function buildEventBonusBadges(ev: {
+  xpMultiplier?: number;
+  bonusType?: EventBonusType;
+  bonusValue?: number;
+  matchXpCap?: number;
+  dailyXpCap?: number;
+}): ActiveEventBonusBadge[] {
+  const badges: ActiveEventBonusBadge[] = [];
+
+  // 1. Multiplicador de XP marcado
+  let mult = ev.xpMultiplier;
+  if (ev.bonusType === "dobro_xp" && (!mult || mult < 2)) mult = 2;
+  if (ev.bonusType === "xp_1_5x" && (!mult || mult < 1.5)) mult = 1.5;
+  if (mult && mult > 1) {
+    badges.push({
+      type: "multiplier",
+      label: `${mult}x de XP (+${Math.round((mult - 1) * 100)}%)`,
+      icon: "🔥",
+    });
+  }
+
+  // 2. Teto por Partida marcado
+  if (ev.matchXpCap && ev.matchXpCap > 20) {
+    badges.push({
+      type: "match",
+      label: `+${ev.matchXpCap - 20} XP/partida (${ev.matchXpCap} máx)`,
+      icon: "🎯",
+    });
+  }
+
+  // 3. Limite Diário Geral marcado
+  const dCap = ev.dailyXpCap ?? (ev.bonusType === "aumentar_limite_diario" ? ev.bonusValue : undefined);
+  if (dCap && dCap > 1000) {
+    badges.push({
+      type: "daily",
+      label: `+${dCap - 1000} XP/dia (${dCap} total)`,
+      icon: "🚀",
+    });
+  }
+
+  if (badges.length === 0) {
+    badges.push({
+      type: "multiplier",
+      label: "⚡ Bônus Especial Ativo",
+      icon: "⚡",
+    });
+  }
+
+  return badges;
 }
 
 /**
@@ -442,23 +533,8 @@ export function getAllActiveEvents(
 
   // 1. Eventos Pontuais (SpecialEvent)
   for (const ev of specialEvents) {
-    let highlight = "⚡ Bônus Especial";
-    if (ev.dailyXpCap) {
-      highlight = `🚀 Limite ${ev.dailyXpCap} XP/dia`;
-    } else if (ev.bonusType === "aumentar_limite_diario") {
-      highlight = `🚀 Limite ${ev.bonusValue ?? 2000} XP/dia`;
-    } else if (ev.xpMultiplier && ev.xpMultiplier > 1) {
-      highlight =
-        ev.xpMultiplier === 2
-          ? "🔥 Dobro de XP (2x XP)"
-          : `⚡ +${Math.round((ev.xpMultiplier - 1) * 100)}% de XP (${ev.xpMultiplier}x)`;
-    } else if (ev.matchXpCap && ev.matchXpCap > 20) {
-      highlight = `🎯 Limite ${ev.matchXpCap} XP/partida`;
-    } else if (ev.bonusType === "dobro_xp") {
-      highlight = "🔥 Dobro de XP (2x XP)";
-    } else if (ev.bonusType === "xp_1_5x") {
-      highlight = "⚡ 1.5x de XP (+50%)";
-    }
+    const badges = buildEventBonusBadges(ev);
+    const highlight = badges[0]?.label ?? "⚡ Bônus Especial";
 
     items.push({
       id: ev.id,
@@ -469,6 +545,7 @@ export function getAllActiveEvents(
       remainingTime: formatEventRemainingTime(ev.endsAt, now),
       bonusTitle: "BÔNUS DO EVENTO",
       bonusHighlight: highlight,
+      bonusBadges: badges,
       bonusScopeText: ev.scope === "todos" ? "Todos os Jogos" : (GAME_NAMES[ev.scope] ?? ev.scope),
       activePeriodLabel: `Até ${formatDateTimeBR(ev.endsAt)}`,
       linkedMedalId: ev.linkedMedalId,
@@ -487,17 +564,8 @@ export function getAllActiveEvents(
     const day = String(now.getDate()).padStart(2, "0");
     const todayDateStr = `${year}-${month}-${day}`;
 
-    let highlight = "⚡ Bônus Ativo";
-    if (ev.dailyXpCap) {
-      highlight = `🚀 Limite ${ev.dailyXpCap} XP/dia`;
-    } else if (ev.xpMultiplier && ev.xpMultiplier > 1) {
-      highlight =
-        ev.xpMultiplier === 2
-          ? "🔥 Dobro de XP (2x XP)"
-          : `⚡ +${Math.round((ev.xpMultiplier - 1) * 100)}% de XP (${ev.xpMultiplier}x)`;
-    } else if (ev.matchXpCap && ev.matchXpCap > 20) {
-      highlight = `🎯 Limite ${ev.matchXpCap} XP/partida`;
-    }
+    const badges = buildEventBonusBadges(ev);
+    const highlight = badges[0]?.label ?? "⚡ Bônus Ativo";
 
     items.push({
       id: ev.id,
@@ -508,6 +576,7 @@ export function getAllActiveEvents(
       remainingTime: formatEventRemainingTime(endOfDay.toISOString(), now),
       bonusTitle: "BÔNUS DO EVENTO",
       bonusHighlight: highlight,
+      bonusBadges: badges,
       bonusScopeText: ev.scope === "todos" ? "Todos os Jogos" : (GAME_NAMES[ev.scope] ?? ev.scope),
       activePeriodLabel: `Válido hoje (${formatDateOnlyBR(todayDateStr)})`,
       linkedMedalId: ev.linkedMedalId,

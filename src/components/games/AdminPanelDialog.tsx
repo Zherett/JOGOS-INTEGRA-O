@@ -130,9 +130,9 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [evHasMultiplier, setEvHasMultiplier] = useState(true);
   const [evMultiplier, setEvMultiplier] = useState<number>(2);
   const [evHasMatchCap, setEvHasMatchCap] = useState(false);
-  const [evMatchXpCap, setEvMatchXpCap] = useState<number>(50);
-  const [evHasDailyCap, setEvHasDailyCap] = useState(true);
-  const [evDailyXpCap, setEvDailyXpCap] = useState<number>(2500);
+  const [evMatchXpCap, setEvMatchXpCap] = useState<number>(30);
+  const [evHasDailyCap, setEvHasDailyCap] = useState(false);
+  const [evDailyExtraXp, setEvDailyExtraXp] = useState<number>(500);
   const [evDurationHours, setEvDurationHours] = useState<number>(24);
   const [evLinkedMedalId, setEvLinkedMedalId] = useState<string>("");
   const [evObjective, setEvObjective] = useState<string>("");
@@ -151,8 +151,8 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [recMultiplier, setRecMultiplier] = useState<number>(1.5);
   const [recHasMatchCap, setRecHasMatchCap] = useState(false);
   const [recMatchCap, setRecMatchCap] = useState<number>(30);
-  const [recHasDailyCap, setRecHasDailyCap] = useState(true);
-  const [recDailyCap, setRecDailyCap] = useState<number>(1500);
+  const [recHasDailyCap, setRecHasDailyCap] = useState(false);
+  const [recDailyExtraXp, setRecDailyExtraXp] = useState<number>(500);
   const [recLinkedMedal, setRecLinkedMedal] = useState<string>("");
   const [recObjective, setRecObjective] = useState<string>("");
 
@@ -342,9 +342,9 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
       parts.push(`Max ${ev.matchXpCap} XP/partida`);
     }
     if (ev.dailyXpCap && ev.dailyXpCap > 1000) {
-      parts.push(`Teto ${ev.dailyXpCap} XP/dia`);
+      parts.push(`+${ev.dailyXpCap - 1000} XP/dia (${ev.dailyXpCap} total)`);
     } else if (ev.bonusType === "aumentar_limite_diario" && ev.bonusValue && ev.bonusValue > 1000) {
-      parts.push(`Teto ${ev.bonusValue} XP/dia`);
+      parts.push(`+${ev.bonusValue - 1000} XP/dia (${ev.bonusValue} total)`);
     }
     if (parts.length === 0) {
       if (ev.bonusType === "dobro_xp") parts.push("2x XP (Dobro)");
@@ -375,10 +375,10 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
             ? "dobro_xp"
             : "xp_1_5x"
           : "personalizado",
-      bonusValue: evHasDailyCap ? Number(evDailyXpCap) : undefined,
+      bonusValue: evHasDailyCap ? 1000 + Number(evDailyExtraXp) : undefined,
       xpMultiplier: evHasMultiplier ? Number(evMultiplier) : undefined,
       matchXpCap: evHasMatchCap ? Number(evMatchXpCap) : undefined,
-      dailyXpCap: evHasDailyCap ? Number(evDailyXpCap) : undefined,
+      dailyXpCap: evHasDailyCap ? 1000 + Number(evDailyExtraXp) : undefined,
       durationHours: Number(evDurationHours),
       linkedMedalId: evLinkedMedalId || null,
       objectiveDescription: evObjective || null,
@@ -454,7 +454,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
       specificDates: recSpecificDates,
       xpMultiplier: recHasMultiplier ? Number(recMultiplier) : undefined,
       matchXpCap: recHasMatchCap ? Number(recMatchCap) : undefined,
-      dailyXpCap: recHasDailyCap ? Number(recDailyCap) : undefined,
+      dailyXpCap: recHasDailyCap ? 1000 + Number(recDailyExtraXp) : undefined,
       linkedMedalId: recLinkedMedal || null,
       objectiveDescription: recObjective || null,
     });
@@ -1407,7 +1407,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                               </div>
                             </div>
 
-                            {/* Bônus 3: Teto Diário Geral */}
+                            {/* Bônus 3: Adicionar ao Limite Diário Geral */}
                             <div className={`rounded-xl border p-2.5 space-y-2 transition-all ${evHasDailyCap ? "border-amber-500/60 bg-card shadow-xs" : "border-border/60 bg-muted/20 opacity-60"}`}>
                               <label className="flex items-center gap-2 cursor-pointer select-none">
                                 <input
@@ -1417,22 +1417,26 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                   className="h-4 w-4 rounded accent-amber-500 cursor-pointer"
                                 />
                                 <span className="text-xs font-bold text-foreground">
-                                  3. Teto Diário Geral (XP)
+                                  3. Adicionar ao Limite Diário (+XP)
                                 </span>
                               </label>
                               <div className="space-y-1">
                                 <Input
                                   type="number"
                                   disabled={!evHasDailyCap}
-                                  min={1000}
-                                  max={6000}
-                                  step={100}
-                                  value={evDailyXpCap}
-                                  onChange={(e) => setEvDailyXpCap(Number(e.target.value))}
+                                  min={50}
+                                  max={5000}
+                                  step={50}
+                                  value={evDailyExtraXp}
+                                  onChange={(e) => setEvDailyExtraXp(Math.max(0, Number(e.target.value)))}
                                   className={`h-8 rounded-lg text-xs font-bold bg-background ${!evHasDailyCap && "opacity-40 cursor-not-allowed"}`}
-                                  placeholder="Ex: 2500 XP"
+                                  placeholder="Ex: 500 XP adicionais"
                                 />
-                                <p className="text-[10px] text-muted-foreground">Normal: 1.000 XP/dia</p>
+                                <p className="text-[10px] text-muted-foreground font-semibold">
+                                  {evHasDailyCap
+                                    ? `Base (1.000 XP) + ${evDailyExtraXp} = ${1000 + evDailyExtraXp} XP/dia`
+                                    : "Normal da plataforma: 1.000 XP/dia"}
+                                </p>
                               </div>
                             </div>
                           </div>
@@ -1812,7 +1816,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                               </div>
                             </div>
 
-                            {/* Bônus 3: Teto Diário Geral */}
+                            {/* Bônus 3: Adicionar ao Limite Diário Geral */}
                             <div className={`rounded-xl border p-2.5 space-y-2 transition-all ${recHasDailyCap ? "border-amber-500/60 bg-card shadow-xs" : "border-border/60 bg-muted/20 opacity-60"}`}>
                               <label className="flex items-center gap-2 cursor-pointer select-none">
                                 <input
@@ -1822,22 +1826,26 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                   className="h-4 w-4 rounded accent-amber-500 cursor-pointer"
                                 />
                                 <span className="text-xs font-bold text-foreground">
-                                  3. Teto Diário Geral (XP)
+                                  3. Adicionar ao Limite Diário (+XP)
                                 </span>
                               </label>
                               <div className="space-y-1">
                                 <Input
                                   type="number"
                                   disabled={!recHasDailyCap}
-                                  min={1000}
-                                  max={6000}
-                                  step={100}
-                                  value={recDailyCap}
-                                  onChange={(e) => setRecDailyCap(Number(e.target.value))}
+                                  min={50}
+                                  max={5000}
+                                  step={50}
+                                  value={recDailyExtraXp}
+                                  onChange={(e) => setRecDailyExtraXp(Math.max(0, Number(e.target.value)))}
                                   className={`h-8 rounded-lg text-xs font-bold bg-background ${!recHasDailyCap && "opacity-40 cursor-not-allowed"}`}
-                                  placeholder="Ex: 1500 XP"
+                                  placeholder="Ex: 500 XP adicionais"
                                 />
-                                <p className="text-[10px] text-muted-foreground">Normal: 1.000 XP/dia</p>
+                                <p className="text-[10px] text-muted-foreground font-semibold">
+                                  {recHasDailyCap
+                                    ? `Base (1.000 XP) + ${recDailyExtraXp} = ${1000 + recDailyExtraXp} XP/dia`
+                                    : "Normal da plataforma: 1.000 XP/dia"}
+                                </p>
                               </div>
                             </div>
                           </div>
@@ -2557,6 +2565,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                             <option value="ouro">Ouro (Glow Dourado)</option>
                             <option value="platina">Platina (Glow Ciano)</option>
                             <option value="diamante">Diamante (Glow Magenta)</option>
+                            <option value="heroi">Herói (Brilho Vermelho Radiante)</option>
                           </select>
                         </div>
                       </div>

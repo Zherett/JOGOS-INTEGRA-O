@@ -259,7 +259,7 @@ export function PlayerMedalsInventory({
               className="h-9 rounded-xl border bg-card px-2.5 text-xs font-bold text-foreground"
             >
               <option value="ALL">Todas as Raridades</option>
-              {(["bronze", "prata", "ouro", "platina", "diamante"] as MedalRarity[]).map((r) => (
+              {(["bronze", "prata", "ouro", "platina", "diamante", "heroi"] as MedalRarity[]).map((r) => (
                 <option key={r} value={r}>
                   {RARITY_INFO[r].label}
                 </option>

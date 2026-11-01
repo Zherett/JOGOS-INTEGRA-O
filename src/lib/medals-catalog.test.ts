@@ -193,4 +193,93 @@ describe("Sistema Completo de Medalhas e Inventário", () => {
     assert.ok(ids.includes("explore_5_games")); // Explorador da Lógica
     assert.ok(ids.includes("explore_all_games")); // Mestre de Todos os Jogos
   });
+
+  it("avalia e concede as medalhas especiais de Beta Tester no período de 01 a 07 de Novembro", () => {
+    const nov3 = new Date("2026-11-03T14:00:00Z"); // Durante período Beta
+    const nov15 = new Date("2026-11-15T14:00:00Z"); // Fora do período Beta
+
+    // Perfil de jogador com 1 partida finalizada
+    const profileBronze: PlayerProfile = {
+      id: "p_beta",
+      nick: "BetaGuy",
+      nickNormalized: "betaguy",
+      full_name: "BETA GUY",
+      school: "Nenhuma",
+      grade: null,
+      birthdate: "2012-05-10",
+      xp: 100,
+      seasonXp: 100,
+      level: 1,
+      wins: 1,
+      matchesPlayed: 1,
+      distinctGamesPlayed: 1,
+      badges: [],
+      seasonId: 1,
+      unlockedMedals: [],
+    };
+
+    const statsBronze: GameStatRow[] = [
+      {
+        player_id: "p_beta",
+        game_id: "logica",
+        plays: 1,
+        wins: 1,
+        best_score: 50,
+        best_level: 2,
+        updated_at: "2026-11-03T12:00:00Z",
+      },
+    ];
+
+    // Dentro do período Beta: conquista Beta Tester Bronze
+    const awardedNov3 = evaluatePlayerMedals(
+      { profile: profileBronze, stats: statsBronze },
+      undefined,
+      nov3,
+    );
+    assert.ok(awardedNov3.some((m) => m.id === "beta_tester_bronze"));
+
+    // Fora do período Beta (nov 15): não conquista
+    const awardedNov15 = evaluatePlayerMedals(
+      { profile: profileBronze, stats: statsBronze },
+      undefined,
+      nov15,
+    );
+    assert.ok(!awardedNov15.some((m) => m.id === "beta_tester_bronze"));
+
+    // Jogador avançado com 10 partidas finalizadas em todos os 10 jogos e Nível 5
+    const statsHeroi: GameStatRow[] = ALL_GAME_IDS.map((gId) => ({
+      player_id: "p_hero",
+      game_id: gId,
+      plays: 10,
+      wins: 8,
+      best_score: 100,
+      best_level: 5,
+      updated_at: "2026-11-03T12:00:00Z",
+    }));
+
+    const profileHeroi: PlayerProfile = {
+      ...profileBronze,
+      level: 5,
+      xp: 3000,
+    };
+
+    const awardedHero = evaluatePlayerMedals(
+      { profile: profileHeroi, stats: statsHeroi },
+      undefined,
+      nov3,
+    );
+
+    const heroMedalIds = awardedHero.map((m) => m.id);
+    assert.ok(heroMedalIds.includes("beta_tester_bronze"));
+    assert.ok(heroMedalIds.includes("beta_tester_prata"));
+    assert.ok(heroMedalIds.includes("beta_tester_ouro"));
+    assert.ok(heroMedalIds.includes("beta_tester_platina"));
+    assert.ok(heroMedalIds.includes("beta_tester_heroi"));
+
+    // Valida raridade Herói com brilho vermelho
+    const heroiMedal = awardedHero.find((m) => m.id === "beta_tester_heroi");
+    assert.equal(heroiMedal?.rarity, "heroi");
+    assert.equal(RARITY_INFO.heroi.glowHex, "#ef4444");
+    assert.equal(RARITY_INFO.heroi.label, "Herói");
+  });
 });

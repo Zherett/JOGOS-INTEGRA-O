@@ -13,6 +13,9 @@ import {
   Award,
   ChevronLeft,
   ChevronRight,
+  Flame,
+  Rocket,
+  Target,
 } from "lucide-react";
 import type { AllStats, GameId } from "@/lib/game-storage";
 import { GAME_NAMES } from "@/lib/game-storage";
@@ -20,7 +23,9 @@ import { GAME_REGISTRY } from "@/lib/game-registry";
 import { TOURNAMENT_MIN_LEVEL, X1_MIN_LEVEL } from "@/lib/player-profile";
 import {
   getAllActiveEvents,
+  calculateCumulativeActiveBonuses,
   type ActiveEventDisplayItem,
+  type CumulativeActiveBonuses,
 } from "@/lib/custom-events";
 import integracaoPreto from "@/assets/integracao-preto.jpg";
 import semed from "@/assets/semed.png";
@@ -67,10 +72,16 @@ export function Menu({
   const [activeEvents, setActiveEvents] = useState<ActiveEventDisplayItem[]>(() =>
     getAllActiveEvents(),
   );
+  const [cumulativeBonuses, setCumulativeBonuses] = useState<CumulativeActiveBonuses>(() =>
+    calculateCumulativeActiveBonuses(),
+  );
   const [currentEventIndex, setCurrentEventIndex] = useState(0);
 
   useEffect(() => {
-    const update = () => setActiveEvents(getAllActiveEvents());
+    const update = () => {
+      setActiveEvents(getAllActiveEvents());
+      setCumulativeBonuses(calculateCumulativeActiveBonuses());
+    };
     window.addEventListener("desafios:special-events-updated", update);
     const id = window.setInterval(update, 10000);
     return () => {
@@ -106,6 +117,68 @@ export function Menu({
           className="h-12 w-auto sm:h-16 rounded-lg object-contain"
         />
       </div>
+
+      {/* Blocos de Bônus Ativos Acumulados (Soma de todos os eventos em vigor) */}
+      {cumulativeBonuses.hasActiveBonuses && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 animate-in fade-in-50">
+          {cumulativeBonuses.totalMultiplier > 1 && (
+            <div className="flex items-center gap-3.5 rounded-2xl border-2 border-amber-400/50 bg-gradient-to-br from-amber-500/15 via-amber-500/5 to-card p-3.5 shadow-sm">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-amber-500 text-white shadow-xs">
+                <Flame className="h-6 w-6 fill-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                  Multiplicador Total Ativo
+                </p>
+                <p className="font-display text-xl font-black text-foreground">
+                  {cumulativeBonuses.totalMultiplier}x de XP
+                </p>
+                <p className="text-[11px] font-semibold text-muted-foreground truncate">
+                  +{Math.round((cumulativeBonuses.totalMultiplier - 1) * 100)}% somado dos eventos
+                </p>
+              </div>
+            </div>
+          )}
+
+          {cumulativeBonuses.totalDailyCap > 1000 && (
+            <div className="flex items-center gap-3.5 rounded-2xl border-2 border-cyan-400/50 bg-gradient-to-br from-cyan-500/15 via-cyan-500/5 to-card p-3.5 shadow-sm">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-cyan-500 text-white shadow-xs">
+                <Rocket className="h-6 w-6" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
+                  Limite Diário Total
+                </p>
+                <p className="font-display text-xl font-black text-foreground">
+                  {cumulativeBonuses.totalDailyCap.toLocaleString("pt-BR")} XP / dia
+                </p>
+                <p className="text-[11px] font-semibold text-muted-foreground truncate">
+                  Base 1.000 + {cumulativeBonuses.totalExtraDaily.toLocaleString("pt-BR")} XP somados
+                </p>
+              </div>
+            </div>
+          )}
+
+          {cumulativeBonuses.totalMatchCap > 20 && (
+            <div className="flex items-center gap-3.5 rounded-2xl border-2 border-primary/50 bg-gradient-to-br from-primary/15 via-primary/5 to-card p-3.5 shadow-sm">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-xs">
+                <Target className="h-6 w-6" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-wider text-primary">
+                  Teto por Partida
+                </p>
+                <p className="font-display text-xl font-black text-foreground">
+                  {cumulativeBonuses.totalMatchCap} XP / partida
+                </p>
+                <p className="text-[11px] font-semibold text-muted-foreground truncate">
+                  Base 20 + {cumulativeBonuses.totalExtraMatch} XP somados
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Banner de Eventos Especiais Ativos (Carrossel com Setas e Cartão de Bônus) */}
       {activeEvents.length > 0 && (() => {
@@ -169,16 +242,33 @@ export function Menu({
                 </p>
               </div>
 
-              {/* Cartão de Destaque do Bônus à Direita */}
+              {/* Cartão de Destaque do Bônus à Direita (Mostra somente os bônus marcados) */}
               <div className="shrink-0 w-full sm:w-auto">
-                <div className="rounded-2xl border-2 border-amber-300 dark:border-amber-600 bg-white dark:bg-card px-5 py-3 shadow-sm text-center flex flex-col items-center justify-center min-w-[190px]">
+                <div className="rounded-2xl border-2 border-amber-300 dark:border-amber-600 bg-white dark:bg-card px-4 py-2.5 shadow-sm text-center flex flex-col items-center justify-center min-w-[210px] gap-1.5">
                   <span className="text-[10px] font-black uppercase tracking-wider text-amber-500">
                     {ev.bonusTitle}
                   </span>
-                  <span className="font-display text-base font-black text-foreground mt-0.5 whitespace-nowrap">
-                    {ev.bonusHighlight}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground font-semibold mt-0.5">
+
+                  {/* Bônus Específicos Marcados Neste Evento */}
+                  <div className="flex flex-col gap-1 w-full">
+                    {ev.bonusBadges && ev.bonusBadges.length > 0 ? (
+                      ev.bonusBadges.map((badge, bIdx) => (
+                        <div
+                          key={bIdx}
+                          className="flex items-center justify-center gap-1.5 rounded-xl border border-amber-400/30 bg-amber-500/10 px-2.5 py-1 text-xs font-black text-foreground shadow-2xs"
+                        >
+                          <span className="text-xs">{badge.icon}</span>
+                          <span className="whitespace-nowrap">{badge.label}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <span className="font-display text-base font-black text-foreground whitespace-nowrap">
+                        {ev.bonusHighlight}
+                      </span>
+                    )}
+                  </div>
+
+                  <span className="text-[10px] text-muted-foreground font-semibold">
                     {ev.bonusScopeText}
                   </span>
                 </div>
