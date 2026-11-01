@@ -228,7 +228,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     try {
       const players = await syncStudentRosterFromPlayFab();
       setRegisteredStudents(players);
-      flashSaved("Lista de alunos sincronizada com a nuvem!");
+      flashSaved(`${players.length} alunos sincronizados com a nuvem!`);
     } finally {
       setSyncingRoster(false);
     }

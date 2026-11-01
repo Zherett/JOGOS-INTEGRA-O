@@ -192,6 +192,26 @@ export function setAdminPin(newPin: string) {
   }
 }
 
+let cachedAdminTicket: string | null = null;
+let cachedAdminTicketTime = 0;
+
+export async function getAdminPlayFabTicket(): Promise<string | null> {
+  if (cachedAdminTicket && Date.now() - cachedAdminTicketTime < 3600000) {
+    return cachedAdminTicket;
+  }
+  if (!isPlayFabConfigured()) return null;
+  const res = await callPlayFabClient<PlayFabLoginPayload>("LoginWithPlayFab", {
+    Username: "adminjosiney",
+    Password: "SEMED2620ZZadm",
+  });
+  if (res.data?.SessionTicket) {
+    cachedAdminTicket = res.data.SessionTicket;
+    cachedAdminTicketTime = Date.now();
+    return cachedAdminTicket;
+  }
+  return null;
+}
+
 export function isSpecialAdminAccount(p?: {
   id?: string;
   nickNormalized?: string;
@@ -894,9 +914,26 @@ export async function playfabSignIn(
       adminAcc.profile.isAdmin = true;
     }
     setAdminUnlockedSession(true);
+
+    let adminSessionTicket: string | undefined;
+    let adminPlayFabId: string | undefined;
+    if (isPlayFabConfigured()) {
+      const pfAdminUser = adminKey === "josiney" ? "adminjosiney" : "adminquemuel";
+      const pfAdminPass = adminKey === "josiney" ? "SEMED2620ZZadm" : "SEMED2620QQadm";
+      const pfLogin = await callPlayFabClient<PlayFabLoginPayload>("LoginWithPlayFab", {
+        Username: pfAdminUser,
+        Password: pfAdminPass,
+      });
+      if (pfLogin.data?.SessionTicket) {
+        adminSessionTicket = pfLogin.data.SessionTicket;
+        adminPlayFabId = pfLogin.data.PlayFabId;
+      }
+    }
+
     saveStoredSession({
       playerId: adminKey,
-      sessionTicket: `admin-${adminKey}-session-ticket`,
+      sessionTicket: adminSessionTicket ?? `admin-${adminKey}-session-ticket`,
+      playfabId: adminPlayFabId,
     });
     syncLocalBrowserFromAccount(adminAcc);
     return { account: adminAcc, error: null };
@@ -1183,39 +1220,42 @@ async function pushProfileToPlayFab(account: StoredAccount, sessionTicket?: stri
 
   // Sync into shared student roster for ADM, teachers, and leaderboards across all devices
   try {
-    await callPlayFabClient("CreateSharedGroup", { SharedGroupId: ROSTER_SHARED_GROUP_ID }, ticket);
-    await callPlayFabClient(
-      "UpdateSharedGroupData",
-      {
-        SharedGroupId: ROSTER_SHARED_GROUP_ID,
-        Data: {
-          [`stu_${p.nickNormalized}`]: JSON.stringify({
-            id: p.id,
-            playfabId: p.playfabId,
-            nick: p.nick,
-            nickNormalized: p.nickNormalized,
-            full_name: p.full_name,
-            school: p.school,
-            grade: p.grade,
-            turma: p.turma ?? null,
-            birthdate: p.birthdate,
-            xp: p.xp,
-            seasonXp: p.seasonXp,
-            level: p.level,
-            wins: p.wins,
-            matchesPlayed: p.matchesPlayed,
-            distinctGamesPlayed: p.distinctGamesPlayed ?? 0,
-            unlockedMedals: p.unlockedMedals ?? [],
-            badges: p.badges ?? [],
-            isAdmin: p.isAdmin,
-            seasonId: p.seasonId,
-            updatedAt: account.updatedAt,
-          }),
+    const rosterTicket = (await getAdminPlayFabTicket()) ?? ticket;
+    if (rosterTicket) {
+      await callPlayFabClient("CreateSharedGroup", { SharedGroupId: ROSTER_SHARED_GROUP_ID }, rosterTicket);
+      await callPlayFabClient(
+        "UpdateSharedGroupData",
+        {
+          SharedGroupId: ROSTER_SHARED_GROUP_ID,
+          Data: {
+            [`stu_${p.nickNormalized}`]: JSON.stringify({
+              id: p.id,
+              playfabId: p.playfabId,
+              nick: p.nick,
+              nickNormalized: p.nickNormalized,
+              full_name: p.full_name,
+              school: p.school,
+              grade: p.grade,
+              turma: p.turma ?? null,
+              birthdate: p.birthdate,
+              xp: p.xp,
+              seasonXp: p.seasonXp,
+              level: p.level,
+              wins: p.wins,
+              matchesPlayed: p.matchesPlayed,
+              distinctGamesPlayed: p.distinctGamesPlayed ?? 0,
+              unlockedMedals: p.unlockedMedals ?? [],
+              badges: p.badges ?? [],
+              isAdmin: p.isAdmin,
+              seasonId: p.seasonId,
+              updatedAt: account.updatedAt,
+            }),
+          },
+          Permission: "Public",
         },
-        Permission: "Public",
-      },
-      ticket,
-    );
+        rosterTicket,
+      );
+    }
   } catch {
     /* ignore network issues with shared group */
   }
@@ -1225,7 +1265,7 @@ async function pushProfileToPlayFab(account: StoredAccount, sessionTicket?: stri
  * Downloads and merges all registered students across all schools/devices from PlayFab.
  */
 export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Promise<PlayerProfile[]> {
-  const ticket = sessionTicket ?? loadStoredSession()?.sessionTicket;
+  const ticket = (await getAdminPlayFabTicket()) ?? sessionTicket ?? loadStoredSession()?.sessionTicket;
   if (!ticket || !isPlayFabConfigured()) {
     return getAllRegisteredPlayers();
   }
