@@ -9,6 +9,9 @@ import { isPlayFabConfigured, getPlayFabTitleId } from "@/lib/playfab";
 import {
   ageFrom,
   formatFullNameUpper,
+  getAvailableSchoolsForAge,
+  isEtapa3OrOlder,
+  isOfficialSemedSchool,
   passwordFromBirthdate,
   RAIMUNDO_GRADES,
   schoolNeedsGrade,
@@ -43,9 +46,9 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
   // Sign-Up states
   const [nick, setNick] = useState("");
   const [fullName, setFullName] = useState("");
-  const [school, setSchool] = useState<string>(SCHOOLS[0].name);
+  const [school, setSchool] = useState<string>("Nenhuma");
   const [grade, setGrade] = useState<string>(RAIMUNDO_GRADES[0]);
-  const [turma, setTurma] = useState<string>("A");
+  const [turma, setTurma] = useState<string>("");
   const [birthdate, setBirthdate] = useState("");
 
   useEffect(() => {
@@ -57,6 +60,19 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
   }, [open]);
 
   const generatedSignupPassword = birthdate ? passwordFromBirthdate(birthdate) : "";
+  const isOver15 = isEtapa3OrOlder(birthdate);
+  const availableSchools = getAvailableSchoolsForAge(birthdate);
+  const isNoSchoolOrCommunity = school === "Nenhuma" || school === "Outro" || isOver15;
+
+  function handleBirthdateChange(val: string) {
+    setBirthdate(val);
+    if (isEtapa3OrOlder(val)) {
+      if (isOfficialSemedSchool(school)) {
+        setSchool("Nenhuma");
+      }
+      setTurma("");
+    }
+  }
 
   async function submitLoginOrSignup(e: React.FormEvent) {
     e.preventDefault();
@@ -93,13 +109,18 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
     }
 
     // Tab === "criar"
-    const isNoSchool = school === "Nenhuma";
+    const isPlayerOver15 = isEtapa3OrOlder(birthdate);
+    const resolvedSchool = isPlayerOver15 && isOfficialSemedSchool(school) ? "Nenhuma" : school;
+    const isNoSchool = resolvedSchool === "Nenhuma" || resolvedSchool === "Outro" || isPlayerOver15;
+    const finalGrade = isNoSchool ? null : (schoolNeedsGrade(resolvedSchool) ? grade : "5º ano");
+    const finalTurma = isNoSchool ? null : (turma.trim() || null);
+
     const res = await auth.signUp({
       nick,
       fullName,
-      school,
-      grade: schoolNeedsGrade(school) ? grade : (isNoSchool ? null : "5º ano"),
-      turma: isNoSchool ? null : turma,
+      school: resolvedSchool,
+      grade: finalGrade,
+      turma: finalTurma,
       birthdate,
     });
     setBusy(false);
@@ -353,14 +374,32 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
                     </div>
 
                     <div className="space-y-1.5">
+                      <Label htmlFor="nascimento">Data de nascimento</Label>
+                      <Input
+                        id="nascimento"
+                        type="date"
+                        value={birthdate}
+                        onChange={(e) => handleBirthdateChange(e.target.value)}
+                        required
+                        className="rounded-xl"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
                       <Label htmlFor="escola">Instituição (Escola)</Label>
                       <select
                         id="escola"
                         value={school}
-                        onChange={(e) => setSchool(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSchool(val);
+                          if (val === "Nenhuma" || val === "Outro") {
+                            setTurma("");
+                          }
+                        }}
                         className="h-10 w-full rounded-xl border bg-background px-3 text-sm"
                       >
-                        {SCHOOLS.map((s) => (
+                        {availableSchools.map((s) => (
                           <option key={s.name} value={s.name}>
                             {s.range ? `${s.name} (${s.range})` : s.name}
                           </option>
@@ -368,7 +407,13 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
                       </select>
                     </div>
 
-                    {schoolNeedsGrade(school) && (
+                    {isOver15 && (
+                      <div className="rounded-xl border border-accent/40 bg-accent/10 p-2.5 text-xs text-accent-foreground font-medium">
+                        ℹ️ Pela sua data de nascimento (15 anos ou mais • 3ª Etapa), você participa na categoria <b>Comunidade / Outro</b>. As escolas municipais da SEMED (5º ao 9º ano) são restritas para alunos de até 14 anos.
+                      </div>
+                    )}
+
+                    {!isNoSchoolOrCommunity && schoolNeedsGrade(school) && (
                       <div className="space-y-1.5">
                         <Label htmlFor="serie">Série / Ano</Label>
                         <select
@@ -390,12 +435,16 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
                       <div className="flex items-center justify-between">
                         <Label
                           htmlFor="turma"
-                          className={school === "Nenhuma" ? "text-muted-foreground flex items-center gap-1.5" : ""}
+                          className={
+                            isNoSchoolOrCommunity
+                              ? "text-muted-foreground flex items-center gap-1.5"
+                              : ""
+                          }
                         >
-                          {school === "Nenhuma" && <Lock className="h-3.5 w-3.5 text-muted-foreground" />}
+                          {isNoSchoolOrCommunity && <Lock className="h-3.5 w-3.5 text-muted-foreground" />}
                           Turma (A até F)
                         </Label>
-                        {school === "Nenhuma" && (
+                        {isNoSchoolOrCommunity && (
                           <span className="text-[11px] font-semibold text-muted-foreground">
                             Travada (Não se aplica)
                           </span>
@@ -403,38 +452,29 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
                       </div>
                       <select
                         id="turma"
-                        value={school === "Nenhuma" ? "" : turma}
+                        value={isNoSchoolOrCommunity ? "" : turma}
                         onChange={(e) => setTurma(e.target.value)}
-                        disabled={school === "Nenhuma"}
-                        aria-disabled={school === "Nenhuma"}
+                        disabled={isNoSchoolOrCommunity}
+                        aria-disabled={isNoSchoolOrCommunity}
                         className={`h-10 w-full rounded-xl border px-3 text-sm font-semibold transition-colors ${
-                          school === "Nenhuma"
+                          isNoSchoolOrCommunity
                             ? "bg-muted/50 text-muted-foreground cursor-not-allowed border-dashed opacity-75"
                             : "bg-background text-foreground"
                         }`}
                       >
-                        {school === "Nenhuma" ? (
+                        {isNoSchoolOrCommunity ? (
                           <option value="">Sem Turma (Travada)</option>
                         ) : (
-                          ["A", "B", "C", "D", "E", "F"].map((t) => (
-                            <option key={t} value={t}>
-                              Turma {t}
-                            </option>
-                          ))
+                          <>
+                            <option value="">Selecione a turma...</option>
+                            {["A", "B", "C", "D", "E", "F"].map((t) => (
+                              <option key={t} value={t}>
+                                Turma {t}
+                              </option>
+                            ))}
+                          </>
                         )}
                       </select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label htmlFor="nascimento">Data de nascimento</Label>
-                      <Input
-                        id="nascimento"
-                        type="date"
-                        value={birthdate}
-                        onChange={(e) => setBirthdate(e.target.value)}
-                        required
-                        className="rounded-xl"
-                      />
                     </div>
 
                     {generatedSignupPassword.length === 6 && (

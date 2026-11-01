@@ -25,7 +25,9 @@ import {
   formatFullNameUpper,
   fullNameSlug,
   getLocalDateKey,
+  isEtapa3OrOlder,
   isMatchVictory,
+  isOfficialSemedSchool,
   isValidSchool,
   levelFromXp,
   levelTitle,
@@ -500,6 +502,19 @@ function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig)
     );
   }
 
+  // Sanitization: Players in Etapa 3 (15+ years old) cannot belong to elementary SEMED schools or classes.
+  // If institution is "Nenhuma" or "Outro", grade and turma are always null.
+  if (isEtapa3OrOlder(acc.profile.birthdate)) {
+    if (isOfficialSemedSchool(acc.profile.school)) {
+      acc.profile.school = "Outro";
+    }
+    acc.profile.grade = null;
+    acc.profile.turma = null;
+  } else if (acc.profile.school === "Nenhuma" || acc.profile.school === "Outro") {
+    acc.profile.grade = null;
+    acc.profile.turma = null;
+  }
+
   // Ensure passive/cumulative medals (level, distinct games, total count, etc.) are awarded when criteria met
   const allAvailable = getAllAvailableMedals(cfg.customMedals);
   const earnedPassively = evaluatePlayerMedals(
@@ -782,14 +797,21 @@ export async function playfabSignUp(data: SignUpData): Promise<{
     }
   }
 
+  const isOver15 = isEtapa3OrOlder(data.birthdate);
+  const resolvedSchool = isOver15 && isOfficialSemedSchool(data.school) ? "Nenhuma" : data.school;
+  const isNoSchool = resolvedSchool === "Nenhuma" || resolvedSchool === "Outro" || isOver15;
+  const resolvedGrade = isNoSchool ? null : data.grade;
+  const resolvedTurma = isNoSchool ? null : data.turma;
+
   const profile: PlayerProfile = {
     id: playfabId ?? `pf_local_${slug}`,
     playfabId,
     nick: data.nick.trim(),
     nickNormalized: slug,
     full_name: formatFullNameUpper(data.fullName.trim()),
-    school: data.school,
-    grade: data.grade,
+    school: resolvedSchool,
+    grade: resolvedGrade,
+    turma: resolvedTurma,
     birthdate: data.birthdate,
     xp: 0,
     seasonXp: 0,

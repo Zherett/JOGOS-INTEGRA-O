@@ -15,6 +15,48 @@ export type SchoolName = (typeof SCHOOLS)[number]["name"];
 export const GRADES = ["5º ano", "6º ano", "7º ano", "8º ano", "9º ano"] as const;
 export const RAIMUNDO_GRADES = ["6º ano", "7º ano", "8º ano", "9º ano"] as const;
 
+export const OFFICIAL_SEMED_SCHOOLS = [
+  "Raimundo Bezerra",
+  "Elisângela Litaiff",
+  "Raimunda Cruz",
+  "Maria de Nazaré",
+  "Ursulina Souza",
+] as const;
+
+export type OfficialSemedSchoolName = (typeof OFFICIAL_SEMED_SCHOOLS)[number];
+
+export function isOfficialSemedSchool(school?: string | null): boolean {
+  if (!school) return false;
+  return OFFICIAL_SEMED_SCHOOLS.some((s) => s.toLowerCase() === school.trim().toLowerCase());
+}
+
+/**
+ * Checks whether a student's age (>= 15 years) places them in Etapa 3 (Comunidade / Outro).
+ * Players in Etapa 3 cannot be allocated to Elementary SEMED schools or classes.
+ */
+export function isEtapa3OrOlder(birthdate?: string | null, now = new Date()): boolean {
+  if (!birthdate) return false;
+  const b = new Date(`${birthdate}T00:00:00`);
+  if (Number.isNaN(b.getTime())) return false;
+  const turningAge = now.getFullYear() - b.getFullYear();
+  return turningAge >= 15 || ageFrom(birthdate, now) >= 15;
+}
+
+/**
+ * Returns available school options based on age:
+ * - If 15+ years old (Etapa 3): only "Nenhuma" (default) and "Outro" are allowed.
+ * - If under 15: all SEMED schools plus "Nenhuma" and "Outro" are allowed.
+ */
+export function getAvailableSchoolsForAge(
+  birthdate?: string | null,
+  now = new Date(),
+): typeof SCHOOLS {
+  if (isEtapa3OrOlder(birthdate, now)) {
+    return SCHOOLS.filter((s) => s.name === "Nenhuma" || s.name === "Outro") as unknown as typeof SCHOOLS;
+  }
+  return SCHOOLS;
+}
+
 export function schoolNeedsGrade(school: string): boolean {
   return SCHOOLS.find((s) => s.name === school)?.needsGrade ?? false;
 }
@@ -270,7 +312,13 @@ export function stageFromBirthdate(
   now = new Date(),
   school?: string | null,
 ): AgeStageInfo {
-  // 1. A Escola é o elemento principal para definir a etapa
+  // 0. Jogadores com 15 anos ou mais (Etapa 3) são sempre da 3ª Etapa (Comunidade / Outro)
+  // e não podem ser alocados em turmas ou escolas do Ensino Fundamental.
+  if (isEtapa3OrOlder(birthdate, now)) {
+    return AGE_STAGES[2];
+  }
+
+  // 1. A Escola é o elemento principal para definir a etapa (para alunos com até 14 anos)
   if (school) {
     const s = school.trim().toLowerCase();
     // Escolas da 1ª Etapa (5º ano): Raimunda Cruz, Ursulina Souza, Maria de Nazaré, Elisângela Litaiff
@@ -285,13 +333,6 @@ export function stageFromBirthdate(
     }
     // Escola da 2ª Etapa (6º ao 9º ano): Raimundo Bezerra
     if (s.includes("bezerra")) {
-      if (birthdate) {
-        const b = new Date(`${birthdate}T00:00:00`);
-        if (!Number.isNaN(b.getTime())) {
-          const turningAge = now.getFullYear() - b.getFullYear();
-          if (turningAge >= 15) return AGE_STAGES[2];
-        }
-      }
       return AGE_STAGES[1];
     }
   }

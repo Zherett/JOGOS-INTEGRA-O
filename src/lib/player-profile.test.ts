@@ -8,7 +8,10 @@ import {
   DEFAULT_DAILY_XP_CAP,
   formatFullNameUpper,
   fullNameSlug,
+  getAvailableSchoolsForAge,
+  isEtapa3OrOlder,
   isMatchVictory,
+  isOfficialSemedSchool,
   isValidSchool,
   levelFromXp,
   levelProgress,
@@ -230,5 +233,39 @@ describe("Perfil do Jogador, Escolas, Trava de Níveis (1..10) e Limite Diário 
     // Garante no mínimo 1 XP para partidas concluídas
     assert.equal(adjustXpForGameMode(1, true), 1);
     assert.equal(adjustXpForGameMode(2, true), 1);
+  });
+
+  it("bloqueia escolas e turmas do ensino fundamental para jogadores com 15+ anos (Etapa 3)", () => {
+    const refDate = new Date("2026-11-01T12:00:00");
+
+    // Aluno com 25 anos (ex: nascido em 2001)
+    assert.equal(isEtapa3OrOlder("2001-05-10", refDate), true);
+    // Aluno com 15 anos (nascido em 2011)
+    assert.equal(isEtapa3OrOlder("2011-03-15", refDate), true);
+    // Aluno com 12 anos (nascido em 2014)
+    assert.equal(isEtapa3OrOlder("2014-05-10", refDate), false);
+    // Aluno com 10 anos (nascido em 2016)
+    assert.equal(isEtapa3OrOlder("2016-05-10", refDate), false);
+
+    // Escolas disponíveis para quem tem 15+ anos: APENAS 'Nenhuma' e 'Outro'
+    const schoolsOver15 = getAvailableSchoolsForAge("2001-05-10", refDate).map((s) => s.name);
+    assert.deepEqual(schoolsOver15, ["Nenhuma", "Outro"]);
+
+    // Para quem tem menos de 15 anos: todas as opções disponíveis
+    const schoolsUnder15 = getAvailableSchoolsForAge("2014-05-10", refDate).map((s) => s.name);
+    assert.equal(schoolsUnder15.includes("Raimundo Bezerra"), true);
+    assert.equal(schoolsUnder15.includes("Elisângela Litaiff"), true);
+
+    // Aluno com 15+ anos é SEMPRE alocado na Etapa 3 (Comunidade)
+    assert.equal(stageFromBirthdate("2001-05-10", refDate, "Elisângela Litaiff").id, "etapa_3");
+    assert.equal(stageFromBirthdate("2001-05-10", refDate, "Raimundo Bezerra").id, "etapa_3");
+    assert.equal(stageFromBirthdate("2001-05-10", refDate, "Outro").id, "etapa_3");
+    assert.equal(stageFromBirthdate("2001-05-10", refDate, "Nenhuma").id, "etapa_3");
+
+    // Validação de escolas oficiais
+    assert.equal(isOfficialSemedSchool("Raimundo Bezerra"), true);
+    assert.equal(isOfficialSemedSchool("Elisângela Litaiff"), true);
+    assert.equal(isOfficialSemedSchool("Nenhuma"), false);
+    assert.equal(isOfficialSemedSchool("Outro"), false);
   });
 });
