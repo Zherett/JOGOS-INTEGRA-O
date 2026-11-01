@@ -2944,7 +2944,13 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
         <PlayerInspectModal
           playerId={inspectStudentId}
           open={Boolean(inspectStudentId)}
-          onOpenChange={(v) => !v && setInspectStudentId(null)}
+          onOpenChange={(v) => {
+            if (!v) {
+              setInspectStudentId(null);
+              setRegisteredStudents(getAllRegisteredPlayers());
+            }
+          }}
+          onStudentUpdated={() => setRegisteredStudents(getAllRegisteredPlayers())}
         />
       </DialogContent>
     </Dialog>
