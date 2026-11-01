@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { User, School, Trophy, Flame, Award, Shield } from "lucide-react";
+import { User, School, Trophy, Flame, Award, Shield, Star } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { getPlayerPublicProfile, type PlayerProfile } from "@/lib/playfab";
 import { usePlayerAuth } from "@/lib/player-auth";
-import { ageFrom, levelProgress, stageFromBirthdate } from "@/lib/player-profile";
+import { ageFrom, levelProgress, MAX_LEVEL } from "@/lib/player-profile";
 import { PlayerMedalsInventory } from "./PlayerMedalsInventory";
 
 interface Props {
@@ -28,8 +28,12 @@ export function PlayerInspectModal({ playerId, open, onOpenChange }: Props) {
   if (!profile) return null;
 
   const age = ageFrom(profile.birthdate);
-  const stage = stageFromBirthdate(profile.birthdate, new Date(), profile.school);
-  const progress = levelProgress(profile.xp);
+  const progress = levelProgress({
+    xp: profile.xp,
+    matchesPlayed: profile.totalMatches ?? 0,
+    wins: profile.wins ?? 0,
+    distinctGames: profile.distinctGamesPlayed ?? 0,
+  });
   const isMe = auth.profile?.id === profile.id;
 
   return (
@@ -67,9 +71,14 @@ export function PlayerInspectModal({ playerId, open, onOpenChange }: Props) {
                       VOCÊ
                     </span>
                   )}
-                  {profile.turma && (
+                  {Boolean(
+                    profile.turma &&
+                      profile.school &&
+                      profile.school !== "Nenhuma" &&
+                      profile.school !== "Outro"
+                  ) && (
                     <span className="rounded-full bg-primary/15 border border-primary/30 px-2 py-0.5 text-[10px] font-extrabold text-primary">
-                      Turma {profile.turma}
+                      {profile.grade ? `${profile.grade} ` : ""}Turma {profile.turma}
                     </span>
                   )}
                 </div>
@@ -80,7 +89,7 @@ export function PlayerInspectModal({ playerId, open, onOpenChange }: Props) {
                   </span>
                   <span className="text-muted-foreground">•</span>
                   <span className="font-semibold text-foreground">
-                    {stage.emoji} {stage.shortLabel} ({age} anos)
+                    {age} anos
                   </span>
                 </div>
               </div>
@@ -99,6 +108,33 @@ export function PlayerInspectModal({ playerId, open, onOpenChange }: Props) {
                   {profile.wins ?? 0}
                 </span>
               </div>
+            </div>
+          </div>
+
+          {/* Barra de Progresso de XP */}
+          <div className="rounded-2xl border bg-card p-4 space-y-2.5">
+            <div className="flex items-center justify-between text-xs font-bold">
+              <span className="flex items-center gap-1.5 text-foreground">
+                <Star className="h-4 w-4 text-accent fill-accent" />
+                Nível {progress.level}/{MAX_LEVEL} — {progress.title}
+              </span>
+              <span className="text-primary font-mono font-black">{profile.xp} XP</span>
+            </div>
+
+            <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary transition-all duration-300"
+                style={{ width: `${progress.percent}%` }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>
+                {progress.isMaxLevel
+                  ? "Nível Máximo alcançado!"
+                  : `${progress.current}/${progress.needed} XP para o Nível ${progress.level + 1}`}
+              </span>
+              <span className="font-semibold text-foreground">{progress.percent}%</span>
             </div>
           </div>
 

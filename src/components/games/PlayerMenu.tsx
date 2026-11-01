@@ -313,18 +313,8 @@ export function PlayerMenu({ onConfigChanged }: Props) {
                     {profile.grade ? ` • ${profile.grade}` : ""} • {age} anos
                   </p>
 
-                  {/* Badges de Informações Simplificadas (sem ícones ?) */}
+                  {/* Badges de Informações Simplificadas */}
                   <div className="flex flex-wrap items-center gap-2 pt-1">
-                    {/* Etapa */}
-                    {stageInfo && (
-                      <span
-                        title="Faixa etária calculada a partir da data de nascimento para garantir disputas justas no ranking e torneio."
-                        className="inline-flex items-center rounded-full bg-secondary/90 border px-2.5 py-0.5 text-[11px] font-extrabold text-foreground"
-                      >
-                        {stageInfo.emoji} {stageInfo.label}
-                      </span>
-                    )}
-
                     {/* Quantidade de Medalhas */}
                     <span
                       title="Total de medalhas e troféus desbloqueados em partidas, níveis e desafios."
