@@ -360,7 +360,7 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
                       >
                         {SCHOOLS.map((s) => (
                           <option key={s.name} value={s.name}>
-                            {s.name} ({s.range})
+                            {s.range ? `${s.name} (${s.range})` : s.name}
                           </option>
                         ))}
                       </select>

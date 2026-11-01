@@ -312,7 +312,7 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
                   : "bg-background hover:bg-secondary"
               }`}
             >
-              Placar das 5 Escolas
+              Placar Geral das Escolas
             </button>
             {SCHOOLS.map((s) => (
               <button

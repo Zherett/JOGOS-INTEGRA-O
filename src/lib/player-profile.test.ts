@@ -24,16 +24,22 @@ import {
 import { isSpecialAdminAccount } from "./playfab.ts";
 
 describe("Perfil do Jogador, Escolas, Trava de Níveis (1..10) e Limite Diário de XP", () => {
-  it("possui exatamente as 5 escolas oficiais da SEMED Coari", () => {
+  it("possui as opções de instituição com Nenhuma (padrão) no início, as 5 escolas oficiais da SEMED Coari e Outro por último", () => {
     const names = SCHOOLS.map((s) => s.name);
     assert.deepEqual(names, [
+      "Nenhuma",
       "Raimundo Bezerra",
       "Elisângela Litaiff",
       "Raimunda Cruz",
       "Maria de Nazaré",
       "Ursulina Souza",
+      "Outro",
     ]);
+    assert.equal(names[0], "Nenhuma");
+    assert.equal(names[names.length - 1], "Outro");
+    assert.equal(isValidSchool("Nenhuma"), true);
     assert.equal(isValidSchool("Raimundo Bezerra"), true);
+    assert.equal(isValidSchool("Outro"), true);
     assert.equal(isValidSchool("Escola Inexistente"), false);
   });
 

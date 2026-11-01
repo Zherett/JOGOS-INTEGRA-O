@@ -6,6 +6,8 @@ import {
   getEffectiveDailyXpCap,
   getActiveEventBonuses,
   formatEventRemainingTime,
+  formatDateOnlyBR,
+  formatDateTimeBR,
   isRecurringEventActive,
   getAllActiveEvents,
   DEFAULT_RECURRING_EVENTS,
@@ -236,5 +238,58 @@ describe("Eventos Personalizados Criados pelo Administrador", () => {
     assert.equal(sabado?.title, "+50% de XP do SÁBADO");
     assert.equal(sabado?.dailyXpCap, 1500);
     assert.equal(sabado?.xpMultiplier, 1.5);
+  });
+
+  it("formata datas no padrão brasileiro DD/MM/AAAA e DD/MM/AAAA às HH:mm", () => {
+    assert.equal(formatDateOnlyBR("2026-11-02"), "02/11/2026");
+    assert.equal(formatDateOnlyBR("2026-05-18"), "18/05/2026");
+    assert.equal(formatDateOnlyBR("2026-10-31T20:00:00Z"), "31/10/2026");
+
+    // Formato com hora
+    const dt = formatDateTimeBR("2026-11-02T15:30:00");
+    assert.ok(dt.startsWith("02/11/2026 às "));
+  });
+
+  it("permite selecionar apenas um ou dois bônus (ex: apenas multiplicador de XP)", () => {
+    const saturday = new Date("2026-10-31T12:00:00Z");
+
+    // Evento com APENAS multiplicador de XP (sem teto da partida e sem teto diário)
+    const multOnlyEv: SpecialEvent = {
+      id: "sp_mult_only",
+      title: "Hora do Dobro de XP",
+      description: "Apenas multiplicador 2x",
+      scope: "todos",
+      bonusType: "dobro_xp",
+      xpMultiplier: 2,
+      matchXpCap: undefined,
+      dailyXpCap: undefined,
+      startsAt: "2026-10-31T00:00:00Z",
+      endsAt: "2026-10-31T23:59:59Z",
+      active: true,
+      createdAt: "2026-10-31T00:00:00Z",
+    };
+
+    const items = getAllActiveEvents([multOnlyEv], [], saturday);
+    assert.equal(items.length, 1);
+    assert.equal(items[0].bonusHighlight, "🔥 Dobro de XP (2x XP)");
+
+    // Evento com APENAS teto por partida
+    const matchOnlyEv: RecurringEvent = {
+      id: "rec_match_only",
+      title: "Desafio de Teto Alto",
+      description: "Apenas limite por partida",
+      scope: "todos",
+      daysOfWeek: [6],
+      specificDates: [],
+      xpMultiplier: undefined,
+      matchXpCap: 50,
+      dailyXpCap: undefined,
+      active: true,
+      createdAt: "2026-01-01T00:00:00Z",
+    };
+
+    const itemsMatch = getAllActiveEvents([], [matchOnlyEv], saturday);
+    assert.equal(itemsMatch.length, 1);
+    assert.equal(itemsMatch[0].bonusHighlight, "🎯 Limite 50 XP/partida");
   });
 });

@@ -674,7 +674,7 @@ export async function playfabSignUp(data: SignUpData): Promise<{
     return { account: null, error: "Informe o seu nome completo." };
   }
   if (!isValidSchool(data.school)) {
-    return { account: null, error: "Selecione uma das 5 escolas oficiais." };
+    return { account: null, error: "Selecione uma instituição válida." };
   }
   if (!data.birthdate) {
     return { account: null, error: "Informe a sua data de nascimento." };

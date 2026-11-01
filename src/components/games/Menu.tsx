@@ -7,6 +7,7 @@ import {
   Medal,
   Lock,
   Clock,
+  Calendar,
   Swords,
   Zap,
   Award,
@@ -150,6 +151,11 @@ export function Menu({
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-white/90 dark:bg-card border border-amber-200 dark:border-amber-900/50 px-3 py-1 text-xs font-bold text-slate-700 dark:text-slate-300 shadow-sm">
                     <Clock className="h-3.5 w-3.5 text-amber-500" /> {ev.remainingTime}
                   </span>
+                  {ev.activePeriodLabel && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 dark:bg-card/80 border border-amber-200/60 dark:border-amber-900/40 px-2.5 py-1 text-xs font-semibold text-muted-foreground shadow-xs">
+                      <Calendar className="h-3 w-3 text-primary" /> {ev.activePeriodLabel}
+                    </span>
+                  )}
                 </div>
 
                 {/* Título do Evento */}

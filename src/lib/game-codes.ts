@@ -2,6 +2,14 @@
 // Supports dynamic configuration by the Administrator (ADM) synced with PlayFab TitleData.
 import { ALL_GAME_IDS, type GameId } from "./game-storage.ts";
 import type { MedalDefinition, AdminMedalNotification } from "./medals-catalog.ts";
+import {
+  type SpecialEvent,
+  type RecurringEvent,
+  loadSpecialEvents,
+  loadRecurringEvents,
+  saveSpecialEvents,
+  saveRecurringEvents,
+} from "./custom-events.ts";
 
 const UNLOCK_KEY = "desafios-logica-unlocked-v1";
 const ADMIN_CONFIG_KEY = "desafios-logica-admin-config-v1";
@@ -99,6 +107,10 @@ export interface PlatformAdminConfig {
   customMedals?: MedalDefinition[];
   /** In-game "mailbox" notifications of students who earned medals */
   adminMedalNotifications?: AdminMedalNotification[];
+  /** Special one-off events created by ADM synced with database */
+  specialEvents?: SpecialEvent[];
+  /** Recurring automated events (weekdays/dates) synced with database */
+  recurringEvents?: RecurringEvent[];
   /** Optional PlayFab Title ID configured via Admin UI. */
   playfabTitleId?: string;
   updatedAt: string;
@@ -126,6 +138,8 @@ export const DEFAULT_ADMIN_CONFIG: PlatformAdminConfig = {
   dailyXpCap: 1000,
   customMedals: [],
   adminMedalNotifications: [],
+  specialEvents: [],
+  recurringEvents: [],
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
@@ -157,6 +171,8 @@ export function loadAdminConfig(): PlatformAdminConfig {
       adminMedalNotifications: Array.isArray(parsed.adminMedalNotifications)
         ? parsed.adminMedalNotifications
         : [],
+      specialEvents: Array.isArray(parsed.specialEvents) ? parsed.specialEvents : loadSpecialEvents(),
+      recurringEvents: Array.isArray(parsed.recurringEvents) ? parsed.recurringEvents : loadRecurringEvents(),
       dailyXpCap:
         typeof parsed.dailyXpCap === "number" && parsed.dailyXpCap >= 100
           ? Math.floor(parsed.dailyXpCap)
@@ -177,11 +193,19 @@ export function saveAdminConfig(config: PlatformAdminConfig): PlatformAdminConfi
         normalizeCode(config.gameCodes[id] || DEFAULT_GAME_CODES[id]) || DEFAULT_GAME_CODES[id],
       ]),
     ) as Record<GameId, string>,
+    specialEvents: Array.isArray(config.specialEvents) ? config.specialEvents : loadSpecialEvents(),
+    recurringEvents: Array.isArray(config.recurringEvents) ? config.recurringEvents : loadRecurringEvents(),
     updatedAt: new Date().toISOString(),
   };
   if (typeof window !== "undefined") {
     try {
       window.localStorage.setItem(ADMIN_CONFIG_KEY, JSON.stringify(normalized));
+      if (Array.isArray(config.specialEvents)) {
+        saveSpecialEvents(config.specialEvents);
+      }
+      if (Array.isArray(config.recurringEvents)) {
+        saveRecurringEvents(config.recurringEvents);
+      }
     } catch {
       /* ignore */
     }

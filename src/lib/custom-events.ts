@@ -186,6 +186,41 @@ export function formatEventRemainingTime(endsAt: string, now = new Date()): stri
   return "Menos de 1 min";
 }
 
+/**
+ * Converte data no formato YYYY-MM-DD ou ISO para o padrão brasileiro DD/MM/AAAA.
+ */
+export function formatDateOnlyBR(dateStr: string): string {
+  if (!dateStr) return "";
+  const clean = dateStr.trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(clean);
+  if (m) {
+    return `${m[3]}/${m[2]}/${m[1]}`;
+  }
+  const d = new Date(clean);
+  if (!Number.isNaN(d.getTime())) {
+    const day = String(d.getDate()).padStart(2, "0");
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  }
+  return dateStr;
+}
+
+/**
+ * Converte timestamp ISO para o formato brasileiro DD/MM/AAAA às HH:mm.
+ */
+export function formatDateTimeBR(dateStr: string): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return formatDateOnlyBR(dateStr);
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = d.getFullYear();
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  return `${day}/${month}/${year} às ${hours}:${minutes}`;
+}
+
 export function createSpecialEvent(args: {
   title: string;
   description: string;
@@ -388,6 +423,7 @@ export interface ActiveEventDisplayItem {
   bonusTitle: string;
   bonusHighlight: string;
   bonusScopeText: string;
+  activePeriodLabel?: string;
   linkedMedalId?: string | null;
   objectiveDescription?: string | null;
   isRecurring: boolean;
@@ -416,6 +452,8 @@ export function getAllActiveEvents(
         ev.xpMultiplier === 2
           ? "🔥 Dobro de XP (2x XP)"
           : `⚡ +${Math.round((ev.xpMultiplier - 1) * 100)}% de XP (${ev.xpMultiplier}x)`;
+    } else if (ev.matchXpCap && ev.matchXpCap > 20) {
+      highlight = `🎯 Limite ${ev.matchXpCap} XP/partida`;
     } else if (ev.bonusType === "dobro_xp") {
       highlight = "🔥 Dobro de XP (2x XP)";
     } else if (ev.bonusType === "xp_1_5x") {
@@ -432,6 +470,7 @@ export function getAllActiveEvents(
       bonusTitle: "BÔNUS DO EVENTO",
       bonusHighlight: highlight,
       bonusScopeText: ev.scope === "todos" ? "Todos os Jogos" : (GAME_NAMES[ev.scope] ?? ev.scope),
+      activePeriodLabel: `Até ${formatDateTimeBR(ev.endsAt)}`,
       linkedMedalId: ev.linkedMedalId,
       objectiveDescription: ev.objectiveDescription,
       isRecurring: false,
@@ -443,6 +482,11 @@ export function getAllActiveEvents(
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59, 999);
 
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const todayDateStr = `${year}-${month}-${day}`;
+
     let highlight = "⚡ Bônus Ativo";
     if (ev.dailyXpCap) {
       highlight = `🚀 Limite ${ev.dailyXpCap} XP/dia`;
@@ -451,7 +495,7 @@ export function getAllActiveEvents(
         ev.xpMultiplier === 2
           ? "🔥 Dobro de XP (2x XP)"
           : `⚡ +${Math.round((ev.xpMultiplier - 1) * 100)}% de XP (${ev.xpMultiplier}x)`;
-    } else if (ev.matchXpCap) {
+    } else if (ev.matchXpCap && ev.matchXpCap > 20) {
       highlight = `🎯 Limite ${ev.matchXpCap} XP/partida`;
     }
 
@@ -465,6 +509,7 @@ export function getAllActiveEvents(
       bonusTitle: "BÔNUS DO EVENTO",
       bonusHighlight: highlight,
       bonusScopeText: ev.scope === "todos" ? "Todos os Jogos" : (GAME_NAMES[ev.scope] ?? ev.scope),
+      activePeriodLabel: `Válido hoje (${formatDateOnlyBR(todayDateStr)})`,
       linkedMedalId: ev.linkedMedalId,
       objectiveDescription: ev.objectiveDescription,
       isRecurring: true,

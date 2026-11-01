@@ -1,11 +1,13 @@
 // Player profile helpers: schools, age, XP, levels (1..10), mission gates, daily XP cap, titles and badges.
 
 export const SCHOOLS = [
+  { name: "Nenhuma", slug: "nenhuma", range: "", needsGrade: false },
   { name: "Raimundo Bezerra", slug: "raimundo_bezerra", range: "6º ao 9º", needsGrade: true },
   { name: "Elisângela Litaiff", slug: "elisangela_litaiff", range: "5º ano", needsGrade: false },
   { name: "Raimunda Cruz", slug: "raimunda_cruz", range: "5º ano", needsGrade: false },
   { name: "Maria de Nazaré", slug: "maria_de_nazare", range: "5º ano", needsGrade: false },
   { name: "Ursulina Souza", slug: "ursulina_souza", range: "5º ano", needsGrade: false },
+  { name: "Outro", slug: "outro", range: "", needsGrade: false },
 ] as const;
 
 export type SchoolName = (typeof SCHOOLS)[number]["name"];

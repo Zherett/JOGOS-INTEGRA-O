@@ -65,6 +65,8 @@ import {
   saveSpecialEvents,
   createSpecialEvent,
   formatEventRemainingTime,
+  formatDateOnlyBR,
+  formatDateTimeBR,
   isEventActive,
   loadRecurringEvents,
   saveRecurringEvents,
@@ -125,8 +127,11 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [evDesc, setEvDesc] = useState("");
   const [evScope, setEvScope] = useState<"todos" | GameId>("todos");
   const [evBonusType, setEvBonusType] = useState<EventBonusType>("personalizado");
+  const [evHasMultiplier, setEvHasMultiplier] = useState(true);
   const [evMultiplier, setEvMultiplier] = useState<number>(2);
+  const [evHasMatchCap, setEvHasMatchCap] = useState(false);
   const [evMatchXpCap, setEvMatchXpCap] = useState<number>(50);
+  const [evHasDailyCap, setEvHasDailyCap] = useState(true);
   const [evDailyXpCap, setEvDailyXpCap] = useState<number>(2500);
   const [evDurationHours, setEvDurationHours] = useState<number>(24);
   const [evLinkedMedalId, setEvLinkedMedalId] = useState<string>("");
@@ -142,9 +147,12 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [recDaysOfWeek, setRecDaysOfWeek] = useState<number[]>([6, 0]); // Padrão: Sábado e Domingo
   const [recSpecificDates, setRecSpecificDates] = useState<string[]>([]);
   const [recDateInput, setRecDateInput] = useState("");
-  const [recMultiplier, setRecMultiplier] = useState<number>(2);
-  const [recMatchCap, setRecMatchCap] = useState<number>(50);
-  const [recDailyCap, setRecDailyCap] = useState<number>(2500);
+  const [recHasMultiplier, setRecHasMultiplier] = useState(true);
+  const [recMultiplier, setRecMultiplier] = useState<number>(1.5);
+  const [recHasMatchCap, setRecHasMatchCap] = useState(false);
+  const [recMatchCap, setRecMatchCap] = useState<number>(30);
+  const [recHasDailyCap, setRecHasDailyCap] = useState(true);
+  const [recDailyCap, setRecDailyCap] = useState<number>(1500);
   const [recLinkedMedal, setRecLinkedMedal] = useState<string>("");
   const [recObjective, setRecObjective] = useState<string>("");
 
@@ -315,53 +323,116 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     flashSaved("Configurações da plataforma atualizadas!");
   }
 
-  function handleCreateEvent(e: React.FormEvent) {
+  function renderActiveBonusesLabel(ev: {
+    xpMultiplier?: number;
+    matchXpCap?: number;
+    dailyXpCap?: number;
+    bonusType?: string;
+    bonusValue?: number;
+  }): string {
+    const parts: string[] = [];
+    if (ev.xpMultiplier && ev.xpMultiplier > 1) {
+      parts.push(
+        ev.xpMultiplier === 2
+          ? "2x XP (Dobro)"
+          : `${ev.xpMultiplier}x XP (+${Math.round((ev.xpMultiplier - 1) * 100)}%)`,
+      );
+    }
+    if (ev.matchXpCap && ev.matchXpCap > 20) {
+      parts.push(`Max ${ev.matchXpCap} XP/partida`);
+    }
+    if (ev.dailyXpCap && ev.dailyXpCap > 1000) {
+      parts.push(`Teto ${ev.dailyXpCap} XP/dia`);
+    } else if (ev.bonusType === "aumentar_limite_diario" && ev.bonusValue && ev.bonusValue > 1000) {
+      parts.push(`Teto ${ev.bonusValue} XP/dia`);
+    }
+    if (parts.length === 0) {
+      if (ev.bonusType === "dobro_xp") parts.push("2x XP (Dobro)");
+      else if (ev.bonusType === "xp_1_5x") parts.push("1.5x XP (+50%)");
+      else parts.push("Bônus Ativo");
+    }
+    return parts.join(" • ");
+  }
+
+  async function handleCreateEvent(e: React.FormEvent) {
     e.preventDefault();
     if (!evTitle.trim()) {
       flashSaved("Informe o título do evento.");
+      return;
+    }
+    if (!evHasMultiplier && !evHasMatchCap && !evHasDailyCap) {
+      flashSaved("Marque pelo menos uma das caixas de bônus para ativar no evento.");
       return;
     }
     createSpecialEvent({
       title: evTitle,
       description: evDesc,
       scope: evScope,
-      bonusType: evBonusType,
-      bonusValue: Number(evDailyXpCap),
-      xpMultiplier: Number(evMultiplier),
-      matchXpCap: Number(evMatchXpCap),
-      dailyXpCap: Number(evDailyXpCap),
+      bonusType: evHasDailyCap
+        ? "aumentar_limite_diario"
+        : evHasMultiplier
+          ? evMultiplier === 2
+            ? "dobro_xp"
+            : "xp_1_5x"
+          : "personalizado",
+      bonusValue: evHasDailyCap ? Number(evDailyXpCap) : undefined,
+      xpMultiplier: evHasMultiplier ? Number(evMultiplier) : undefined,
+      matchXpCap: evHasMatchCap ? Number(evMatchXpCap) : undefined,
+      dailyXpCap: evHasDailyCap ? Number(evDailyXpCap) : undefined,
       durationHours: Number(evDurationHours),
       linkedMedalId: evLinkedMedalId || null,
       objectiveDescription: evObjective || null,
     });
-    setSpecialEvents(loadSpecialEvents());
+    const updated = loadSpecialEvents();
+    setSpecialEvents(updated);
     setIsCreatingEvent(false);
     setEvTitle("");
     setEvDesc("");
     setEvObjective("");
-    flashSaved("Evento especial criado com as 3 linhas de bônus ativadas!");
+    const nextCfg = { ...draft, specialEvents: updated };
+    setDraft(nextCfg);
+    await auth.updateAdminConfig(nextCfg);
+    flashSaved(
+      isPlayFabConfigured()
+        ? "✅ Evento especial salvo no Banco de Dados (PlayFab) e ativado!"
+        : "💾 Evento especial salvo localmente neste navegador!"
+    );
     onConfigSaved?.();
   }
 
-  function handleToggleEventActive(id: string) {
+  async function handleToggleEventActive(id: string) {
     const list = specialEvents.map((ev) =>
       ev.id === id ? { ...ev, active: !ev.active } : ev,
     );
     setSpecialEvents(list);
     saveSpecialEvents(list);
-    flashSaved("Status do evento atualizado!");
+    const nextCfg = { ...draft, specialEvents: list };
+    setDraft(nextCfg);
+    await auth.updateAdminConfig(nextCfg);
+    flashSaved(
+      isPlayFabConfigured()
+        ? "✅ Status sincronizado com o Banco de Dados (PlayFab)!"
+        : "💾 Status do evento atualizado localmente!"
+    );
     onConfigSaved?.();
   }
 
-  function handleDeleteEvent(id: string) {
+  async function handleDeleteEvent(id: string) {
     const list = specialEvents.filter((ev) => ev.id !== id);
     setSpecialEvents(list);
     saveSpecialEvents(list);
-    flashSaved("Evento excluído.");
+    const nextCfg = { ...draft, specialEvents: list };
+    setDraft(nextCfg);
+    await auth.updateAdminConfig(nextCfg);
+    flashSaved(
+      isPlayFabConfigured()
+        ? "✅ Evento excluído do Banco de Dados (PlayFab)!"
+        : "💾 Evento excluído localmente."
+    );
     onConfigSaved?.();
   }
 
-  function handleCreateRecurringEvent(e: React.FormEvent) {
+  async function handleCreateRecurringEvent(e: React.FormEvent) {
     e.preventDefault();
     if (!recTitle.trim()) {
       flashSaved("Informe o título do evento recorrente.");
@@ -371,44 +442,70 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
       flashSaved("Selecione pelo menos um dia da semana ou uma data específica.");
       return;
     }
+    if (!recHasMultiplier && !recHasMatchCap && !recHasDailyCap) {
+      flashSaved("Marque pelo menos uma das caixas de bônus para ativar no evento.");
+      return;
+    }
     createRecurringEvent({
       title: recTitle,
       description: recDesc,
       scope: recScope,
       daysOfWeek: recDaysOfWeek,
       specificDates: recSpecificDates,
-      xpMultiplier: Number(recMultiplier),
-      matchXpCap: Number(recMatchCap),
-      dailyXpCap: Number(recDailyCap),
+      xpMultiplier: recHasMultiplier ? Number(recMultiplier) : undefined,
+      matchXpCap: recHasMatchCap ? Number(recMatchCap) : undefined,
+      dailyXpCap: recHasDailyCap ? Number(recDailyCap) : undefined,
       linkedMedalId: recLinkedMedal || null,
       objectiveDescription: recObjective || null,
     });
-    setRecurringEvents(loadRecurringEvents());
+    const updated = loadRecurringEvents();
+    setRecurringEvents(updated);
     setIsCreatingRecurring(false);
     setRecTitle("");
     setRecDesc("");
     setRecObjective("");
     setRecSpecificDates([]);
     setRecDaysOfWeek([6, 0]);
-    flashSaved("Evento recorrente criado com sucesso!");
+    const nextCfg = { ...draft, recurringEvents: updated };
+    setDraft(nextCfg);
+    await auth.updateAdminConfig(nextCfg);
+    flashSaved(
+      isPlayFabConfigured()
+        ? "✅ Evento recorrente salvo no Banco de Dados (PlayFab) e ativado!"
+        : "💾 Evento recorrente salvo localmente neste navegador!"
+    );
     onConfigSaved?.();
   }
 
-  function handleToggleRecurringActive(id: string) {
+  async function handleToggleRecurringActive(id: string) {
     const list = recurringEvents.map((ev) =>
       ev.id === id ? { ...ev, active: !ev.active } : ev,
     );
     setRecurringEvents(list);
     saveRecurringEvents(list);
-    flashSaved("Status do evento recorrente atualizado!");
+    const nextCfg = { ...draft, recurringEvents: list };
+    setDraft(nextCfg);
+    await auth.updateAdminConfig(nextCfg);
+    flashSaved(
+      isPlayFabConfigured()
+        ? "✅ Status recorrente sincronizado com o Banco de Dados (PlayFab)!"
+        : "💾 Status do evento recorrente atualizado localmente!"
+    );
     onConfigSaved?.();
   }
 
-  function handleDeleteRecurringEvent(id: string) {
+  async function handleDeleteRecurringEvent(id: string) {
     const list = recurringEvents.filter((ev) => ev.id !== id);
     setRecurringEvents(list);
     saveRecurringEvents(list);
-    flashSaved("Evento recorrente excluído.");
+    const nextCfg = { ...draft, recurringEvents: list };
+    setDraft(nextCfg);
+    await auth.updateAdminConfig(nextCfg);
+    flashSaved(
+      isPlayFabConfigured()
+        ? "✅ Evento recorrente excluído do Banco de Dados (PlayFab)!"
+        : "💾 Evento recorrente excluído localmente."
+    );
     onConfigSaved?.();
   }
 
@@ -1156,6 +1253,33 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                   </div>
                 </div>
 
+                {/* Indicador de Status do Banco de Dados / PlayFab Cloud */}
+                {isPlayFabConfigured() ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2.5 text-xs text-emerald-800 dark:text-emerald-300">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                      <span className="font-bold">
+                        Banco de Dados Ativo: Microsoft Azure PlayFab (Title ID: {getPlayFabTitleId()})
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-medium text-emerald-700/80 dark:text-emerald-400">
+                      ☁️ Sincronização em nuvem ativa: todos os eventos são salvos no banco de dados e sincronizados em todos os computadores.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-800 dark:text-amber-300">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-2.5 w-2.5 rounded-full bg-amber-500 shrink-0" />
+                      <span className="font-bold">
+                        Modo Local (Banco de Dados Offline)
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-medium text-amber-700/80 dark:text-amber-400">
+                      💾 Salvo no navegador local. Para salvar no banco de dados da nuvem para todos os computadores, configure o Title ID na aba <b>PlayFab</b>.
+                    </span>
+                  </div>
+                )}
+
                 {/* SUB-ABA 1: CRIAÇÃO DE EVENTOS PONTUAIS / MANUAIS */}
                 {eventosSubTab === "criacao" && (
                   <div className="space-y-4">
@@ -1212,61 +1336,104 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                           />
                         </div>
 
-                        {/* As 3 Linhas de Bônus Simultâneas solicitadas pelo Administrador */}
-                        <div className="rounded-2xl border-2 border-amber-500/30 bg-amber-500/5 p-3 space-y-2.5">
-                          <div className="font-display text-xs font-black uppercase text-amber-500 flex items-center gap-1.5">
-                            <Zap className="h-4 w-4" /> 3 Linhas Simultâneas de Bônus
+                        {/* As 3 Linhas de Bônus com Caixinhas para Marcar */}
+                        <div className="rounded-2xl border-2 border-amber-500/30 bg-amber-500/5 p-3.5 space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-1">
+                            <div className="font-display text-xs font-black uppercase text-amber-500 flex items-center gap-1.5">
+                              <Zap className="h-4 w-4" /> Bônus do Evento (Marque as caixinhas que deseja ativar)
+                            </div>
+                            <span className="text-[10px] text-muted-foreground font-semibold">
+                              Escolha 1, 2 ou os 3 bônus
+                            </span>
                           </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            <div className="space-y-1">
-                              <Label className="text-xs font-bold text-foreground">
-                                1. Multiplicador de XP
-                              </Label>
-                              <select
-                                value={evMultiplier}
-                                onChange={(e) => setEvMultiplier(Number(e.target.value))}
-                                className="h-9 w-full rounded-xl border bg-background px-3 text-xs font-bold text-amber-500"
-                              >
-                                <option value={1}>1x (Sem multiplicador)</option>
-                                <option value={1.5}>1.5x (+50% bônus)</option>
-                                <option value={2}>2x (Dobro de XP)</option>
-                                <option value={3}>3x (Triplo de XP)</option>
-                              </select>
+                            {/* Bônus 1: Multiplicador */}
+                            <div className={`rounded-xl border p-2.5 space-y-2 transition-all ${evHasMultiplier ? "border-amber-500/60 bg-card shadow-xs" : "border-border/60 bg-muted/20 opacity-60"}`}>
+                              <label className="flex items-center gap-2 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={evHasMultiplier}
+                                  onChange={(e) => setEvHasMultiplier(e.target.checked)}
+                                  className="h-4 w-4 rounded accent-amber-500 cursor-pointer"
+                                />
+                                <span className="text-xs font-bold text-foreground">
+                                  1. Multiplicador de XP
+                                </span>
+                              </label>
+                              <div className="space-y-1">
+                                <select
+                                  disabled={!evHasMultiplier}
+                                  value={evMultiplier}
+                                  onChange={(e) => setEvMultiplier(Number(e.target.value))}
+                                  className={`h-8 w-full rounded-lg border bg-background px-2 text-xs font-bold text-amber-500 ${!evHasMultiplier && "opacity-40 cursor-not-allowed"}`}
+                                >
+                                  <option value={1.5}>1.5x (+50% bônus)</option>
+                                  <option value={2}>2x (Dobro de XP)</option>
+                                  <option value={2.5}>2.5x (+150% bônus)</option>
+                                  <option value={3}>3x (Triplo de XP)</option>
+                                  <option value={4}>4x (4x de XP)</option>
+                                </select>
+                                <p className="text-[10px] text-muted-foreground">Multiplica o XP das partidas</p>
+                              </div>
                             </div>
 
-                            <div className="space-y-1">
-                              <Label className="text-xs font-bold text-foreground">
-                                2. Teto por Partida (XP)
-                              </Label>
-                              <Input
-                                type="number"
-                                min={10}
-                                max={200}
-                                step={5}
-                                value={evMatchXpCap}
-                                onChange={(e) => setEvMatchXpCap(Number(e.target.value))}
-                                className="h-9 rounded-xl text-xs font-bold bg-background"
-                                placeholder="Normal: 20 XP"
-                              />
-                              <p className="text-[10px] text-muted-foreground">Padrão normal: 20 XP</p>
+                            {/* Bônus 2: Teto por Partida */}
+                            <div className={`rounded-xl border p-2.5 space-y-2 transition-all ${evHasMatchCap ? "border-amber-500/60 bg-card shadow-xs" : "border-border/60 bg-muted/20 opacity-60"}`}>
+                              <label className="flex items-center gap-2 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={evHasMatchCap}
+                                  onChange={(e) => setEvHasMatchCap(e.target.checked)}
+                                  className="h-4 w-4 rounded accent-amber-500 cursor-pointer"
+                                />
+                                <span className="text-xs font-bold text-foreground">
+                                  2. Teto por Partida (XP)
+                                </span>
+                              </label>
+                              <div className="space-y-1">
+                                <Input
+                                  type="number"
+                                  disabled={!evHasMatchCap}
+                                  min={10}
+                                  max={200}
+                                  step={5}
+                                  value={evMatchXpCap}
+                                  onChange={(e) => setEvMatchXpCap(Number(e.target.value))}
+                                  className={`h-8 rounded-lg text-xs font-bold bg-background ${!evHasMatchCap && "opacity-40 cursor-not-allowed"}`}
+                                  placeholder="Ex: 50 XP"
+                                />
+                                <p className="text-[10px] text-muted-foreground">Normal: 20 XP por partida</p>
+                              </div>
                             </div>
 
-                            <div className="space-y-1">
-                              <Label className="text-xs font-bold text-foreground">
-                                3. Teto Diário Geral (XP)
-                              </Label>
-                              <Input
-                                type="number"
-                                min={1000}
-                                max={6000}
-                                step={100}
-                                value={evDailyXpCap}
-                                onChange={(e) => setEvDailyXpCap(Number(e.target.value))}
-                                className="h-9 rounded-xl text-xs font-bold bg-background"
-                                placeholder="Normal: 1000 XP"
-                              />
-                              <p className="text-[10px] text-muted-foreground">Padrão normal: 1.000 XP</p>
+                            {/* Bônus 3: Teto Diário Geral */}
+                            <div className={`rounded-xl border p-2.5 space-y-2 transition-all ${evHasDailyCap ? "border-amber-500/60 bg-card shadow-xs" : "border-border/60 bg-muted/20 opacity-60"}`}>
+                              <label className="flex items-center gap-2 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={evHasDailyCap}
+                                  onChange={(e) => setEvHasDailyCap(e.target.checked)}
+                                  className="h-4 w-4 rounded accent-amber-500 cursor-pointer"
+                                />
+                                <span className="text-xs font-bold text-foreground">
+                                  3. Teto Diário Geral (XP)
+                                </span>
+                              </label>
+                              <div className="space-y-1">
+                                <Input
+                                  type="number"
+                                  disabled={!evHasDailyCap}
+                                  min={1000}
+                                  max={6000}
+                                  step={100}
+                                  value={evDailyXpCap}
+                                  onChange={(e) => setEvDailyXpCap(Number(e.target.value))}
+                                  className={`h-8 rounded-lg text-xs font-bold bg-background ${!evHasDailyCap && "opacity-40 cursor-not-allowed"}`}
+                                  placeholder="Ex: 2500 XP"
+                                />
+                                <p className="text-[10px] text-muted-foreground">Normal: 1.000 XP/dia</p>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1383,10 +1550,14 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                   <div className="flex flex-wrap items-center gap-3 text-xs pt-0.5">
                                     <span className="font-bold text-amber-500 flex items-center gap-1">
                                       <Zap className="h-3.5 w-3.5" />
-                                      {ev.xpMultiplier ? `${ev.xpMultiplier}x XP` : "2x XP"} • Max {ev.matchXpCap ?? 20} XP/partida • Teto {ev.dailyXpCap ?? 1000} XP/dia
+                                      {renderActiveBonusesLabel(ev)}
+                                    </span>
+                                    <span className="flex items-center gap-1 font-semibold text-foreground">
+                                      <Calendar className="h-3.5 w-3.5 text-primary" />
+                                      Período: <b>{formatDateTimeBR(ev.startsAt)}</b> até <b>{formatDateTimeBR(ev.endsAt)}</b>
                                     </span>
                                     <span className="text-muted-foreground flex items-center gap-1">
-                                      <Clock className="h-3.5 w-3.5" />
+                                      <Clock className="h-3.5 w-3.5 text-amber-500" />
                                       {activeNow ? remaining : "Expirado"}
                                     </span>
                                     {ev.linkedMedalId && (
@@ -1554,7 +1725,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                   key={dt}
                                   className="inline-flex items-center gap-1 rounded-lg border bg-background px-2 py-0.5 text-xs font-bold text-primary"
                                 >
-                                  {dt}
+                                  {formatDateOnlyBR(dt)}
                                   <button
                                     type="button"
                                     onClick={() =>
@@ -1570,61 +1741,104 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                           )}
                         </div>
 
-                        {/* As 3 Linhas Simultâneas de Bônus para o Evento Recorrente */}
-                        <div className="rounded-2xl border-2 border-amber-500/30 bg-amber-500/5 p-3 space-y-2.5">
-                          <div className="font-display text-xs font-black uppercase text-amber-500 flex items-center gap-1.5">
-                            <Zap className="h-4 w-4" /> 3 Linhas Simultâneas de Bônus
+                        {/* As 3 Linhas de Bônus para o Evento Recorrente com Caixinhas para Marcar */}
+                        <div className="rounded-2xl border-2 border-amber-500/30 bg-amber-500/5 p-3.5 space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-1">
+                            <div className="font-display text-xs font-black uppercase text-amber-500 flex items-center gap-1.5">
+                              <Zap className="h-4 w-4" /> Bônus Recorrentes (Marque as caixinhas que deseja ativar)
+                            </div>
+                            <span className="text-[10px] text-muted-foreground font-semibold">
+                              Escolha 1, 2 ou os 3 bônus
+                            </span>
                           </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            <div className="space-y-1">
-                              <Label className="text-xs font-bold text-foreground">
-                                1. Multiplicador de XP
-                              </Label>
-                              <select
-                                value={recMultiplier}
-                                onChange={(e) => setRecMultiplier(Number(e.target.value))}
-                                className="h-9 w-full rounded-xl border bg-background px-3 text-xs font-bold text-amber-500"
-                              >
-                                <option value={1}>1x (Sem multiplicador)</option>
-                                <option value={1.5}>1.5x (+50% bônus)</option>
-                                <option value={2}>2x (Dobro de XP)</option>
-                                <option value={3}>3x (Triplo de XP)</option>
-                              </select>
+                            {/* Bônus 1: Multiplicador */}
+                            <div className={`rounded-xl border p-2.5 space-y-2 transition-all ${recHasMultiplier ? "border-amber-500/60 bg-card shadow-xs" : "border-border/60 bg-muted/20 opacity-60"}`}>
+                              <label className="flex items-center gap-2 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={recHasMultiplier}
+                                  onChange={(e) => setRecHasMultiplier(e.target.checked)}
+                                  className="h-4 w-4 rounded accent-amber-500 cursor-pointer"
+                                />
+                                <span className="text-xs font-bold text-foreground">
+                                  1. Multiplicador de XP
+                                </span>
+                              </label>
+                              <div className="space-y-1">
+                                <select
+                                  disabled={!recHasMultiplier}
+                                  value={recMultiplier}
+                                  onChange={(e) => setRecMultiplier(Number(e.target.value))}
+                                  className={`h-8 w-full rounded-lg border bg-background px-2 text-xs font-bold text-amber-500 ${!recHasMultiplier && "opacity-40 cursor-not-allowed"}`}
+                                >
+                                  <option value={1.5}>1.5x (+50% bônus)</option>
+                                  <option value={2}>2x (Dobro de XP)</option>
+                                  <option value={2.5}>2.5x (+150% bônus)</option>
+                                  <option value={3}>3x (Triplo de XP)</option>
+                                  <option value={4}>4x (4x de XP)</option>
+                                </select>
+                                <p className="text-[10px] text-muted-foreground">Multiplica o XP das partidas</p>
+                              </div>
                             </div>
 
-                            <div className="space-y-1">
-                              <Label className="text-xs font-bold text-foreground">
-                                2. Teto por Partida (XP)
-                              </Label>
-                              <Input
-                                type="number"
-                                min={10}
-                                max={200}
-                                step={5}
-                                value={recMatchCap}
-                                onChange={(e) => setRecMatchCap(Number(e.target.value))}
-                                className="h-9 rounded-xl text-xs font-bold bg-background"
-                                placeholder="Normal: 20 XP"
-                              />
-                              <p className="text-[10px] text-muted-foreground">Padrão normal: 20 XP</p>
+                            {/* Bônus 2: Teto por Partida */}
+                            <div className={`rounded-xl border p-2.5 space-y-2 transition-all ${recHasMatchCap ? "border-amber-500/60 bg-card shadow-xs" : "border-border/60 bg-muted/20 opacity-60"}`}>
+                              <label className="flex items-center gap-2 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={recHasMatchCap}
+                                  onChange={(e) => setRecHasMatchCap(e.target.checked)}
+                                  className="h-4 w-4 rounded accent-amber-500 cursor-pointer"
+                                />
+                                <span className="text-xs font-bold text-foreground">
+                                  2. Teto por Partida (XP)
+                                </span>
+                              </label>
+                              <div className="space-y-1">
+                                <Input
+                                  type="number"
+                                  disabled={!recHasMatchCap}
+                                  min={10}
+                                  max={200}
+                                  step={5}
+                                  value={recMatchCap}
+                                  onChange={(e) => setRecMatchCap(Number(e.target.value))}
+                                  className={`h-8 rounded-lg text-xs font-bold bg-background ${!recHasMatchCap && "opacity-40 cursor-not-allowed"}`}
+                                  placeholder="Ex: 30 XP"
+                                />
+                                <p className="text-[10px] text-muted-foreground">Normal: 20 XP por partida</p>
+                              </div>
                             </div>
 
-                            <div className="space-y-1">
-                              <Label className="text-xs font-bold text-foreground">
-                                3. Teto Diário Geral (XP)
-                              </Label>
-                              <Input
-                                type="number"
-                                min={1000}
-                                max={6000}
-                                step={100}
-                                value={recDailyCap}
-                                onChange={(e) => setRecDailyCap(Number(e.target.value))}
-                                className="h-9 rounded-xl text-xs font-bold bg-background"
-                                placeholder="Normal: 1000 XP"
-                              />
-                              <p className="text-[10px] text-muted-foreground">Padrão normal: 1.000 XP</p>
+                            {/* Bônus 3: Teto Diário Geral */}
+                            <div className={`rounded-xl border p-2.5 space-y-2 transition-all ${recHasDailyCap ? "border-amber-500/60 bg-card shadow-xs" : "border-border/60 bg-muted/20 opacity-60"}`}>
+                              <label className="flex items-center gap-2 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={recHasDailyCap}
+                                  onChange={(e) => setRecHasDailyCap(e.target.checked)}
+                                  className="h-4 w-4 rounded accent-amber-500 cursor-pointer"
+                                />
+                                <span className="text-xs font-bold text-foreground">
+                                  3. Teto Diário Geral (XP)
+                                </span>
+                              </label>
+                              <div className="space-y-1">
+                                <Input
+                                  type="number"
+                                  disabled={!recHasDailyCap}
+                                  min={1000}
+                                  max={6000}
+                                  step={100}
+                                  value={recDailyCap}
+                                  onChange={(e) => setRecDailyCap(Number(e.target.value))}
+                                  className={`h-8 rounded-lg text-xs font-bold bg-background ${!recHasDailyCap && "opacity-40 cursor-not-allowed"}`}
+                                  placeholder="Ex: 1500 XP"
+                                />
+                                <p className="text-[10px] text-muted-foreground">Normal: 1.000 XP/dia</p>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1727,7 +1941,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                     )}
                                     {ev.specificDates?.length > 0 && (
                                       <span>
-                                        Datas: <b>{ev.specificDates.join(", ")}</b>
+                                        Datas: <b>{ev.specificDates.map(formatDateOnlyBR).join(", ")}</b>
                                       </span>
                                     )}
                                   </div>
@@ -1735,7 +1949,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                   <div className="flex flex-wrap items-center gap-3 text-xs pt-0.5">
                                     <span className="font-bold text-amber-500 flex items-center gap-1">
                                       <Zap className="h-3.5 w-3.5" />
-                                      {ev.xpMultiplier ? `${ev.xpMultiplier}x XP` : "2x XP"} • Max {ev.matchXpCap ?? 20} XP/partida • Teto {ev.dailyXpCap ?? 1000} XP/dia
+                                      {renderActiveBonusesLabel(ev)}
                                     </span>
                                     {ev.linkedMedalId && (
                                       <span className="font-medium text-primary flex items-center gap-1">
@@ -1826,12 +2040,12 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                 {/* SUB-ABA 1: VISÃO POR ESCOLAS & TURMAS */}
                 {turmaSubTab === "visao" && (
                   <div className="space-y-4">
-                    {/* Seletor das 5 Escolas */}
+                    {/* Seletor de Instituições e Escolas */}
                     <div className="space-y-1.5">
                       <Label className="text-xs font-bold text-muted-foreground uppercase">
-                        Selecione a Escola:
+                        Selecione a Instituição:
                       </Label>
-                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
                         {SCHOOLS.map((s) => {
                           const active = selectedAdminSchool === s.name;
                           const schoolStudents = registeredStudents.filter((st) => st.school === s.name);
