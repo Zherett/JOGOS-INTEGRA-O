@@ -1413,6 +1413,94 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
   return getAllRegisteredPlayers();
 }
 
+/**
+ * Allows the Administrator to update student profile data (Birthdate, School, Turma, Full Name)
+ * directly from the Admin Panel or Inspect Modal, immediately syncing to local storage and PlayFab cloud.
+ */
+export async function updateStudentProfileByAdmin(args: {
+  playerId: string;
+  birthdate?: string;
+  school?: string;
+  turma?: string | null;
+  grade?: string | null;
+  fullName?: string;
+}): Promise<PlayerProfile | null> {
+  const reg = loadRegistry();
+  const slug = nickSlug(args.playerId);
+  const accEntry = Object.entries(reg).find(
+    ([k, acc]) =>
+      k === slug ||
+      acc.profile.id === args.playerId ||
+      acc.profile.nickNormalized === slug ||
+      acc.profile.nick.toLowerCase() === args.playerId.toLowerCase(),
+  );
+
+  let acc = accEntry ? accEntry[1] : null;
+
+  if (!acc) {
+    const all = getAllRegisteredPlayers();
+    const found = all.find(
+      (p) =>
+        p.id === args.playerId ||
+        p.nickNormalized === slug ||
+        p.nick.toLowerCase() === args.playerId.toLowerCase(),
+    );
+    if (!found) return null;
+    acc = {
+      profile: { ...found },
+      passwordHash: "",
+      unlocked: [],
+      stats: [],
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  if (args.birthdate) {
+    acc.profile.birthdate = args.birthdate;
+  }
+  if (args.school !== undefined) {
+    acc.profile.school = args.school;
+  }
+  if (args.turma !== undefined) {
+    acc.profile.turma = args.turma;
+  }
+  if (args.grade !== undefined) {
+    acc.profile.grade = args.grade;
+  }
+  if (args.fullName) {
+    acc.profile.full_name = formatFullNameUpper(args.fullName);
+  }
+
+  acc.updatedAt = new Date().toISOString();
+  reg[acc.profile.nickNormalized] = acc;
+  saveRegistry(reg);
+
+  // Sync to PlayFab SharedGroupData
+  try {
+    const ticket = await getAdminPlayFabTicket();
+    if (ticket && isPlayFabConfigured()) {
+      await callPlayFabClient(
+        "UpdateSharedGroupData",
+        {
+          SharedGroupId: ROSTER_SHARED_GROUP_ID,
+          Data: {
+            [`stu_${acc.profile.nickNormalized}`]: JSON.stringify({
+              ...acc.profile,
+              updatedAt: acc.updatedAt,
+            }),
+          },
+          Permission: "Public",
+        },
+        ticket,
+      );
+    }
+  } catch (err) {
+    console.warn("Failed to sync updated student to PlayFab:", err);
+  }
+
+  return acc.profile;
+}
+
 export async function playfabUnlockGames(games: GameId[]): Promise<GameId[]> {
   const session = loadStoredSession();
   if (!session) return [];

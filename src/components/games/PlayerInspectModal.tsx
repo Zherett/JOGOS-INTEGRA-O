@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
-import { User, School, Trophy, Flame, Award, Shield, Star } from "lucide-react";
+import { User, School, Trophy, Flame, Award, Shield, Star, Pencil, Check, X, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { getPlayerPublicProfile, type PlayerProfile } from "@/lib/playfab";
+import { getPlayerPublicProfile, updateStudentProfileByAdmin, type PlayerProfile } from "@/lib/playfab";
 import { usePlayerAuth } from "@/lib/player-auth";
-import { ageFrom, levelProgress, MAX_LEVEL } from "@/lib/player-profile";
+import {
+  ageFrom,
+  formatBirthdateBR,
+  levelProgress,
+  MAX_LEVEL,
+  SCHOOLS,
+  VALID_TURMAS,
+} from "@/lib/player-profile";
 import { PlayerMedalsInventory } from "./PlayerMedalsInventory";
 
 interface Props {
@@ -16,12 +23,21 @@ export function PlayerInspectModal({ playerId, open, onOpenChange }: Props) {
   const auth = usePlayerAuth();
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
 
+  // Estados de edição pelo Administrador
+  const [isEditing, setIsEditing] = useState(false);
+  const [editBirthdate, setEditBirthdate] = useState("");
+  const [editSchool, setEditSchool] = useState("");
+  const [editTurma, setEditTurma] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
   useEffect(() => {
     if (open && playerId) {
       const found = getPlayerPublicProfile(playerId);
       setProfile(found);
+      setIsEditing(false);
     } else {
       setProfile(null);
+      setIsEditing(false);
     }
   }, [open, playerId]);
 
@@ -35,6 +51,23 @@ export function PlayerInspectModal({ playerId, open, onOpenChange }: Props) {
     distinctGames: profile.distinctGamesPlayed ?? 0,
   });
   const isMe = auth.profile?.id === profile.id;
+
+  async function handleSaveAdminEdit() {
+    if (!profile) return;
+    setSavingEdit(true);
+    const updated = await updateStudentProfileByAdmin({
+      playerId: profile.id,
+      birthdate: editBirthdate,
+      school: editSchool,
+      turma: editTurma ? editTurma : null,
+      grade: editSchool === "Nenhuma" || editSchool === "Outro" ? null : profile.grade,
+    });
+    setSavingEdit(false);
+    if (updated) {
+      setProfile(updated);
+      setIsEditing(false);
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -91,6 +124,26 @@ export function PlayerInspectModal({ playerId, open, onOpenChange }: Props) {
                   <span className="font-semibold text-foreground">
                     {age} anos
                   </span>
+                  {profile.birthdate && (
+                    <span className="text-muted-foreground font-medium text-[11px]">
+                      (Nasc: {formatBirthdateBR(profile.birthdate)})
+                    </span>
+                  )}
+                  {auth.profile?.isAdmin && !isEditing && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditBirthdate(profile.birthdate || "");
+                        setEditSchool(profile.school || "Outro");
+                        setEditTurma(profile.turma || "");
+                        setIsEditing(true);
+                      }}
+                      className="ml-2 inline-flex items-center gap-1 text-[11px] font-bold text-primary underline hover:text-primary/80"
+                      title="Editar data de nascimento e dados deste aluno"
+                    >
+                      <Pencil className="h-3 w-3" /> Editar (ADM)
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -110,6 +163,98 @@ export function PlayerInspectModal({ playerId, open, onOpenChange }: Props) {
               </div>
             </div>
           </div>
+
+          {/* Painel de Edição Rápida para o Administrador */}
+          {isEditing && (
+            <div className="rounded-2xl border-2 border-primary/40 bg-card p-4 space-y-3 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between text-xs font-bold text-primary">
+                <span className="flex items-center gap-1.5">
+                  <Pencil className="h-3.5 w-3.5" /> Editar Dados Cadastrais do Aluno (ADM)
+                </span>
+                <span className="text-[11px] font-normal text-muted-foreground">
+                  A idade é calculada automaticamente a partir da Data de Nascimento
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-foreground">Data de Nascimento:</label>
+                  <input
+                    type="date"
+                    value={editBirthdate}
+                    onChange={(e) => setEditBirthdate(e.target.value)}
+                    className="h-9 w-full rounded-xl border bg-background px-3 text-xs font-semibold"
+                  />
+                  {editBirthdate && (
+                    <div className="text-[10px] text-muted-foreground">
+                      Idade calculada: <b>{ageFrom(editBirthdate)} anos</b>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-foreground">Instituição (Escola):</label>
+                  <select
+                    value={editSchool}
+                    onChange={(e) => {
+                      setEditSchool(e.target.value);
+                      if (e.target.value === "Nenhuma" || e.target.value === "Outro") {
+                        setEditTurma("");
+                      }
+                    }}
+                    className="h-9 w-full rounded-xl border bg-background px-3 text-xs font-semibold"
+                  >
+                    {SCHOOLS.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-foreground">Turma:</label>
+                  <select
+                    value={editTurma}
+                    onChange={(e) => setEditTurma(e.target.value)}
+                    disabled={editSchool === "Nenhuma" || editSchool === "Outro"}
+                    className="h-9 w-full rounded-xl border bg-background px-3 text-xs font-semibold disabled:opacity-50"
+                  >
+                    <option value="">Nenhuma</option>
+                    {VALID_TURMAS.map((t) => (
+                      <option key={t} value={t}>
+                        Turma {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(false)}
+                  disabled={savingEdit}
+                  className="rounded-xl border px-3 py-1.5 text-xs font-bold text-muted-foreground hover:bg-secondary"
+                >
+                  <X className="inline h-3.5 w-3.5 mr-1" /> Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAdminEdit}
+                  disabled={savingEdit}
+                  className="rounded-xl bg-primary px-4 py-1.5 text-xs font-black text-primary-foreground hover:bg-primary/90 flex items-center gap-1.5 shadow"
+                >
+                  {savingEdit ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5" />
+                  )}
+                  Salvar Alterações
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Barra de Progresso de XP */}
           <div className="rounded-2xl border bg-card p-4 space-y-2.5">

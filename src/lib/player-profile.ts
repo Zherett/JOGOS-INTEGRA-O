@@ -150,12 +150,36 @@ export function studentCustomId(fullName: string, birthdateOrPassword: string): 
 
 export function ageFrom(birthdate: string, now = new Date()): number {
   if (!birthdate) return 10;
+  // Robust match for YYYY-MM-DD without timezone shift
+  const match = birthdate.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const birthYear = parseInt(match[1], 10);
+    const birthMonth = parseInt(match[2], 10) - 1; // 0-based
+    const birthDay = parseInt(match[3], 10);
+
+    let age = now.getFullYear() - birthYear;
+    const m = now.getMonth() - birthMonth;
+    if (m < 0 || (m === 0 && now.getDate() < birthDay)) {
+      age--;
+    }
+    return Math.max(0, age);
+  }
+
   const b = new Date(`${birthdate}T00:00:00`);
   if (Number.isNaN(b.getTime())) return 10;
   let age = now.getFullYear() - b.getFullYear();
   const m = now.getMonth() - b.getMonth();
   if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--;
   return Math.max(0, age);
+}
+
+export function formatBirthdateBR(birthdate?: string | null): string {
+  if (!birthdate) return "";
+  const match = birthdate.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    return `${match[3]}/${match[2]}/${match[1]}`;
+  }
+  return birthdate;
 }
 
 /* ------------------------ Turmas Escolares (A - F) ------------------------ */
