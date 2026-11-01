@@ -313,26 +313,32 @@ export function PlayerMenu({ onConfigChanged }: Props) {
                     {profile.grade ? ` • ${profile.grade}` : ""} • {age} anos
                   </p>
 
-                  {/* Badges de Informações Simplificadas com Ícones '?' */}
+                  {/* Badges de Informações Simplificadas (sem ícones ?) */}
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     {/* Etapa */}
                     {stageInfo && (
-                      <span className="inline-flex items-center rounded-full bg-secondary/90 border px-2.5 py-0.5 text-[11px] font-extrabold text-foreground">
+                      <span
+                        title="Faixa etária calculada a partir da data de nascimento para garantir disputas justas no ranking e torneio."
+                        className="inline-flex items-center rounded-full bg-secondary/90 border px-2.5 py-0.5 text-[11px] font-extrabold text-foreground"
+                      >
                         {stageInfo.emoji} {stageInfo.label}
-                        <HelpTip text="Faixa etária calculada a partir da data de nascimento para garantir disputas justas no ranking e torneio." />
                       </span>
                     )}
 
                     {/* Quantidade de Medalhas */}
-                    <span className="inline-flex items-center rounded-full bg-amber-500/15 border border-amber-500/30 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-500 dark:text-amber-400">
+                    <span
+                      title="Total de medalhas e troféus desbloqueados em partidas, níveis e desafios."
+                      className="inline-flex items-center rounded-full bg-amber-500/15 border border-amber-500/30 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-500 dark:text-amber-400"
+                    >
                       🏅 {profile.unlockedMedals?.length ?? 0} Medalhas
-                      <HelpTip text="Total de medalhas e troféus desbloqueados em partidas, níveis e desafios." />
                     </span>
 
                     {/* Colocação no Ranking */}
-                    <span className="inline-flex items-center rounded-full bg-primary/15 border border-primary/30 px-2.5 py-0.5 text-[11px] font-extrabold text-primary">
+                    <span
+                      title="Sua colocação oficial na temporada atual do Torneio Semanal da sua Etapa."
+                      className="inline-flex items-center rounded-full bg-primary/15 border border-primary/30 px-2.5 py-0.5 text-[11px] font-extrabold text-primary"
+                    >
                       🏆 {playerRank ? `#${playerRank} no Ranking` : "Sem colocação no Ranking"}
-                      <HelpTip text="Sua colocação oficial na temporada atual do Torneio Semanal da sua Etapa." />
                     </span>
                   </div>
 

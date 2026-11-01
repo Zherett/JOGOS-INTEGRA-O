@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { LogIn, UserPlus, Loader2, KeyRound, CheckCircle2, Sparkles, HelpCircle } from "lucide-react";
+import { LogIn, UserPlus, Loader2, KeyRound, CheckCircle2, Sparkles, HelpCircle, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -92,12 +92,13 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
     }
 
     // Tab === "criar"
+    const isNoSchool = school === "Nenhuma";
     const res = await auth.signUp({
       nick,
       fullName,
       school,
-      grade: schoolNeedsGrade(school) ? grade : "5º ano",
-      turma,
+      grade: schoolNeedsGrade(school) ? grade : (isNoSchool ? null : "5º ano"),
+      turma: isNoSchool ? null : turma,
       birthdate,
     });
     setBusy(false);
@@ -385,18 +386,41 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
                     )}
 
                     <div className="space-y-1.5">
-                      <Label htmlFor="turma">Turma (A até F)</Label>
+                      <div className="flex items-center justify-between">
+                        <Label
+                          htmlFor="turma"
+                          className={school === "Nenhuma" ? "text-muted-foreground flex items-center gap-1.5" : ""}
+                        >
+                          {school === "Nenhuma" && <Lock className="h-3.5 w-3.5 text-muted-foreground" />}
+                          Turma (A até F)
+                        </Label>
+                        {school === "Nenhuma" && (
+                          <span className="text-[11px] font-semibold text-muted-foreground">
+                            Travada (Não se aplica)
+                          </span>
+                        )}
+                      </div>
                       <select
                         id="turma"
-                        value={turma}
+                        value={school === "Nenhuma" ? "" : turma}
                         onChange={(e) => setTurma(e.target.value)}
-                        className="h-10 w-full rounded-xl border bg-background px-3 text-sm font-semibold"
+                        disabled={school === "Nenhuma"}
+                        aria-disabled={school === "Nenhuma"}
+                        className={`h-10 w-full rounded-xl border px-3 text-sm font-semibold transition-colors ${
+                          school === "Nenhuma"
+                            ? "bg-muted/50 text-muted-foreground cursor-not-allowed border-dashed opacity-75"
+                            : "bg-background text-foreground"
+                        }`}
                       >
-                        {["A", "B", "C", "D", "E", "F"].map((t) => (
-                          <option key={t} value={t}>
-                            Turma {t}
-                          </option>
-                        ))}
+                        {school === "Nenhuma" ? (
+                          <option value="">Sem Turma (Travada)</option>
+                        ) : (
+                          ["A", "B", "C", "D", "E", "F"].map((t) => (
+                            <option key={t} value={t}>
+                              Turma {t}
+                            </option>
+                          ))
+                        )}
                       </select>
                     </div>
 
