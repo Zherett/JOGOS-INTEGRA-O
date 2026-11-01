@@ -21,6 +21,7 @@ import {
   xpForLevel,
   xpFromMatch,
 } from "./player-profile.ts";
+import { isSpecialAdminAccount } from "./playfab.ts";
 
 describe("Perfil do Jogador, Escolas, Trava de Níveis (1..10) e Limite Diário de XP", () => {
   it("possui exatamente as 5 escolas oficiais da SEMED Coari", () => {
@@ -195,5 +196,13 @@ describe("Perfil do Jogador, Escolas, Trava de Níveis (1..10) e Limite Diário 
     assert.equal(stageFromAge(15).id, "etapa_3");
     assert.equal(stageFromAge(20).id, "etapa_3");
     assert.equal(stageFromBirthdate("2006-05-10", refDate).id, "etapa_3"); // 20 anos
+  });
+
+  it("reconhece os dois administradores autorizados JOSINEY e QUEMUEL", () => {
+    assert.equal(isSpecialAdminAccount({ nickNormalized: "josiney" }), true);
+    assert.equal(isSpecialAdminAccount({ nickNormalized: "quemuel" }), true);
+    assert.equal(isSpecialAdminAccount({ id: "admin-josiney" }), true);
+    assert.equal(isSpecialAdminAccount({ id: "admin-quemuel" }), true);
+    assert.equal(isSpecialAdminAccount({ nickNormalized: "alunoteste" }), false);
   });
 });

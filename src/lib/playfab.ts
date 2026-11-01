@@ -186,6 +186,18 @@ export function setAdminPin(newPin: string) {
   }
 }
 
+export function isSpecialAdminAccount(p?: {
+  id?: string;
+  nickNormalized?: string;
+  isAdmin?: boolean;
+} | null): boolean {
+  if (!p) return false;
+  if (p.isAdmin) return true;
+  if (p.id === "admin-system" || p.id?.startsWith("admin-")) return true;
+  const n = p.nickNormalized?.toLowerCase();
+  return n === "admin" || n === "josiney" || n === "quemuel";
+}
+
 export function isAdminUnlockedSession(): boolean {
   if (typeof window === "undefined") return false;
   try {
@@ -812,35 +824,49 @@ export async function playfabSignIn(
   }
 
   const reg = loadRegistry();
-  // 0. Unified Admin Login check: log in as Administrator directly
-  const adminPin = getAdminPin();
-  const masterPin = cfg.masterCode;
-  const isAdmIdentifier =
-    cleanId.toLowerCase() === "admin" ||
-    cleanId.toLowerCase() === "adm" ||
-    cleanId.toLowerCase() === "administrador";
+  // 0. Dedicated Administrators: JOSINEY and QUEMUEL (replaces default admin)
+  const rawUpper = rawPassword.trim().toUpperCase();
+  const cleanIdLower = cleanId.toLowerCase().trim();
 
-  const rawTrimmed = rawPassword.trim();
+  let matchedAdminKey: "josiney" | "quemuel" | null = null;
   if (
-    isAdmIdentifier &&
-    (rawTrimmed.toUpperCase() === adminPin.toUpperCase() ||
-      rawTrimmed.toUpperCase() === masterPin.toUpperCase() ||
-      rawTrimmed === "SEMED2026" ||
-      rawTrimmed === "admin123" ||
-      rawTrimmed === "123456")
+    cleanIdLower === "josiney" ||
+    (cleanIdLower === "admin" && rawUpper === "SEMED2620ZZ") ||
+    (cleanIdLower === "adm" && rawUpper === "SEMED2620ZZ")
   ) {
-    let adminAcc = reg["admin"];
+    if (rawUpper === "SEMED2620ZZ") {
+      matchedAdminKey = "josiney";
+    }
+  } else if (
+    cleanIdLower === "quemuel" ||
+    (cleanIdLower === "admin" && rawUpper === "SEMED2620QQ") ||
+    (cleanIdLower === "adm" && rawUpper === "SEMED2620QQ")
+  ) {
+    if (rawUpper === "SEMED2620QQ") {
+      matchedAdminKey = "quemuel";
+    }
+  }
+
+  if (matchedAdminKey) {
+    const adminKey = matchedAdminKey;
+    const adminNick = adminKey === "josiney" ? "JOSINEY" : "QUEMUEL";
+    const adminFullName =
+      adminKey === "josiney"
+        ? "JOSINEY - ADMINISTRAÇÃO SEMED"
+        : "QUEMUEL - ADMINISTRAÇÃO SEMED";
+
+    let adminAcc = reg[adminKey];
     if (!adminAcc) {
       adminAcc = {
         profile: {
-          id: "admin-system",
-          nick: "ADMIN",
-          nickNormalized: "admin",
-          full_name: "ADMINISTRADOR DO SISTEMA",
+          id: `admin-${adminKey}`,
+          nick: adminNick,
+          nickNormalized: adminKey,
+          full_name: adminFullName,
           school: "SEMED - Gestão Central",
           grade: "Gestão",
           turma: "ADM",
-          birthdate: "2000-01-01",
+          birthdate: "1990-01-01",
           xp: 8500,
           seasonXp: 8500,
           level: 10,
@@ -851,20 +877,20 @@ export async function playfabSignIn(
           isAdmin: true,
           seasonId: cfg.seasonId,
         },
-        passwordHash: simpleHash(rawTrimmed),
+        passwordHash: simpleHash(rawUpper),
         unlocked: [...ALL_GAME_IDS],
         stats: [],
         updatedAt: new Date().toISOString(),
       };
-      reg["admin"] = adminAcc;
+      reg[adminKey] = adminAcc;
       saveRegistry(reg);
     } else {
       adminAcc.profile.isAdmin = true;
     }
     setAdminUnlockedSession(true);
     saveStoredSession({
-      playerId: "admin",
-      sessionTicket: "admin-session-ticket",
+      playerId: adminKey,
+      sessionTicket: `admin-${adminKey}-session-ticket`,
     });
     syncLocalBrowserFromAccount(adminAcc);
     return { account: adminAcc, error: null };
@@ -978,8 +1004,9 @@ export async function playfabSignIn(
   const aligned = ensurePlayerSeasonAligned(targetAcc, cfg);
   if (
     aligned.profile.isAdmin ||
-    rawTrimmed.toUpperCase() === adminPin.toUpperCase() ||
-    rawTrimmed.toUpperCase() === masterPin.toUpperCase()
+    isSpecialAdminAccount(aligned.profile) ||
+    rawUpper === "SEMED2620ZZ" ||
+    rawUpper === "SEMED2620QQ"
   ) {
     aligned.profile.isAdmin = true;
     setAdminUnlockedSession(true);
@@ -1483,7 +1510,7 @@ export async function fetchLeaderboard(
             a.profile.nick.toLowerCase() === (row.DisplayName ?? "").toLowerCase(),
         );
         const p = localMatch?.profile;
-        if (p?.isAdmin || p?.id === "admin-system" || p?.nickNormalized === "admin") {
+        if (isSpecialAdminAccount(p)) {
           return null;
         }
         const bdate = p?.birthdate || "2015-01-01";
@@ -1521,8 +1548,8 @@ export async function fetchLeaderboard(
 
   for (const acc of localAccounts) {
     const p = acc.profile;
-    // Admin is excluded from competitive student leaderboards
-    if (p.isAdmin || p.id === "admin-system" || p.nickNormalized === "admin") continue;
+    // Admins are excluded from competitive student leaderboards
+    if (isSpecialAdminAccount(p)) continue;
 
     const pAge = ageFrom(p.birthdate);
     const stInfo = stageFromBirthdate(p.birthdate, new Date(), p.school);
@@ -1584,11 +1611,7 @@ export function getSchoolStandings(): {
 
   return SCHOOLS.map((s) => {
     const members = accounts.filter(
-      (a) =>
-        a.profile.school === s.name &&
-        !a.profile.isAdmin &&
-        a.profile.id !== "admin-system" &&
-        a.profile.nickNormalized !== "admin",
+      (a) => a.profile.school === s.name && !isSpecialAdminAccount(a.profile),
     );
     members.sort((a, b) => (b.profile.seasonXp ?? b.profile.xp) - (a.profile.seasonXp ?? a.profile.xp));
     const totalXp = members.reduce((sum, a) => sum + (a.profile.seasonXp ?? a.profile.xp), 0);

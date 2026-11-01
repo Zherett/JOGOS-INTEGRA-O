@@ -176,6 +176,9 @@ describe("Sistema Completo de Medalhas e Inventário", () => {
       matchesPlayed: 50,
       wins: 40,
       distinctGamesPlayed: 10,
+      grade: "5º Ano",
+      seasonXp: 9999,
+      seasonId: 1,
       badges: [],
       unlockedMedals: [],
     };

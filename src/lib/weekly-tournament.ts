@@ -191,12 +191,20 @@ export function evaluateTournamentStandings(
   updatedRecords: Record<string, TournamentPlayerRecord>;
 } {
   const list = Object.values(recordsMap)
-    .filter(
-      (rec) =>
-        rec.playerId !== "admin-system" &&
-        rec.nick.toLowerCase() !== "admin" &&
-        rec.playerId !== "admin",
-    )
+    .filter((rec) => {
+      const pId = rec.playerId.toLowerCase();
+      const nick = rec.nick.toLowerCase();
+      return (
+        pId !== "admin-system" &&
+        !pId.startsWith("admin-") &&
+        pId !== "admin" &&
+        pId !== "josiney" &&
+        pId !== "quemuel" &&
+        nick !== "admin" &&
+        nick !== "josiney" &&
+        nick !== "quemuel"
+      );
+    })
     .map((rec) => {
     const resolvedAge =
       rec.age ?? (rec.birthdate ? ageFrom(rec.birthdate, new Date(nowMs)) : 10);
@@ -466,10 +474,15 @@ export async function recordWeeklyTournamentAttempt(args: {
   awardedMedal: TournamentMedal | null;
 }> {
   // Admin accounts can test the games, but are not recorded into competitive student standings
+  const pId = args.profile.id.toLowerCase();
+  const nick = args.profile.nickNormalized?.toLowerCase();
   if (
     args.profile.isAdmin ||
-    args.profile.id === "admin-system" ||
-    args.profile.nickNormalized === "admin"
+    pId === "admin-system" ||
+    pId.startsWith("admin-") ||
+    nick === "admin" ||
+    nick === "josiney" ||
+    nick === "quemuel"
   ) {
     return { standing: null, awardedMedal: null };
   }
