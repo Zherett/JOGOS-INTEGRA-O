@@ -24,6 +24,7 @@ import {
   UserCheck,
   ChevronRight,
   Calendar,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -52,6 +53,7 @@ import {
   grantPlayerMedalManually,
   isPlayFabConfigured,
   setAdminPin,
+  syncStudentRosterFromPlayFab,
   playfabApproveTurmaRequest,
   playfabRejectTurmaRequest,
   type PlayerProfile,
@@ -187,6 +189,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [grantMedalTarget, setGrantMedalTarget] = useState<MedalDefinition | null>(null);
   const [selectedStudentForGrant, setSelectedStudentForGrant] = useState<string>("");
   const [inspectStudentId, setInspectStudentId] = useState<string | null>(null);
+  const [syncingRoster, setSyncingRoster] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -196,6 +199,13 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     setX1History(loadX1MatchHistory());
     setTurmaRequests(loadTurmaRequests());
     setRegisteredStudents(getAllRegisteredPlayers());
+
+    // Automatically sync cloud student roster from PlayFab when opening ADM
+    setSyncingRoster(true);
+    void syncStudentRosterFromPlayFab()
+      .then((players) => setRegisteredStudents(players))
+      .finally(() => setSyncingRoster(false));
+
     setScheduleClearXp(auth.adminConfig.scheduledResetClearXp);
     if (auth.adminConfig.scheduledResetAt) {
       const d = new Date(auth.adminConfig.scheduledResetAt);
@@ -212,6 +222,17 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     setConfirmResetNow(false);
     setSavedMsg(null);
   }, [open, auth.adminConfig]);
+
+  async function handleRefreshRoster() {
+    setSyncingRoster(true);
+    try {
+      const players = await syncStudentRosterFromPlayFab();
+      setRegisteredStudents(players);
+      flashSaved("Lista de alunos sincronizada com a nuvem!");
+    } finally {
+      setSyncingRoster(false);
+    }
+  }
 
   function flashSaved(msg: string) {
     setSavedMsg(msg);
@@ -2013,35 +2034,51 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                     </p>
                   </div>
 
-                  {/* Alternador das 2 Sub-abas */}
-                  <div className="flex items-center gap-1 rounded-xl bg-background border p-1">
-                    <button
+                  {/* Alternador das 2 Sub-abas e Botão de Sincronizar Nuvem */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
                       type="button"
-                      onClick={() => setTurmaSubTab("visao")}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
-                        turmaSubTab === "visao"
-                          ? "bg-primary text-primary-foreground shadow-sm"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRefreshRoster}
+                      disabled={syncingRoster}
+                      className="rounded-xl font-bold gap-1.5 text-xs h-9"
                     >
-                      <Users className="inline mr-1 h-3.5 w-3.5" /> 1. Escolas & Turmas
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTurmaSubTab("solicitacoes")}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
-                        turmaSubTab === "solicitacoes"
-                          ? "bg-primary text-primary-foreground shadow-sm"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      <UserCheck className="inline mr-1 h-3.5 w-3.5" /> 2. Solicitações de Troca
-                      {pendingTurmaCount > 0 && (
-                        <span className="ml-1.5 rounded-full bg-accent text-accent-foreground px-1.5 py-0.2 text-[9px] font-black">
-                          {pendingTurmaCount}
-                        </span>
-                      )}
-                    </button>
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 ${syncingRoster ? "animate-spin text-primary" : "text-muted-foreground"}`}
+                      />
+                      {syncingRoster ? "Sincronizando..." : "Sincronizar Nuvem"}
+                    </Button>
+
+                    <div className="flex items-center gap-1 rounded-xl bg-background border p-1">
+                      <button
+                        type="button"
+                        onClick={() => setTurmaSubTab("visao")}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                          turmaSubTab === "visao"
+                            ? "bg-primary text-primary-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        <Users className="inline mr-1 h-3.5 w-3.5" /> 1. Escolas & Turmas
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTurmaSubTab("solicitacoes")}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                          turmaSubTab === "solicitacoes"
+                            ? "bg-primary text-primary-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        <UserCheck className="inline mr-1 h-3.5 w-3.5" /> 2. Solicitações de Troca
+                        {pendingTurmaCount > 0 && (
+                          <span className="ml-1.5 rounded-full bg-accent text-accent-foreground px-1.5 py-0.2 text-[9px] font-black">
+                            {pendingTurmaCount}
+                          </span>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
 

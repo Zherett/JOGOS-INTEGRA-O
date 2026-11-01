@@ -66,6 +66,7 @@ const SESSION_KEY = "desafios-playfab-session-v1";
 const REGISTRY_KEY = "desafios-playfab-registry-v1";
 const ADMIN_AUTH_KEY = "desafios-playfab-admin-auth-v1";
 const ADMIN_PIN_KEY = "desafios-playfab-admin-pin-v1";
+export const ROSTER_SHARED_GROUP_ID = "SEMED_STUDENT_ROSTER_V1";
 
 export interface PlayerProfile {
   id: string;
@@ -1179,6 +1180,175 @@ async function pushProfileToPlayFab(account: StoredAccount, sessionTicket?: stri
     },
     ticket,
   );
+
+  // Sync into shared student roster for ADM, teachers, and leaderboards across all devices
+  try {
+    await callPlayFabClient("CreateSharedGroup", { SharedGroupId: ROSTER_SHARED_GROUP_ID }, ticket);
+    await callPlayFabClient(
+      "UpdateSharedGroupData",
+      {
+        SharedGroupId: ROSTER_SHARED_GROUP_ID,
+        Data: {
+          [`stu_${p.nickNormalized}`]: JSON.stringify({
+            id: p.id,
+            playfabId: p.playfabId,
+            nick: p.nick,
+            nickNormalized: p.nickNormalized,
+            full_name: p.full_name,
+            school: p.school,
+            grade: p.grade,
+            turma: p.turma ?? null,
+            birthdate: p.birthdate,
+            xp: p.xp,
+            seasonXp: p.seasonXp,
+            level: p.level,
+            wins: p.wins,
+            matchesPlayed: p.matchesPlayed,
+            distinctGamesPlayed: p.distinctGamesPlayed ?? 0,
+            unlockedMedals: p.unlockedMedals ?? [],
+            badges: p.badges ?? [],
+            isAdmin: p.isAdmin,
+            seasonId: p.seasonId,
+            updatedAt: account.updatedAt,
+          }),
+        },
+        Permission: "Public",
+      },
+      ticket,
+    );
+  } catch {
+    /* ignore network issues with shared group */
+  }
+}
+
+/**
+ * Downloads and merges all registered students across all schools/devices from PlayFab.
+ */
+export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Promise<PlayerProfile[]> {
+  const ticket = sessionTicket ?? loadStoredSession()?.sessionTicket;
+  if (!ticket || !isPlayFabConfigured()) {
+    return getAllRegisteredPlayers();
+  }
+
+  try {
+    await callPlayFabClient("CreateSharedGroup", { SharedGroupId: ROSTER_SHARED_GROUP_ID }, ticket);
+    const res = await callPlayFabClient<{ Data?: Record<string, { Value: string }> }>(
+      "GetSharedGroupData",
+      { SharedGroupId: ROSTER_SHARED_GROUP_ID },
+      ticket,
+    );
+
+    const data = res.data?.Data;
+    const reg = loadRegistry();
+    let updated = false;
+
+    // 1. If we received students from the cloud, merge them into local registry
+    if (data && Object.keys(data).length > 0) {
+      for (const item of Object.values(data)) {
+        if (!item?.Value) continue;
+        try {
+          const parsed = JSON.parse(item.Value) as Partial<PlayerProfile>;
+          if (!parsed.nickNormalized) continue;
+          const slug = parsed.nickNormalized;
+          const existing = reg[slug];
+
+          const mergedProfile: PlayerProfile = {
+            id: parsed.id || existing?.profile.id || `pf_${slug}`,
+            playfabId: parsed.playfabId || existing?.profile.playfabId,
+            nick: parsed.nick || existing?.profile.nick || slug,
+            nickNormalized: slug,
+            full_name: parsed.full_name || existing?.profile.full_name || "",
+            school:
+              parsed.school && isValidSchool(parsed.school)
+                ? parsed.school
+                : existing?.profile.school || SCHOOLS[0].name,
+            grade: parsed.grade ?? existing?.profile.grade ?? null,
+            turma: parsed.turma ?? existing?.profile.turma ?? null,
+            birthdate: parsed.birthdate || existing?.profile.birthdate || "2015-01-01",
+            xp: Math.max(parsed.xp ?? 0, existing?.profile.xp ?? 0),
+            seasonXp: Math.max(parsed.seasonXp ?? 0, existing?.profile.seasonXp ?? 0),
+            level: Math.max(parsed.level ?? 1, existing?.profile.level ?? 1),
+            wins: Math.max(parsed.wins ?? 0, existing?.profile.wins ?? 0),
+            matchesPlayed: Math.max(parsed.matchesPlayed ?? 0, existing?.profile.matchesPlayed ?? 0),
+            distinctGamesPlayed: Math.max(
+              parsed.distinctGamesPlayed ?? 0,
+              existing?.profile.distinctGamesPlayed ?? 0,
+            ),
+            dailyXp: existing?.profile.dailyXp ?? 0,
+            dailyXpDate: existing?.profile.dailyXpDate,
+            unlockedMedals: parsed.unlockedMedals ?? existing?.profile.unlockedMedals ?? [],
+            badges: parsed.badges ?? existing?.profile.badges ?? [],
+            isAdmin: parsed.isAdmin ?? existing?.profile.isAdmin,
+            seasonId: parsed.seasonId ?? existing?.profile.seasonId ?? 1,
+          };
+
+          reg[slug] = {
+            profile: mergedProfile,
+            passwordHash:
+              existing?.passwordHash ||
+              simpleHash(passwordFromBirthdate(mergedProfile.birthdate)),
+            unlocked: existing?.unlocked || [],
+            stats: existing?.stats || [],
+            updatedAt: (parsed as any).updatedAt || new Date().toISOString(),
+          };
+          updated = true;
+        } catch {
+          /* ignore JSON parse error */
+        }
+      }
+    }
+
+    // 2. Push any local students that are not yet in the cloud roster
+    const missingInCloud: Record<string, string> = {};
+    for (const [slug, acc] of Object.entries(reg)) {
+      if (isSpecialAdminAccount(acc.profile)) continue;
+      const key = `stu_${slug}`;
+      if (!data || !data[key]) {
+        missingInCloud[key] = JSON.stringify({
+          id: acc.profile.id,
+          playfabId: acc.profile.playfabId,
+          nick: acc.profile.nick,
+          nickNormalized: acc.profile.nickNormalized,
+          full_name: acc.profile.full_name,
+          school: acc.profile.school,
+          grade: acc.profile.grade,
+          turma: acc.profile.turma ?? null,
+          birthdate: acc.profile.birthdate,
+          xp: acc.profile.xp,
+          seasonXp: acc.profile.seasonXp,
+          level: acc.profile.level,
+          wins: acc.profile.wins,
+          matchesPlayed: acc.profile.matchesPlayed,
+          distinctGamesPlayed: acc.profile.distinctGamesPlayed ?? 0,
+          unlockedMedals: acc.profile.unlockedMedals ?? [],
+          badges: acc.profile.badges ?? [],
+          isAdmin: acc.profile.isAdmin,
+          seasonId: acc.profile.seasonId,
+          updatedAt: acc.updatedAt,
+        });
+      }
+    }
+
+    if (Object.keys(missingInCloud).length > 0) {
+      await callPlayFabClient(
+        "UpdateSharedGroupData",
+        {
+          SharedGroupId: ROSTER_SHARED_GROUP_ID,
+          Data: missingInCloud,
+          Permission: "Public",
+        },
+        ticket,
+      );
+    }
+
+    if (updated) {
+      saveRegistry(reg);
+    }
+  } catch {
+    /* ignore network issues */
+  }
+
+  return getAllRegisteredPlayers();
 }
 
 export async function playfabUnlockGames(games: GameId[]): Promise<GameId[]> {
