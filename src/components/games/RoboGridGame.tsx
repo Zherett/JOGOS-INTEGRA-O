@@ -63,7 +63,15 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
   useEffect(() => {
     if (finished) {
       updateBest("robogrid", score, level);
-      const m: LastMatch = { score, correct, wrong, level, at: Date.now() };
+      const m: LastMatch = {
+        score,
+        correct,
+        wrong,
+        level,
+        at: Date.now(),
+        isTeam: team.activeSession,
+        mode: team.activeSession ? "equipes" : "padrao",
+      };
       saveLastMatch("robogrid", m);
       setLastMatch(m);
       onStatsChange();

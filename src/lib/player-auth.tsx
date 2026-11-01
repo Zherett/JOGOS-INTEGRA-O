@@ -214,7 +214,8 @@ export function PlayerAuthProvider({ children }: { children: ReactNode }) {
     onMatchSaved((id, match) => {
       void recordMatch({
         gameId: id,
-        mode: match.mode ?? "padrao",
+        mode: match.isTeam ? "equipes" : (match.mode ?? "padrao"),
+        isTeam: match.isTeam,
         score: match.score,
         level: match.level,
         correct: match.correct,

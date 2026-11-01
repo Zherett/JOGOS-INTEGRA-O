@@ -86,7 +86,15 @@ export function MinefieldGame({ onExit, onStatsChange, isRanked }: Props) {
   useEffect(() => {
     if (finished) {
       updateBest("minado", score, 1);
-      const m: LastMatch = { score, correct, wrong, level: 1, at: Date.now() };
+      const m: LastMatch = {
+        score,
+        correct,
+        wrong,
+        level: 1,
+        at: Date.now(),
+        isTeam: team.activeSession,
+        mode: team.activeSession ? "equipes" : "padrao",
+      };
       saveLastMatch("minado", m);
       setLastMatch(m);
       onStatsChange();

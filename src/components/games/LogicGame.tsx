@@ -81,7 +81,15 @@ export function LogicGame({ onExit, onStatsChange, isRanked }: Props) {
   useEffect(() => {
     if (finished) {
       updateBest("logica", score, level);
-      const m: LastMatch = { score, correct, wrong, level, at: Date.now() };
+      const m: LastMatch = {
+        score,
+        correct,
+        wrong,
+        level,
+        at: Date.now(),
+        isTeam: team.activeSession,
+        mode: team.activeSession ? "equipes" : "padrao",
+      };
       saveLastMatch("logica", m);
       setLastMatch(m);
       onStatsChange();

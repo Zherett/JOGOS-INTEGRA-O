@@ -107,7 +107,15 @@ export function ColorMemoryGame({ onExit, onStatsChange, isRanked }: Props) {
   useEffect(() => {
     if (finished) {
       updateBest("memoria", score, level);
-      const m: LastMatch = { score, correct, wrong, level, at: Date.now() };
+      const m: LastMatch = {
+        score,
+        correct,
+        wrong,
+        level,
+        at: Date.now(),
+        isTeam: team.activeSession,
+        mode: team.activeSession ? "equipes" : "padrao",
+      };
       saveLastMatch("memoria", m);
       setLastMatch(m);
       onStatsChange();

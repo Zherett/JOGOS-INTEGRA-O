@@ -104,7 +104,15 @@ export function VariableHuntGame({ onExit, onStatsChange, isRanked }: Props) {
   useEffect(() => {
     if (finished) {
       updateBest("variaveis", score, level);
-      const m: LastMatch = { score, correct, wrong, level, at: Date.now() };
+      const m: LastMatch = {
+        score,
+        correct,
+        wrong,
+        level,
+        at: Date.now(),
+        isTeam: team.activeSession,
+        mode: team.activeSession ? "equipes" : "padrao",
+      };
       saveLastMatch("variaveis", m);
       setLastMatch(m);
       onStatsChange();

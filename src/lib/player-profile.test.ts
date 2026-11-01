@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  adjustXpForGameMode,
   applyDailyXpCap,
   calculatePlayerLevel,
   computeBadges,
@@ -18,6 +19,7 @@ import {
   stageFromAge,
   stageFromBirthdate,
   studentCustomId,
+  TEAM_MODE_XP_DIVISOR,
   xpForLevel,
   xpFromMatch,
 } from "./player-profile.ts";
@@ -210,5 +212,23 @@ describe("Perfil do Jogador, Escolas, Trava de Níveis (1..10) e Limite Diário 
     assert.equal(isSpecialAdminAccount({ id: "admin-josiney" }), true);
     assert.equal(isSpecialAdminAccount({ id: "admin-quemuel" }), true);
     assert.equal(isSpecialAdminAccount({ nickNormalized: "alunoteste" }), false);
+  });
+
+  it("reduz o ganho de XP em 4X quando o jogo é disputado em modo equipes/grupos", () => {
+    assert.equal(TEAM_MODE_XP_DIVISOR, 4);
+
+    // Modo solo (isTeam = false): mantém XP inalterado
+    assert.equal(adjustXpForGameMode(20, false), 20);
+    assert.equal(adjustXpForGameMode(12, false), 12);
+    assert.equal(adjustXpForGameMode(5, false), 5);
+
+    // Modo equipes (isTeam = true): reduz em 4X (ex: 20 XP vira 5 XP)
+    assert.equal(adjustXpForGameMode(20, true), 5);
+    assert.equal(adjustXpForGameMode(16, true), 4);
+    assert.equal(adjustXpForGameMode(12, true), 3);
+    assert.equal(adjustXpForGameMode(4, true), 1);
+    // Garante no mínimo 1 XP para partidas concluídas
+    assert.equal(adjustXpForGameMode(1, true), 1);
+    assert.equal(adjustXpForGameMode(2, true), 1);
   });
 });

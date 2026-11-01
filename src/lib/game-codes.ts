@@ -140,6 +140,7 @@ export const DEFAULT_ADMIN_CONFIG: PlatformAdminConfig = {
   adminMedalNotifications: [],
   specialEvents: [],
   recurringEvents: [],
+  playfabTitleId: "186F63",
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 

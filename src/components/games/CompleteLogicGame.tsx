@@ -75,7 +75,15 @@ export function CompleteLogicGame({ onExit, onStatsChange }: Props) {
   useEffect(() => {
     if (finished) {
       updateBest("completar", score, level);
-      const m: LastMatch = { score, correct, wrong, level, at: Date.now() };
+      const m: LastMatch = {
+        score,
+        correct,
+        wrong,
+        level,
+        at: Date.now(),
+        isTeam: team.activeSession,
+        mode: team.activeSession ? "equipes" : "padrao",
+      };
       saveLastMatch("completar", m);
       setLastMatch(m);
       onStatsChange();

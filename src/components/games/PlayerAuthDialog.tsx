@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { usePlayerAuth } from "@/lib/player-auth";
+import { isPlayFabConfigured, getPlayFabTitleId } from "@/lib/playfab";
 import {
   ageFrom,
   formatFullNameUpper,
@@ -501,6 +502,17 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
             )}
           </>
         )}
+
+        <div className="pt-2 text-center text-[11px] text-muted-foreground flex items-center justify-center gap-1.5 border-t border-border/40">
+          <span
+            className={`inline-block h-2 w-2 rounded-full ${
+              isPlayFabConfigured() ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
+            }`}
+          />
+          {isPlayFabConfigured()
+            ? `Nuvem PlayFab Conectada (${getPlayFabTitleId()})`
+            : "Modo Local / Offline-First"}
+        </div>
       </DialogContent>
     </Dialog>
   );

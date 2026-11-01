@@ -76,7 +76,15 @@ export function CartesianGame({ onExit, onStatsChange, isRanked }: Props) {
   useEffect(() => {
     if (finished) {
       updateBest("cartesiano", score, level);
-      const m: LastMatch = { score, correct, wrong, level, at: Date.now() };
+      const m: LastMatch = {
+        score,
+        correct,
+        wrong,
+        level,
+        at: Date.now(),
+        isTeam: team.activeSession,
+        mode: team.activeSession ? "equipes" : "padrao",
+      };
       saveLastMatch("cartesiano", m);
       setLastMatch(m);
       onStatsChange();

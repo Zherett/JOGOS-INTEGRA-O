@@ -17,6 +17,7 @@ import {
   type ResetHistoryEntry,
 } from "./game-codes.ts";
 import {
+  adjustXpForGameMode,
   ageFrom,
   applyDailyXpCap,
   calculatePlayerLevel,
@@ -158,11 +159,15 @@ function simpleHash(str: string): string {
   return (h >>> 0).toString(16);
 }
 
+export const DEFAULT_PLAYFAB_TITLE_ID = "186F63";
+
 export function getPlayFabTitleId(): string {
   const envId = (import.meta.env?.VITE_PLAYFAB_TITLE_ID as string | undefined)?.trim();
   if (envId) return envId;
   const cfg = loadAdminConfig();
-  return cfg.playfabTitleId?.trim() ?? "";
+  const cfgId = cfg.playfabTitleId?.trim();
+  if (cfgId) return cfgId;
+  return DEFAULT_PLAYFAB_TITLE_ID;
 }
 
 export function isPlayFabConfigured(): boolean {
@@ -1196,6 +1201,7 @@ export async function playfabUnlockGames(games: GameId[]): Promise<GameId[]> {
 export async function playfabRecordMatch(args: {
   gameId: GameId;
   mode?: string;
+  isTeam?: boolean;
   score: number;
   level: number;
   correct: number;
@@ -1256,7 +1262,13 @@ export async function playfabRecordMatch(args: {
     // Normal match XP: default capped at 20 XP per match (can be raised by special event matchXpCap)
     const bonuses = getActiveEventBonuses(args.gameId, cfg.dailyXpCap, 20);
     const multipliedRawXp = Math.round(rawEarnedXp * bonuses.multiplier);
-    const cappedMatchXp = Math.min(multipliedRawXp, bonuses.matchXpCap);
+    let cappedMatchXp = Math.min(multipliedRawXp, bonuses.matchXpCap);
+
+    // Quando em equipes (disputas em grupo), o XP ganho é reduzido em 4X (ex: 20 XP vira 5 XP)
+    const isTeamMode = Boolean(args.isTeam || mode === "equipes");
+    if (isTeamMode) {
+      cappedMatchXp = adjustXpForGameMode(cappedMatchXp, true);
+    }
 
     const dailyCapResult = applyDailyXpCap({
       rawEarnedXp: cappedMatchXp,

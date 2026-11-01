@@ -55,6 +55,8 @@ export interface LastMatch {
   at: number; // epoch ms
   /** Optional game mode (games that have more than one). */
   mode?: string;
+  /** Indicates whether the match was played in local team mode (reduces XP by 4X) */
+  isTeam?: boolean;
 }
 
 type MatchListener = (id: GameId, match: LastMatch) => void;

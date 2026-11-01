@@ -366,6 +366,14 @@ export const TOURNAMENT_DAILY_EXTRA_XP_CAP = 100;
 export const TOURNAMENT_DAILY_ENTRIES_LIMIT = 10;
 export const TOURNAMENT_XP_PER_ENTRY = 10;
 
+/** Fator de redução de XP quando uma partida é jogada em equipes/grupos (redução de 4X) */
+export const TEAM_MODE_XP_DIVISOR = 4;
+
+export function adjustXpForGameMode(matchXp: number, isTeam = false): number {
+  if (!isTeam) return matchXp;
+  return Math.max(1, Math.round(matchXp / TEAM_MODE_XP_DIVISOR));
+}
+
 export interface TournamentMedal {
   id: string;
   weekKey: string;
