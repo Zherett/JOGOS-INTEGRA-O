@@ -2196,19 +2196,21 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                     <span className="rounded-full bg-primary/15 px-2 py-0.2 text-[10px] font-bold text-primary">
                                       Nv. {st.level}
                                     </span>
-                                    {st.turma && (
-                                      <span className="rounded-full bg-secondary border px-2 py-0.2 text-[10px] font-black">
-                                        Turma {st.turma}
-                                      </span>
-                                    )}
                                   </div>
                                   <div className="text-xs text-muted-foreground uppercase truncate mt-0.5">
                                     {st.full_name}
                                   </div>
-                                  <div className="text-[11px] text-muted-foreground mt-0.5">
-                                    {st.grade ?? "5º ano"} • {ageFrom(st.birthdate)} anos • 🏅{" "}
-                                    {st.unlockedMedals?.length ?? 0} medalha(s)
-                                  </div>
+                                  {Boolean(
+                                    st.turma &&
+                                      st.grade &&
+                                      st.school &&
+                                      st.school !== "Nenhuma" &&
+                                      st.school !== "Outro"
+                                  ) && (
+                                    <div className="text-[11px] text-muted-foreground mt-0.5 font-semibold">
+                                      {st.grade} {st.turma}
+                                    </div>
+                                  )}
                                 </div>
                                 <div className="text-right shrink-0">
                                   <div className="font-display text-sm font-extrabold text-primary">
