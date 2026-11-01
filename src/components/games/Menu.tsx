@@ -437,20 +437,19 @@ export function Menu({
           );
         })}
 
-        {requireCodeGate && (
-          <button
-            onClick={onAddCode}
-            className="group flex flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed bg-card/50 p-6 text-center transition-all hover:border-primary hover:bg-card"
-          >
-            <span className="grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
-              <KeyRound className="h-7 w-7" />
-            </span>
-            <span className="font-display text-xl font-bold">Inserir novo código de jogo</span>
-            <span className="text-sm text-muted-foreground">
-              Libere mais desafios na plataforma
-            </span>
-          </button>
-        )}
+        {/* Botão de inserir código sempre disponível na página inicial */}
+        <button
+          onClick={onAddCode}
+          className="group flex flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed bg-card/50 p-6 text-center transition-all hover:border-primary hover:bg-card"
+        >
+          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary">
+            <KeyRound className="h-7 w-7" />
+          </span>
+          <span className="font-display text-xl font-bold">Inserir novo código de jogo</span>
+          <span className="text-sm text-muted-foreground">
+            Libere novos desafios ou digite o código da turma
+          </span>
+        </button>
       </div>
 
       <p className="text-center text-xs text-muted-foreground">

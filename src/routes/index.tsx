@@ -173,8 +173,7 @@ function Index() {
   const showGate =
     mounted &&
     !auth.loading &&
-    cfg.requireCodeGate &&
-    (addingCode || visibleUnlockedCount === 0);
+    (addingCode || (cfg.requireCodeGate && visibleUnlockedCount === 0));
 
   const openHour = cfg.x1OpenHour ?? 7;
   const closeHour = cfg.x1CloseHour ?? 19;
@@ -234,7 +233,7 @@ function Index() {
             void auth.unlockGames(game ? [game] : list);
             setAddingCode(false);
           }}
-          onBack={visibleUnlockedCount > 0 ? () => setAddingCode(false) : undefined}
+          onBack={() => setAddingCode(false)}
         />
       )}
       {view === "menu" && !showGate && (

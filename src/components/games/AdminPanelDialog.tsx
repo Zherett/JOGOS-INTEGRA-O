@@ -12,6 +12,7 @@ import {
   Cloud,
   Users,
   Lock,
+  Unlock,
   Trash2,
   Award,
   Mail,
@@ -690,20 +691,64 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
             {/* TAB 1: JOGOS & CÓDIGOS */}
             {tab === "jogos" && (
               <div className="space-y-4">
-                <div className="flex items-center justify-between gap-4 rounded-2xl border bg-secondary/30 p-3.5">
-                  <div>
-                    <div className="font-display text-sm font-bold">
-                      Exigir código para liberar jogos
+                {/* Status e Controle de Acesso aos Jogos (Liberado Inicialmente / Travado com SEMED26) */}
+                <div
+                  className={`rounded-2xl border p-4 transition-all ${
+                    draft.requireCodeGate
+                      ? "bg-amber-500/10 border-amber-500/30"
+                      : "bg-emerald-500/10 border-emerald-500/30"
+                  }`}
+                >
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 font-display text-base font-black">
+                        {draft.requireCodeGate ? (
+                          <>
+                            <Lock className="h-5 w-5 text-amber-500 shrink-0" />
+                            <span className="text-amber-600 dark:text-amber-400">
+                              Jogos Travados com Código ({draft.masterCode || "SEMED26"})
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <Unlock className="h-5 w-5 text-emerald-500 shrink-0" />
+                            <span className="text-emerald-600 dark:text-emerald-400">
+                              Jogos Liberados Inicialmente (Acesso Livre)
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1 max-w-xl">
+                        {draft.requireCodeGate
+                          ? `Acesso travado. Alunos precisam inserir o código Master (${draft.masterCode || "SEMED26"}) ou o código individual para liberar os jogos marcados.`
+                          : "Todos os jogos marcados abaixo já ficam liberados e prontos para jogar na página inicial desde o início."}
+                      </p>
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      Se desativado, todos os jogos marcados como ativos já aparecem liberados no
-                      menu inicial.
-                    </div>
+
+                    <Button
+                      type="button"
+                      variant={draft.requireCodeGate ? "default" : "outline"}
+                      onClick={() => {
+                        const nextState = !draft.requireCodeGate;
+                        setDraft({ ...draft, requireCodeGate: nextState });
+                      }}
+                      className={`shrink-0 rounded-xl font-black text-xs gap-1.5 shadow-sm ${
+                        draft.requireCodeGate
+                          ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                          : "border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                      }`}
+                    >
+                      {draft.requireCodeGate ? (
+                        <>
+                          <Unlock className="h-4 w-4" /> Liberar Jogos para Todos
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="h-4 w-4" /> Travar com Código {draft.masterCode || "SEMED26"}
+                        </>
+                      )}
+                    </Button>
                   </div>
-                  <Switch
-                    checked={draft.requireCodeGate}
-                    onCheckedChange={(v) => setDraft({ ...draft, requireCodeGate: v })}
-                  />
                 </div>
 
                 {/* Arena X1 Online Config (Nível 5+ e Horários) */}
@@ -878,7 +923,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                               {GAME_NAMES[id]}
                             </div>
                             <div className="text-[11px] text-muted-foreground">
-                              {enabled ? "Disponível na plataforma" : "Oculto no menu"}
+                              {enabled ? "Liberado e visível no menu" : "Desmarcado (Oculto da lista para os alunos)"}
                             </div>
                           </div>
                         </div>

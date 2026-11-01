@@ -13,6 +13,7 @@ import {
 
 const UNLOCK_KEY = "desafios-logica-unlocked-v1";
 const ADMIN_CONFIG_KEY = "desafios-logica-admin-config-v1";
+const INITIAL_UNLOCKED_MIGRATION_KEY = "desafios-initial-unlocked-v2";
 
 const STATIC_PRESETS: Record<string, string> = {
   logica: "L1MT26",
@@ -120,7 +121,7 @@ export const DEFAULT_ADMIN_CONFIG: PlatformAdminConfig = {
   enabledGames: { ...DEFAULT_ENABLED_GAMES },
   gameCodes: { ...DEFAULT_GAME_CODES },
   masterCode: DEFAULT_MASTER_CODE,
-  requireCodeGate: true,
+  requireCodeGate: false,
   seasonId: 1,
   seasonName: "Temporada 1 • SEMED Coari",
   lastResetAt: "2026-01-01T00:00:00.000Z",
@@ -151,12 +152,29 @@ export function normalizeCode(raw: string): string {
 export function loadAdminConfig(): PlatformAdminConfig {
   if (typeof window === "undefined") return { ...DEFAULT_ADMIN_CONFIG };
   try {
-    const raw = window.localStorage.getItem(ADMIN_CONFIG_KEY);
+    let raw = window.localStorage.getItem(ADMIN_CONFIG_KEY);
+    // Migration: ensure default is unlocked initially for all devices
+    const hasMigrated = window.localStorage.getItem(INITIAL_UNLOCKED_MIGRATION_KEY);
+    if (!hasMigrated) {
+      window.localStorage.setItem(INITIAL_UNLOCKED_MIGRATION_KEY, "1");
+      if (raw) {
+        try {
+          const p = JSON.parse(raw);
+          p.requireCodeGate = false;
+          raw = JSON.stringify(p);
+          window.localStorage.setItem(ADMIN_CONFIG_KEY, raw);
+        } catch {
+          // ignore
+        }
+      }
+    }
+
     if (!raw) return { ...DEFAULT_ADMIN_CONFIG };
     const parsed = JSON.parse(raw) as Partial<PlatformAdminConfig>;
     return {
       ...DEFAULT_ADMIN_CONFIG,
       ...parsed,
+      requireCodeGate: typeof parsed.requireCodeGate === "boolean" ? parsed.requireCodeGate : false,
       enabledGames: { ...DEFAULT_ENABLED_GAMES, ...(parsed.enabledGames ?? {}) },
       gameCodes: { ...DEFAULT_GAME_CODES, ...(parsed.gameCodes ?? {}) },
       masterCode: normalizeCode(parsed.masterCode || DEFAULT_MASTER_CODE) || DEFAULT_MASTER_CODE,
