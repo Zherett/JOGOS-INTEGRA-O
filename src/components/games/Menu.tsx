@@ -10,15 +10,16 @@ import {
   Swords,
   Zap,
   Award,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import type { AllStats, GameId } from "@/lib/game-storage";
 import { GAME_NAMES } from "@/lib/game-storage";
 import { GAME_REGISTRY } from "@/lib/game-registry";
 import { TOURNAMENT_MIN_LEVEL, X1_MIN_LEVEL } from "@/lib/player-profile";
 import {
-  getActiveSpecialEvents,
-  formatEventRemainingTime,
-  type SpecialEvent,
+  getAllActiveEvents,
+  type ActiveEventDisplayItem,
 } from "@/lib/custom-events";
 import integracaoPreto from "@/assets/integracao-preto.jpg";
 import semed from "@/assets/semed.png";
@@ -62,10 +63,13 @@ export function Menu({
   const canTournament = playerLevel >= TOURNAMENT_MIN_LEVEL;
   const canX1 = playerLevel >= X1_MIN_LEVEL && x1OpenNow;
 
-  const [activeEvents, setActiveEvents] = useState<SpecialEvent[]>(() => getActiveSpecialEvents());
+  const [activeEvents, setActiveEvents] = useState<ActiveEventDisplayItem[]>(() =>
+    getAllActiveEvents(),
+  );
+  const [currentEventIndex, setCurrentEventIndex] = useState(0);
 
   useEffect(() => {
-    const update = () => setActiveEvents(getActiveSpecialEvents());
+    const update = () => setActiveEvents(getAllActiveEvents());
     window.addEventListener("desafios:special-events-updated", update);
     const id = window.setInterval(update, 10000);
     return () => {
@@ -73,6 +77,15 @@ export function Menu({
       window.clearInterval(id);
     };
   }, []);
+
+  // Auto-avanço sutil quando há múltiplos eventos ativos
+  useEffect(() => {
+    if (activeEvents.length <= 1) return;
+    const timer = window.setInterval(() => {
+      setCurrentEventIndex((prev) => (prev + 1) % activeEvents.length);
+    }, 8000);
+    return () => window.clearInterval(timer);
+  }, [activeEvents.length]);
 
   return (
     <div className="space-y-8">
@@ -93,49 +106,80 @@ export function Menu({
         />
       </div>
 
-      {/* Banner de Eventos Especiais Ativos (Dobro de XP / Limite Estendido) */}
-      {activeEvents.map((ev) => {
-        const remaining = formatEventRemainingTime(ev.endsAt);
+      {/* Banner de Eventos Especiais Ativos (Carrossel com Setas e Cartão de Bônus) */}
+      {activeEvents.length > 0 && (() => {
+        const ev = activeEvents[currentEventIndex % activeEvents.length];
+        const handlePrev = () => {
+          setCurrentEventIndex((prev) => (prev - 1 + activeEvents.length) % activeEvents.length);
+        };
+        const handleNext = () => {
+          setCurrentEventIndex((prev) => (prev + 1) % activeEvents.length);
+        };
+
         return (
-          <div
-            key={ev.id}
-            className="rounded-3xl border-2 border-amber-500 bg-gradient-to-r from-amber-500/15 via-primary/10 to-amber-500/15 p-4 sm:p-5 shadow-lg animate-in fade-in-50"
-          >
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <div className="space-y-1">
+          <div className="relative overflow-hidden rounded-3xl border-2 border-amber-400 bg-gradient-to-r from-amber-500/15 via-primary/5 to-amber-500/15 p-4 sm:p-5 pl-11 pr-11 sm:pl-14 sm:pr-14 shadow-lg animate-in fade-in-50">
+            {/* Seta Esquerda do Carrossel */}
+            <button
+              type="button"
+              onClick={handlePrev}
+              title="Evento anterior"
+              aria-label="Evento anterior"
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-neutral-900/70 text-white shadow-md transition-all hover:bg-neutral-900 hover:scale-110 active:scale-95"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+
+            {/* Seta Direita do Carrossel */}
+            <button
+              type="button"
+              onClick={handleNext}
+              title="Próximo evento"
+              aria-label="Próximo evento"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-neutral-900/70 text-white shadow-md transition-all hover:bg-neutral-900 hover:scale-110 active:scale-95"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="space-y-1.5 flex-1 min-w-0">
+                {/* Linha de Badges */}
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-500 px-3 py-0.5 text-xs font-black text-white uppercase tracking-wider animate-pulse">
-                    <Zap className="h-3.5 w-3.5" /> Evento Especial Ativo
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-3 py-1 text-xs font-black text-white uppercase tracking-wider shadow-sm">
+                    <Zap className="h-3.5 w-3.5 fill-white" /> {ev.badgeLabel}
                   </span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-card border px-2.5 py-0.5 text-xs font-bold text-muted-foreground">
-                    <Clock className="h-3 w-3 text-amber-500" /> {remaining}
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/90 dark:bg-card border border-amber-200 dark:border-amber-900/50 px-3 py-1 text-xs font-bold text-slate-700 dark:text-slate-300 shadow-sm">
+                    <Clock className="h-3.5 w-3.5 text-amber-500" /> {ev.remainingTime}
                   </span>
                 </div>
-                <h3 className="font-display text-xl sm:text-2xl font-black text-foreground">
+
+                {/* Título do Evento */}
+                <h3 className="font-display text-xl sm:text-2xl lg:text-3xl font-black text-foreground tracking-tight">
                   {ev.title}
                 </h3>
-                <p className="text-xs sm:text-sm text-muted-foreground">
-                  {ev.description || "Aproveite os bônus especiais em vigor nesta temporada!"}
+
+                {/* Descrição */}
+                <p className="text-xs sm:text-sm text-muted-foreground font-medium">
+                  {ev.description}
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
-                <span className="rounded-2xl border-2 border-amber-500/40 bg-card px-3.5 py-2 text-center shadow-sm">
-                  <span className="block text-[10px] font-black uppercase text-amber-500">BÔNUS DO EVENTO</span>
-                  <span className="font-display text-base font-black text-foreground">
-                    {ev.bonusType === "dobro_xp"
-                      ? "🔥 Dobro de XP (2x XP)"
-                      : ev.bonusType === "xp_1_5x"
-                      ? "⚡ 1.5x de XP (+50%)"
-                      : `🚀 Limite ${ev.bonusValue} XP/dia`}
+              {/* Cartão de Destaque do Bônus à Direita */}
+              <div className="shrink-0 w-full sm:w-auto">
+                <div className="rounded-2xl border-2 border-amber-300 dark:border-amber-600 bg-white dark:bg-card px-5 py-3 shadow-sm text-center flex flex-col items-center justify-center min-w-[190px]">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-500">
+                    {ev.bonusTitle}
                   </span>
-                  <span className="block text-[10px] text-muted-foreground font-semibold">
-                    {ev.scope === "todos" ? "Todos os Jogos" : GAME_NAMES[ev.scope]}
+                  <span className="font-display text-base font-black text-foreground mt-0.5 whitespace-nowrap">
+                    {ev.bonusHighlight}
                   </span>
-                </span>
+                  <span className="text-[10px] text-muted-foreground font-semibold mt-0.5">
+                    {ev.bonusScopeText}
+                  </span>
+                </div>
               </div>
             </div>
 
+            {/* Medalha Comemorativa do Evento se houver */}
             {ev.linkedMedalId && (
               <div className="mt-3 flex items-center gap-2 rounded-xl bg-card/80 border p-2 text-xs">
                 <Award className="h-4 w-4 text-amber-500 shrink-0" />
@@ -145,9 +189,28 @@ export function Menu({
                 </span>
               </div>
             )}
+
+            {/* Indicadores de bolinhas quando há mais de um evento */}
+            {activeEvents.length > 1 && (
+              <div className="mt-2.5 flex justify-center gap-1.5">
+                {activeEvents.map((_, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setCurrentEventIndex(idx)}
+                    aria-label={`Ir para evento ${idx + 1}`}
+                    className={`h-1.5 rounded-full transition-all ${
+                      idx === currentEventIndex % activeEvents.length
+                        ? "w-6 bg-amber-500"
+                        : "w-1.5 bg-amber-300 dark:bg-amber-800"
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         );
-      })}
+      })()}
 
       <header className="text-center">
         <div className="inline-flex items-center gap-2 rounded-full border bg-card px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-primary shadow-sm">

@@ -1,4 +1,4 @@
-import type { GameId } from "./game-storage.ts";
+import { GAME_NAMES, type GameId } from "./game-storage.ts";
 
 export type EventBonusType = "dobro_xp" | "xp_1_5x" | "aumentar_limite_diario" | "personalizado";
 
@@ -260,13 +260,50 @@ export const DAYS_OF_WEEK = [
   { value: 6, label: "Sábado", short: "Sáb" },
 ];
 
+export const DEFAULT_RECURRING_EVENTS: RecurringEvent[] = [
+  {
+    id: "rec_sabado_xp",
+    title: "+50% de XP do SÁBADO",
+    description: "jogue qualquer partida e ganhe mais 50% de XP e um limite diário de 1500 XP",
+    scope: "todos",
+    daysOfWeek: [6], // 6 = Sábado
+    specificDates: [],
+    xpMultiplier: 1.5,
+    matchXpCap: 30,
+    dailyXpCap: 1500,
+    active: true,
+    linkedMedalId: null,
+    objectiveDescription: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "rec_domingo_xp",
+    title: "DOBRO DE XP DO DOMINGO",
+    description: "Aproveite o domingo com dobro de XP em todos os jogos e limite diário expandido para 2000 XP!",
+    scope: "todos",
+    daysOfWeek: [0], // 0 = Domingo
+    specificDates: [],
+    xpMultiplier: 2.0,
+    matchXpCap: 40,
+    dailyXpCap: 2000,
+    active: true,
+    linkedMedalId: null,
+    objectiveDescription: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  },
+];
+
 const RECURRING_EVENTS_KEY = "desafios-recurring-events-v1";
 
 export function loadRecurringEvents(): RecurringEvent[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(RECURRING_EVENTS_KEY);
-    return raw ? (JSON.parse(raw) as RecurringEvent[]) : [];
+    if (raw === null) {
+      localStorage.setItem(RECURRING_EVENTS_KEY, JSON.stringify(DEFAULT_RECURRING_EVENTS));
+      return [...DEFAULT_RECURRING_EVENTS];
+    }
+    return JSON.parse(raw) as RecurringEvent[];
   } catch {
     return [];
   }
@@ -337,4 +374,102 @@ export function createRecurringEvent(args: {
   list.unshift(ev);
   saveRecurringEvents(list);
   return ev;
+}
+
+/* ---------------------- MODELO UNIFICADO DE EXIBIÇÃO NO MENU ---------------------- */
+
+export interface ActiveEventDisplayItem {
+  id: string;
+  title: string;
+  description: string;
+  scope: "todos" | GameId;
+  badgeLabel: string;
+  remainingTime: string;
+  bonusTitle: string;
+  bonusHighlight: string;
+  bonusScopeText: string;
+  linkedMedalId?: string | null;
+  objectiveDescription?: string | null;
+  isRecurring: boolean;
+}
+
+/**
+ * Retorna todos os eventos ativos no momento (pontuais criados pelo ADM + recorrentes por dia da semana/data)
+ * formatados para exibição imediata no banner com carrossel da tela inicial.
+ */
+export function getAllActiveEvents(
+  specialEvents = getActiveSpecialEvents(),
+  recurringEvents = getActiveRecurringEvents(),
+  now = new Date(),
+): ActiveEventDisplayItem[] {
+  const items: ActiveEventDisplayItem[] = [];
+
+  // 1. Eventos Pontuais (SpecialEvent)
+  for (const ev of specialEvents) {
+    let highlight = "⚡ Bônus Especial";
+    if (ev.dailyXpCap) {
+      highlight = `🚀 Limite ${ev.dailyXpCap} XP/dia`;
+    } else if (ev.bonusType === "aumentar_limite_diario") {
+      highlight = `🚀 Limite ${ev.bonusValue ?? 2000} XP/dia`;
+    } else if (ev.xpMultiplier && ev.xpMultiplier > 1) {
+      highlight =
+        ev.xpMultiplier === 2
+          ? "🔥 Dobro de XP (2x XP)"
+          : `⚡ +${Math.round((ev.xpMultiplier - 1) * 100)}% de XP (${ev.xpMultiplier}x)`;
+    } else if (ev.bonusType === "dobro_xp") {
+      highlight = "🔥 Dobro de XP (2x XP)";
+    } else if (ev.bonusType === "xp_1_5x") {
+      highlight = "⚡ 1.5x de XP (+50%)";
+    }
+
+    items.push({
+      id: ev.id,
+      title: ev.title,
+      description: ev.description || "Aproveite os bônus especiais em vigor nesta temporada!",
+      scope: ev.scope,
+      badgeLabel: "EVENTO ESPECIAL ATIVO",
+      remainingTime: formatEventRemainingTime(ev.endsAt, now),
+      bonusTitle: "BÔNUS DO EVENTO",
+      bonusHighlight: highlight,
+      bonusScopeText: ev.scope === "todos" ? "Todos os Jogos" : (GAME_NAMES[ev.scope] ?? ev.scope),
+      linkedMedalId: ev.linkedMedalId,
+      objectiveDescription: ev.objectiveDescription,
+      isRecurring: false,
+    });
+  }
+
+  // 2. Eventos Recorrentes (RecurringEvent)
+  for (const ev of recurringEvents) {
+    const endOfDay = new Date(now);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    let highlight = "⚡ Bônus Ativo";
+    if (ev.dailyXpCap) {
+      highlight = `🚀 Limite ${ev.dailyXpCap} XP/dia`;
+    } else if (ev.xpMultiplier && ev.xpMultiplier > 1) {
+      highlight =
+        ev.xpMultiplier === 2
+          ? "🔥 Dobro de XP (2x XP)"
+          : `⚡ +${Math.round((ev.xpMultiplier - 1) * 100)}% de XP (${ev.xpMultiplier}x)`;
+    } else if (ev.matchXpCap) {
+      highlight = `🎯 Limite ${ev.matchXpCap} XP/partida`;
+    }
+
+    items.push({
+      id: ev.id,
+      title: ev.title,
+      description: ev.description || "Aproveite os bônus automáticos deste dia!",
+      scope: ev.scope,
+      badgeLabel: "EVENTO ESPECIAL ATIVO",
+      remainingTime: formatEventRemainingTime(endOfDay.toISOString(), now),
+      bonusTitle: "BÔNUS DO EVENTO",
+      bonusHighlight: highlight,
+      bonusScopeText: ev.scope === "todos" ? "Todos os Jogos" : (GAME_NAMES[ev.scope] ?? ev.scope),
+      linkedMedalId: ev.linkedMedalId,
+      objectiveDescription: ev.objectiveDescription,
+      isRecurring: true,
+    });
+  }
+
+  return items;
 }

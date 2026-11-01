@@ -7,6 +7,8 @@ import {
   getActiveEventBonuses,
   formatEventRemainingTime,
   isRecurringEventActive,
+  getAllActiveEvents,
+  DEFAULT_RECURRING_EVENTS,
   type SpecialEvent,
   type RecurringEvent,
 } from "./custom-events.ts";
@@ -178,5 +180,61 @@ describe("Eventos Personalizados Criados pelo Administrador", () => {
     };
     assert.equal(isRecurringEventActive(holidayEv, monday), true);
     assert.equal(isRecurringEventActive(holidayEv, saturday), false);
+  });
+
+  it("unifica eventos pontuais e recorrentes ativos para exibição no carrossel do menu", () => {
+    const saturday = new Date("2026-10-31T12:00:00Z");
+
+    const specialEv: SpecialEvent = {
+      id: "sp_1",
+      title: "Desafio Especial Relâmpago",
+      description: "Ganhe XP em dobro agora!",
+      scope: "todos",
+      bonusType: "dobro_xp",
+      xpMultiplier: 2,
+      dailyXpCap: 2000,
+      startsAt: "2026-10-31T00:00:00Z",
+      endsAt: "2026-10-31T23:59:59Z",
+      active: true,
+      createdAt: "2026-10-31T00:00:00Z",
+    };
+
+    const saturdayEv: RecurringEvent = {
+      id: "rec_sabado_xp",
+      title: "+50% de XP do SÁBADO",
+      description: "jogue qualquer partida e ganhe mais 50% de XP e um limite diário de 1500 XP",
+      scope: "todos",
+      daysOfWeek: [6],
+      specificDates: [],
+      xpMultiplier: 1.5,
+      dailyXpCap: 1500,
+      active: true,
+      createdAt: "2026-01-01T00:00:00Z",
+    };
+
+    const items = getAllActiveEvents([specialEv], [saturdayEv], saturday);
+    assert.equal(items.length, 2);
+
+    // Evento pontual
+    assert.equal(items[0].title, "Desafio Especial Relâmpago");
+    assert.equal(items[0].bonusTitle, "BÔNUS DO EVENTO");
+    assert.equal(items[0].bonusHighlight, "🚀 Limite 2000 XP/dia");
+    assert.equal(items[0].bonusScopeText, "Todos os Jogos");
+
+    // Evento recorrente de sábado
+    assert.equal(items[1].title, "+50% de XP do SÁBADO");
+    assert.equal(items[1].bonusTitle, "BÔNUS DO EVENTO");
+    assert.equal(items[1].bonusHighlight, "🚀 Limite 1500 XP/dia");
+    assert.equal(items[1].bonusScopeText, "Todos os Jogos");
+    assert.equal(items[1].isRecurring, true);
+  });
+
+  it("possui eventos recorrentes pré-configurados para os fins de semana (Sábado e Domingo)", () => {
+    assert.ok(DEFAULT_RECURRING_EVENTS.length >= 2);
+    const sabado = DEFAULT_RECURRING_EVENTS.find((e) => e.daysOfWeek.includes(6));
+    assert.ok(sabado);
+    assert.equal(sabado?.title, "+50% de XP do SÁBADO");
+    assert.equal(sabado?.dailyXpCap, 1500);
+    assert.equal(sabado?.xpMultiplier, 1.5);
   });
 });
