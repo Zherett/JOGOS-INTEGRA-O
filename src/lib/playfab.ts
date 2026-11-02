@@ -70,6 +70,7 @@ const REGISTRY_KEY = "desafios-playfab-registry-v1";
 const ADMIN_AUTH_KEY = "desafios-playfab-admin-auth-v1";
 const ADMIN_PIN_KEY = "desafios-playfab-admin-pin-v1";
 export const ROSTER_SHARED_GROUP_ID = "SEMED_STUDENT_ROSTER_V1";
+export const ADMIN_CONFIG_SHARED_GROUP_ID = "SEMED_PLATFORM_CONFIG_V1";
 
 export interface PlayerProfile {
   id: string;
@@ -431,44 +432,69 @@ export function executeRankingReset(options: {
 
 export async function syncAdminConfigFromPlayFab(sessionTicket?: string): Promise<PlatformAdminConfig> {
   const localCfg = checkAndApplyScheduledReset();
-  const ticket = sessionTicket ?? loadStoredSession()?.sessionTicket;
-  if (!ticket || !isPlayFabConfigured()) return localCfg;
+  if (!isPlayFabConfigured()) return localCfg;
 
-  const { data } = await callPlayFabClient<{ Data?: Record<string, string> }>(
-    "GetTitleData",
-    { Keys: ["PlatformAdminConfig"] },
-    ticket,
-  );
+  const ticket = sessionTicket ?? (await getAdminPlayFabTicket()) ?? loadStoredSession()?.sessionTicket;
+  if (!ticket) return localCfg;
 
-  const rawJson = data?.Data?.PlatformAdminConfig;
-  if (rawJson) {
-    try {
-      const remoteCfg = JSON.parse(rawJson) as PlatformAdminConfig;
-      if (
-        !localCfg.updatedAt ||
-        new Date(remoteCfg.updatedAt).getTime() > new Date(localCfg.updatedAt).getTime()
-      ) {
-        return saveAdminConfig({ ...localCfg, ...remoteCfg });
+  try {
+    await callPlayFabClient("CreateSharedGroup", { SharedGroupId: ADMIN_CONFIG_SHARED_GROUP_ID }, ticket);
+    const res = await callPlayFabClient<{ Data?: Record<string, { Value: string }> }>(
+      "GetSharedGroupData",
+      { SharedGroupId: ADMIN_CONFIG_SHARED_GROUP_ID },
+      ticket,
+    );
+
+    const rawJson = res.data?.Data?.PlatformAdminConfig?.Value;
+    if (rawJson) {
+      try {
+        const remoteCfg = JSON.parse(rawJson) as PlatformAdminConfig;
+        if (
+          !localCfg.updatedAt ||
+          !remoteCfg.updatedAt ||
+          new Date(remoteCfg.updatedAt).getTime() >= new Date(localCfg.updatedAt).getTime()
+        ) {
+          return saveAdminConfig({
+            ...localCfg,
+            ...remoteCfg,
+            enabledGames: {
+              ...DEFAULT_ENABLED_GAMES,
+              ...(remoteCfg.enabledGames ?? {}),
+            },
+          });
+        }
+      } catch {
+        /* ignore malformed JSON */
       }
-    } catch {
-      /* ignore malformed JSON */
     }
+  } catch {
+    /* ignore network / cloud sync issues and keep localCfg */
   }
   return localCfg;
 }
 
 export async function pushAdminConfigToPlayFab(config: PlatformAdminConfig): Promise<PlatformAdminConfig> {
   const saved = saveAdminConfig(config);
-  const session = loadStoredSession();
-  if (session?.sessionTicket && isPlayFabConfigured()) {
-    await callPlayFabClient(
-      "ExecuteCloudScript",
-      {
-        FunctionName: "SavePlatformAdminConfig",
-        FunctionParameter: { config: saved },
-      },
-      session.sessionTicket,
-    );
+  if (!isPlayFabConfigured()) return saved;
+
+  try {
+    const ticket = (await getAdminPlayFabTicket()) ?? loadStoredSession()?.sessionTicket;
+    if (ticket) {
+      await callPlayFabClient("CreateSharedGroup", { SharedGroupId: ADMIN_CONFIG_SHARED_GROUP_ID }, ticket);
+      await callPlayFabClient(
+        "UpdateSharedGroupData",
+        {
+          SharedGroupId: ADMIN_CONFIG_SHARED_GROUP_ID,
+          Data: {
+            PlatformAdminConfig: JSON.stringify(saved),
+          },
+          Permission: "Public",
+        },
+        ticket,
+      );
+    }
+  } catch (err) {
+    console.warn("Falha ao salvar configuração global no PlayFab:", err);
   }
   return saved;
 }

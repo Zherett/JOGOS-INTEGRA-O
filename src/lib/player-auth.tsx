@@ -119,15 +119,22 @@ export function PlayerAuthProvider({ children }: { children: ReactNode }) {
     void loadState();
   }, [loadState]);
 
-  // Periodically check if a scheduled ADM reset has become due
+  // Periodically check if a scheduled ADM reset has become due or if focus changed
   useEffect(() => {
+    const onFocus = () => {
+      void syncAdminConfigFromPlayFab().then((cfg) => setAdminConfig(cfg));
+    };
+    window.addEventListener("focus", onFocus);
     const id = window.setInterval(() => {
       const cfg = loadAdminConfig();
       if (cfg.scheduledResetAt && Date.now() >= new Date(cfg.scheduledResetAt).getTime()) {
         void loadState();
       }
     }, 15_000);
-    return () => window.clearInterval(id);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.clearInterval(id);
+    };
   }, [loadState]);
 
   const signUp = useCallback(async (data: SignUpData) => {
