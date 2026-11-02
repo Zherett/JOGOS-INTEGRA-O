@@ -128,6 +128,16 @@ function Index() {
     refreshLocal();
   }, [view]);
 
+  // Instantly re-render when ADM updates enabled/disabled games or lock gates
+  useEffect(() => {
+    const handleCfgUpdate = () => {
+      refreshLocal();
+      void auth.refresh();
+    };
+    window.addEventListener("desafios:admin-config-updated", handleCfgUpdate);
+    return () => window.removeEventListener("desafios:admin-config-updated", handleCfgUpdate);
+  }, [auth]);
+
   // Keep logged-in student visible in the online players list across the platform
   useEffect(() => {
     if (!auth.profile) return;
@@ -169,7 +179,8 @@ function Index() {
   }, [mounted, stats, auth.stats]);
 
   const cfg = auth.adminConfig;
-  const visibleUnlockedCount = unlocked.filter((id) => cfg.enabledGames[id]).length;
+  const isGameEnabled = (id: GameId) => Boolean(cfg.enabledGames && cfg.enabledGames[id] === true);
+  const visibleUnlockedCount = unlocked.filter((id) => isGameEnabled(id)).length;
   const showGate =
     mounted &&
     !auth.loading &&

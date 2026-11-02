@@ -225,6 +225,9 @@ export function saveAdminConfig(config: PlatformAdminConfig): PlatformAdminConfi
       if (Array.isArray(config.recurringEvents)) {
         saveRecurringEvents(config.recurringEvents);
       }
+      window.dispatchEvent(
+        new CustomEvent("desafios:admin-config-updated", { detail: normalized }),
+      );
     } catch {
       /* ignore */
     }

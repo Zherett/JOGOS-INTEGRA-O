@@ -256,13 +256,45 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     flashSaved("Jogos e códigos salvos com sucesso!");
   }
 
-  function restoreDefaultCodes() {
-    setDraft((prev) => ({
-      ...prev,
+  async function handleToggleRequireCodeGate() {
+    const nextState = !draft.requireCodeGate;
+    const updated: PlatformAdminConfig = { ...draft, requireCodeGate: nextState };
+    setDraft(updated);
+    await auth.updateAdminConfig(updated);
+    onConfigSaved?.();
+    flashSaved(
+      nextState
+        ? `🔒 Jogos travados com código Master (${draft.masterCode || "SEMED26"})!`
+        : "🔓 Jogos liberados para todos sem necessidade de código!",
+    );
+  }
+
+  async function handleToggleGame(id: GameId, nextVal: boolean) {
+    const updated: PlatformAdminConfig = {
+      ...draft,
+      enabledGames: { ...draft.enabledGames, [id]: nextVal },
+    };
+    setDraft(updated);
+    await auth.updateAdminConfig(updated);
+    onConfigSaved?.();
+    flashSaved(
+      nextVal
+        ? `✅ "${GAME_NAMES[id]}" ativado e visível na página inicial!`
+        : `🚫 "${GAME_NAMES[id]}" desmarcado e ocultado da página inicial!`,
+    );
+  }
+
+  async function restoreDefaultCodes() {
+    const restored: PlatformAdminConfig = {
+      ...draft,
       enabledGames: { ...DEFAULT_ENABLED_GAMES },
       gameCodes: { ...DEFAULT_GAME_CODES },
       masterCode: DEFAULT_MASTER_CODE,
-    }));
+    };
+    setDraft(restored);
+    await auth.updateAdminConfig(restored);
+    onConfigSaved?.();
+    flashSaved("Códigos e jogos restaurados para o padrão com sucesso!");
   }
 
   async function copyCodesList() {
@@ -728,10 +760,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                     <Button
                       type="button"
                       variant={draft.requireCodeGate ? "default" : "outline"}
-                      onClick={() => {
-                        const nextState = !draft.requireCodeGate;
-                        setDraft({ ...draft, requireCodeGate: nextState });
-                      }}
+                      onClick={() => void handleToggleRequireCodeGate()}
                       className={`shrink-0 rounded-xl font-black text-xs gap-1.5 shadow-sm ${
                         draft.requireCodeGate
                           ? "bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -894,36 +923,43 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                 </div>
 
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">
-                    <span>Jogo (Ativar / Desativar)</span>
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">
+                    <div className="flex items-center gap-2">
+                      <span>Jogo (Ativar / Desativar)</span>
+                      <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-extrabold text-primary lowercase tracking-normal">
+                        {ALL_GAME_IDS.filter((id) => Boolean(draft.enabledGames[id])).length} de {ALL_GAME_IDS.length} visíveis na página inicial
+                      </span>
+                    </div>
                     <span>Código de Acesso</span>
                   </div>
 
                   {ALL_GAME_IDS.map((id) => {
-                    const enabled = draft.enabledGames[id];
+                    const enabled = Boolean(draft.enabledGames[id]);
                     return (
                       <div
                         key={id}
                         className={`flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 rounded-2xl border p-3 transition-colors ${
-                          enabled ? "bg-card" : "bg-muted/40 opacity-75"
+                          enabled ? "bg-card border-primary/20" : "bg-muted/40 opacity-70 border-dashed"
                         }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           <Switch
                             checked={enabled}
-                            onCheckedChange={(v) =>
-                              setDraft({
-                                ...draft,
-                                enabledGames: { ...draft.enabledGames, [id]: v },
-                              })
-                            }
+                            onCheckedChange={(v) => void handleToggleGame(id, v)}
                           />
                           <div className="min-w-0">
-                            <div className="truncate font-display text-sm font-bold">
+                            <div className="truncate font-display text-sm font-bold flex items-center gap-2">
                               {GAME_NAMES[id]}
+                              {!enabled && (
+                                <span className="rounded bg-destructive/15 text-destructive px-1.5 py-0.2 text-[9px] font-extrabold uppercase tracking-normal">
+                                  Oculto
+                                </span>
+                              )}
                             </div>
                             <div className="text-[11px] text-muted-foreground">
-                              {enabled ? "Liberado e visível no menu" : "Desmarcado (Oculto da lista para os alunos)"}
+                              {enabled
+                                ? "Liberado e visível na página inicial"
+                                : "Desmarcado (Oculto da página inicial para todos)"}
                             </div>
                           </div>
                         </div>

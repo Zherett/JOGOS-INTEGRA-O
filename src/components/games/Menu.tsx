@@ -63,8 +63,9 @@ export function Menu({
   onOpenX1Arena,
   onOpenWeeklyTournament,
 }: Props) {
+  const isGameEnabled = (id: GameId) => Boolean(enabledGames && enabledGames[id] === true);
   const visible = GAME_REGISTRY.filter(
-    (g) => enabledGames[g.id] && (!requireCodeGate || unlocked.includes(g.id)),
+    (g) => isGameEnabled(g.id) && (!requireCodeGate || unlocked.includes(g.id)),
   );
   const canTournament = playerLevel >= TOURNAMENT_MIN_LEVEL;
   const canX1 = playerLevel >= X1_MIN_LEVEL && x1OpenNow;

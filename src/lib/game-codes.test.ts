@@ -43,6 +43,13 @@ describe("Liberação Inicial de Jogos e Controle de Bloqueio com SEMED26", () =
 
     const res = redeemCode(customConfig.gameCodes.logica, customConfig);
     assert.equal(res.status, "disabled");
+
+    // Master code SEMED26 também ignora jogos desmarcados
+    const allRes = redeemCode("SEMED26", customConfig);
+    if (allRes.status === "all") {
+      assert.equal(allRes.games.includes("logica"), false);
+      assert.equal(allRes.games.includes("cartesiano"), true);
+    }
   });
 
   it("salva e carrega configuração permitindo travar com SEMED26 e destravar", () => {
