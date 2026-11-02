@@ -57,10 +57,10 @@ export function isEtapa3OrOlder(birthdate?: string | null, now = new Date()): bo
 
 /**
  * Returns available school options based on age:
- * - Ao ultrapassar os 15 anos: nenhuma escola oficial deve ser exibida (apenas "Nenhuma" e "Outro").
- * - Ao ultrapassar os 11 anos (12 a 14 anos): escolas de 5º ano NÃO devem aparecer para serem selecionadas
+ * - Ao ultrapassar os 15 anos (>= 15 anos): nenhuma escola oficial deve ser exibida (apenas "Nenhuma" e "Outro").
+ * - A partir dos 11 anos (>= 11 anos): escolas de 5º ano NÃO devem aparecer para serem selecionadas
  *   (apenas "Raimundo Bezerra", "Nenhuma" e "Outro").
- * - Até 11 anos: escolas de 5º ano aparecem normalmente.
+ * - Até 10 anos: escolas de 5º ano aparecem normalmente.
  */
 export function getAvailableSchoolsForAge(
   birthdate?: string | null,
@@ -77,15 +77,14 @@ export function getAvailableSchoolsForAge(
     ) as unknown as typeof SCHOOLS;
   }
 
-  // 2. Ao ultrapassar 11 anos (> 11 anos, ex: 12, 13, 14):
-  // Não deve aparecer escolas de 5º ano para serem selecionadas
-  if (age > 11) {
+  // 2. A partir de 11 anos (>= 11 anos): não deve aparecer escolas de 5º ano
+  if (age >= 11) {
     return SCHOOLS.filter(
       (s) => !is5thGradeSchool(s.name),
     ) as unknown as typeof SCHOOLS;
   }
 
-  // 3. Até 11 anos: escolas de 5º ano aparecem normalmente
+  // 3. Até 10 anos: escolas de 5º ano aparecem normalmente
   return SCHOOLS;
 }
 
@@ -358,73 +357,40 @@ export function stageFromAge(age: number): AgeStageInfo {
 }
 
 /**
- * Calculates the player's stage considering the school as the primary factor:
- * - Escolas Raimunda Cruz, Ursulina Souza, Maria de Nazaré, Elisângela Litaiff -> 1ª Etapa automaticamente
- * - Escola Raimundo Bezerra -> 2ª Etapa automaticamente (ou 3ª Etapa se idade >= 15)
- * - Se escola não definida: quem tem até 10 anos ou completa 11 até março -> 1ª Etapa; 11..14 anos -> 2ª Etapa; 15+ anos -> 3ª Etapa.
+ * Calculates the player's stage considering their actual age as the primary factor:
+ * - Idade >= 15 anos -> 3ª Etapa (Jovens e Adultos / Comunidade)
+ * - Idade 11 a 14 anos -> 2ª Etapa (6º ao 9º ano / Raimundo Bezerra)
+ * - Idade <= 10 anos -> 1ª Etapa (5º ano)
+ * - Se data não informada: usa a escola como critério auxiliar
  */
 export function stageFromBirthdate(
   birthdate?: string | null,
   now = new Date(),
   school?: string | null,
 ): AgeStageInfo {
-  // 0. Jogadores com 15 anos ou mais (Etapa 3) são sempre da 3ª Etapa (Comunidade / Outro)
-  // e não podem ser alocados em turmas ou escolas do Ensino Fundamental.
-  if (isEtapa3OrOlder(birthdate, now)) {
-    return AGE_STAGES[2];
-  }
-
-  // 1. A Escola é o elemento principal para definir a etapa (para alunos com até 14 anos)
-  if (school) {
-    const s = school.trim().toLowerCase();
-    // Escolas da 1ª Etapa (5º ano): Raimunda Cruz, Ursulina Souza, Maria de Nazaré, Elisângela Litaiff
-    if (
-      s.includes("cruz") ||
-      s.includes("ursulina") ||
-      s.includes("nazare") ||
-      s.includes("nazaré") ||
-      s.includes("litaiff")
-    ) {
-      return AGE_STAGES[0];
+  // Se não informou data de nascimento, usa escola informada como fallback
+  if (!birthdate) {
+    if (school) {
+      if (is5thGradeSchool(school)) return AGE_STAGES[0];
+      if (school.toLowerCase().includes("bezerra")) return AGE_STAGES[1];
     }
-    // Escola da 2ª Etapa (6º ao 9º ano): Raimundo Bezerra
-    if (s.includes("bezerra")) {
-      return AGE_STAGES[1];
-    }
-  }
-
-  // 2. Critério por idade/data de nascimento:
-  // "se ele tiver até 10 anos entra na etapa 1, e ou completar 11 até março."
-  if (!birthdate) return AGE_STAGES[0];
-  const b = new Date(`${birthdate}T00:00:00`);
-  if (Number.isNaN(b.getTime())) return AGE_STAGES[0];
-
-  const currentYear = now.getFullYear();
-  const birthYear = b.getFullYear();
-  const birthMonth = b.getMonth(); // 0 = Jan, 1 = Fev, 2 = Mar
-  const birthDay = b.getDate();
-
-  const turningAgeInCurrentYear = currentYear - birthYear;
-
-  // Idade completada até 31 de março do ano corrente
-  let ageOnMarch31 = currentYear - birthYear;
-  if (birthMonth > 2 || (birthMonth === 2 && birthDay > 31)) {
-    ageOnMarch31--;
-  }
-
-  // Completa 11 até março (Janeiro, Fevereiro ou Março)
-  const completes11ByMarch = turningAgeInCurrentYear === 11 && birthMonth <= 2;
-  const isUpTo10 = ageOnMarch31 <= 10;
-
-  if (isUpTo10 || completes11ByMarch || turningAgeInCurrentYear <= 10) {
     return AGE_STAGES[0];
   }
 
-  if (turningAgeInCurrentYear <= 14) {
+  const age = ageFrom(birthdate, now);
+
+  // 0. Jogadores com 15 anos ou mais (Etapa 3) são sempre da 3ª Etapa (Comunidade / Outro)
+  if (age >= 15 || isEtapa3OrOlder(birthdate, now)) {
+    return AGE_STAGES[2];
+  }
+
+  // 1. Jogadores com 11 a 14 anos pertencem estritamente à 2ª Etapa (6º ao 9º ano)
+  if (age >= 11) {
     return AGE_STAGES[1];
   }
 
-  return AGE_STAGES[2];
+  // 2. Alunos com até 10 anos pertencem à 1ª Etapa (5º ano)
+  return AGE_STAGES[0];
 }
 
 export function stageForPlayer(

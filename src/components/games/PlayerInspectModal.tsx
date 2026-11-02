@@ -46,6 +46,16 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
     }
   }, [open, playerId]);
 
+  useEffect(() => {
+    if (isEditing) {
+      const available = getAvailableSchoolsForAge(editBirthdate);
+      if (!available.some((s) => s.name === editSchool)) {
+        setEditSchool("Nenhuma");
+        setEditTurma("");
+      }
+    }
+  }, [editBirthdate, editSchool, isEditing]);
+
   if (!profile) return null;
 
   const age = ageFrom(profile.birthdate);
@@ -210,7 +220,7 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
                       if (a >= 15 && isOfficialSemedSchool(editSchool)) {
                         setEditSchool("Nenhuma");
                         setEditTurma("");
-                      } else if (a > 11 && is5thGradeSchool(editSchool)) {
+                      } else if (a >= 11 && is5thGradeSchool(editSchool)) {
                         setEditSchool("Nenhuma");
                         setEditTurma("");
                       }

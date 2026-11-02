@@ -63,9 +63,17 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
   const generatedSignupPassword = birthdate ? passwordFromBirthdate(birthdate) : "";
   const calculatedAge = birthdate ? ageFrom(birthdate) : null;
   const isOver15 = calculatedAge !== null ? (calculatedAge >= 15 || isEtapa3OrOlder(birthdate)) : false;
-  const isOver11 = calculatedAge !== null ? calculatedAge > 11 : false;
+  const isOver11 = calculatedAge !== null ? calculatedAge >= 11 : false;
   const availableSchools = getAvailableSchoolsForAge(birthdate);
   const isNoSchoolOrCommunity = school === "Nenhuma" || school === "Outro" || isOver15;
+
+  // Auto-reset school and turma if current selection is not available for this age
+  useEffect(() => {
+    if (!availableSchools.some((s) => s.name === school)) {
+      setSchool("Nenhuma");
+      setTurma("");
+    }
+  }, [availableSchools, school]);
 
   function handleBirthdateChange(val: string) {
     setBirthdate(val);
@@ -75,7 +83,7 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
         setSchool("Nenhuma");
       }
       setTurma("");
-    } else if (age > 11) {
+    } else if (age >= 11) {
       if (is5thGradeSchool(school)) {
         setSchool("Nenhuma");
         setTurma("");
@@ -429,7 +437,7 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
                       </div>
                     ) : isOver11 ? (
                       <div className="rounded-xl border border-primary/30 bg-primary/10 p-2.5 text-xs text-primary font-medium">
-                        ℹ️ Alunos com mais de 11 anos não podem selecionar escolas de 5º ano. Para os anos finais (6º ao 9º ano), selecione a <b>Escola Municipal Raimundo Bezerra</b> ou a categoria <b>Outro</b>.
+                        ℹ️ Alunos com 11 anos ou mais pertencem à <b>2ª Etapa (6º ao 9º ano)</b> e não podem selecionar escolas de 5º ano. Para os anos finais, selecione a <b>Escola Municipal Raimundo Bezerra</b> ou a categoria <b>Outro</b>.
                       </div>
                     ) : null}
 
@@ -510,8 +518,8 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
                           <Sparkles className="h-3.5 w-3.5 text-accent shrink-0" />
                           Faixa Etária alocada:{" "}
                           <span className="rounded-full bg-card px-2 py-0.5 text-[11px] font-extrabold text-primary">
-                            {stageFromBirthdate(birthdate, new Date(), school).emoji}{" "}
-                            {stageFromBirthdate(birthdate, new Date(), school).label} ({ageFrom(birthdate)} anos)
+                            {stageFromBirthdate(birthdate, new Date()).emoji}{" "}
+                            {stageFromBirthdate(birthdate, new Date()).label} ({calculatedAge} anos)
                           </span>
                         </div>
                         <p className="text-[11px] text-muted-foreground">
