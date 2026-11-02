@@ -247,14 +247,22 @@ describe("Perfil do Jogador, Escolas, Trava de Níveis (1..10) e Limite Diário 
     // Aluno com 10 anos (nascido em 2016)
     assert.equal(isEtapa3OrOlder("2016-05-10", refDate), false);
 
-    // Escolas disponíveis para quem tem 15+ anos: APENAS 'Nenhuma' e 'Outro'
+    // Escolas disponíveis para quem tem mais de 15 anos: APENAS 'Nenhuma' e 'Outro' (nenhuma escola exibida)
     const schoolsOver15 = getAvailableSchoolsForAge("2001-05-10", refDate).map((s) => s.name);
     assert.deepEqual(schoolsOver15, ["Nenhuma", "Outro"]);
 
-    // Para quem tem menos de 15 anos: todas as opções disponíveis
-    const schoolsUnder15 = getAvailableSchoolsForAge("2014-05-10", refDate).map((s) => s.name);
-    assert.equal(schoolsUnder15.includes("Raimundo Bezerra"), true);
-    assert.equal(schoolsUnder15.includes("Elisângela Litaiff"), true);
+    // Para quem tem mais de 11 anos (ex: 12 anos em 2014): escolas de 5º ano NÃO devem aparecer
+    const schoolsOver11 = getAvailableSchoolsForAge("2014-05-10", refDate).map((s) => s.name);
+    assert.equal(schoolsOver11.includes("Raimundo Bezerra"), true);
+    assert.equal(schoolsOver11.includes("Elisângela Litaiff"), false);
+    assert.equal(schoolsOver11.includes("Raimunda Cruz"), false);
+    assert.equal(schoolsOver11.includes("Maria de Nazaré"), false);
+    assert.equal(schoolsOver11.includes("Ursulina Souza"), false);
+
+    // Para quem tem até 11 anos (ex: 10 anos em 2016): escolas de 5º ano aparecem normalmente
+    const schoolsUpTo11 = getAvailableSchoolsForAge("2016-05-10", refDate).map((s) => s.name);
+    assert.equal(schoolsUpTo11.includes("Elisângela Litaiff"), true);
+    assert.equal(schoolsUpTo11.includes("Raimunda Cruz"), true);
 
     // Aluno com 15+ anos é SEMPRE alocado na Etapa 3 (Comunidade)
     assert.equal(stageFromBirthdate("2001-05-10", refDate, "Elisângela Litaiff").id, "etapa_3");

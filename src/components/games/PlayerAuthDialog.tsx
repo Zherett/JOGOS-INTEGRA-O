@@ -10,6 +10,7 @@ import {
   ageFrom,
   formatFullNameUpper,
   getAvailableSchoolsForAge,
+  is5thGradeSchool,
   isEtapa3OrOlder,
   isOfficialSemedSchool,
   passwordFromBirthdate,
@@ -60,17 +61,25 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
   }, [open]);
 
   const generatedSignupPassword = birthdate ? passwordFromBirthdate(birthdate) : "";
-  const isOver15 = isEtapa3OrOlder(birthdate);
+  const calculatedAge = birthdate ? ageFrom(birthdate) : null;
+  const isOver15 = calculatedAge !== null ? (calculatedAge >= 15 || isEtapa3OrOlder(birthdate)) : false;
+  const isOver11 = calculatedAge !== null ? calculatedAge > 11 : false;
   const availableSchools = getAvailableSchoolsForAge(birthdate);
   const isNoSchoolOrCommunity = school === "Nenhuma" || school === "Outro" || isOver15;
 
   function handleBirthdateChange(val: string) {
     setBirthdate(val);
-    if (isEtapa3OrOlder(val)) {
+    const age = val ? ageFrom(val) : 0;
+    if (age >= 15 || isEtapa3OrOlder(val)) {
       if (isOfficialSemedSchool(school)) {
         setSchool("Nenhuma");
       }
       setTurma("");
+    } else if (age > 11) {
+      if (is5thGradeSchool(school)) {
+        setSchool("Nenhuma");
+        setTurma("");
+      }
     }
   }
 
@@ -109,8 +118,15 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
     }
 
     // Tab === "criar"
-    const isPlayerOver15 = isEtapa3OrOlder(birthdate);
-    const resolvedSchool = isPlayerOver15 && isOfficialSemedSchool(school) ? "Nenhuma" : school;
+    const submitAge = birthdate ? ageFrom(birthdate) : 0;
+    const isPlayerOver15 = submitAge >= 15 || isEtapa3OrOlder(birthdate);
+    const isPlayerOver11 = submitAge > 11;
+    let resolvedSchool = school;
+    if (isPlayerOver15 && isOfficialSemedSchool(school)) {
+      resolvedSchool = "Nenhuma";
+    } else if (isPlayerOver11 && is5thGradeSchool(school)) {
+      resolvedSchool = "Nenhuma";
+    }
     const isNoSchool = resolvedSchool === "Nenhuma" || resolvedSchool === "Outro" || isPlayerOver15;
     const finalGrade = isNoSchool ? null : (schoolNeedsGrade(resolvedSchool) ? grade : "5º ano");
     const finalTurma = isNoSchool ? null : (turma.trim() || null);
@@ -407,11 +423,15 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
                       </select>
                     </div>
 
-                    {isOver15 && (
+                    {isOver15 ? (
                       <div className="rounded-xl border border-accent/40 bg-accent/10 p-2.5 text-xs text-accent-foreground font-medium">
                         ℹ️ Pela sua data de nascimento (15 anos ou mais • 3ª Etapa), você participa na categoria <b>Comunidade / Outro</b>. As escolas municipais da SEMED (5º ao 9º ano) são restritas para alunos de até 14 anos.
                       </div>
-                    )}
+                    ) : isOver11 ? (
+                      <div className="rounded-xl border border-primary/30 bg-primary/10 p-2.5 text-xs text-primary font-medium">
+                        ℹ️ Alunos com mais de 11 anos não podem selecionar escolas de 5º ano. Para os anos finais (6º ao 9º ano), selecione a <b>Escola Municipal Raimundo Bezerra</b> ou a categoria <b>Outro</b>.
+                      </div>
+                    ) : null}
 
                     {!isNoSchoolOrCommunity && schoolNeedsGrade(school) && (
                       <div className="space-y-1.5">

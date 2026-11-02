@@ -26,6 +26,7 @@ import {
   fullNameSlug,
   getLocalDateKey,
   isEtapa3OrOlder,
+  is5thGradeSchool,
   isMatchVictory,
   isOfficialSemedSchool,
   isValidSchool,
@@ -797,8 +798,15 @@ export async function playfabSignUp(data: SignUpData): Promise<{
     }
   }
 
-  const isOver15 = isEtapa3OrOlder(data.birthdate);
-  const resolvedSchool = isOver15 && isOfficialSemedSchool(data.school) ? "Nenhuma" : data.school;
+  const age = ageFrom(data.birthdate);
+  const isOver15 = age >= 15 || isEtapa3OrOlder(data.birthdate);
+  const isOver11 = age > 11;
+  let resolvedSchool = data.school;
+  if (isOver15 && isOfficialSemedSchool(data.school)) {
+    resolvedSchool = "Nenhuma";
+  } else if (isOver11 && is5thGradeSchool(data.school)) {
+    resolvedSchool = "Nenhuma";
+  }
   const isNoSchool = resolvedSchool === "Nenhuma" || resolvedSchool === "Outro" || isOver15;
   const resolvedGrade = isNoSchool ? null : data.grade;
   const resolvedTurma = isNoSchool ? null : data.turma;
@@ -1461,11 +1469,28 @@ export async function updateStudentProfileByAdmin(args: {
   if (args.school !== undefined) {
     acc.profile.school = args.school;
   }
+
+  // Validate age restrictions
+  const currentAge = ageFrom(acc.profile.birthdate);
+  if (currentAge >= 15 || isEtapa3OrOlder(acc.profile.birthdate)) {
+    if (isOfficialSemedSchool(acc.profile.school)) {
+      acc.profile.school = "Nenhuma";
+    }
+    acc.profile.turma = null;
+    acc.profile.grade = null;
+  } else if (currentAge > 11) {
+    if (is5thGradeSchool(acc.profile.school)) {
+      acc.profile.school = "Nenhuma";
+      acc.profile.turma = null;
+      acc.profile.grade = null;
+    }
+  }
+
   if (args.turma !== undefined) {
-    acc.profile.turma = args.turma;
+    acc.profile.turma = acc.profile.school === "Nenhuma" || acc.profile.school === "Outro" ? null : args.turma;
   }
   if (args.grade !== undefined) {
-    acc.profile.grade = args.grade;
+    acc.profile.grade = acc.profile.school === "Nenhuma" || acc.profile.school === "Outro" ? null : args.grade;
   }
   if (args.fullName) {
     acc.profile.full_name = formatFullNameUpper(args.fullName);

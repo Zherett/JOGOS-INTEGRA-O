@@ -54,6 +54,7 @@ describe("Eventos Personalizados Criados pelo Administrador", () => {
   });
 
   it("calcula o multiplicador de XP para todos os jogos ou para jogo específico", () => {
+    const testNow = new Date("2026-10-31T12:00:00Z");
     const evTodos: SpecialEvent = {
       id: "ev_all",
       title: "Festival da SEMED",
@@ -66,7 +67,7 @@ describe("Eventos Personalizados Criados pelo Administrador", () => {
       createdAt: "2026-10-31T00:00:00Z",
     };
 
-    const res = calculateEventXpMultiplier("logica", [evTodos]);
+    const res = calculateEventXpMultiplier("logica", [evTodos], testNow);
     assert.equal(res.multiplier, 2);
     assert.equal(res.eventName, "Festival da SEMED");
 
@@ -83,14 +84,15 @@ describe("Eventos Personalizados Criados pelo Administrador", () => {
       createdAt: "2026-10-31T00:00:00Z",
     };
 
-    const resLogica = calculateEventXpMultiplier("logica", [evCartesiano]);
+    const resLogica = calculateEventXpMultiplier("logica", [evCartesiano], testNow);
     assert.equal(resLogica.multiplier, 1);
 
-    const resCartesiano = calculateEventXpMultiplier("cartesiano", [evCartesiano]);
+    const resCartesiano = calculateEventXpMultiplier("cartesiano", [evCartesiano], testNow);
     assert.equal(resCartesiano.multiplier, 2);
   });
 
   it("sobrescreve o limite diário de XP caso haja evento de aumento", () => {
+    const testNow = new Date("2026-10-31T12:00:00Z");
     const evCap: SpecialEvent = {
       id: "ev_cap",
       title: "Mega Limite de XP",
@@ -104,11 +106,12 @@ describe("Eventos Personalizados Criados pelo Administrador", () => {
       createdAt: "2026-10-31T00:00:00Z",
     };
 
-    const cap = getEffectiveDailyXpCap(1000, [evCap]);
+    const cap = getEffectiveDailyXpCap(1000, [evCap], testNow);
     assert.equal(cap, 2500);
   });
 
   it("combina até 3 linhas simultâneas de bônus em eventos especiais (multiplicador, limite por partida e limite diário)", () => {
+    const testNow = new Date("2026-10-31T12:00:00Z");
     const multiBonusEv: SpecialEvent = {
       id: "ev_triple",
       title: "Super Fim de Semana Turbinado",
@@ -124,7 +127,7 @@ describe("Eventos Personalizados Criados pelo Administrador", () => {
       createdAt: "2026-10-31T00:00:00Z",
     };
 
-    const bonuses = getActiveEventBonuses("logica", 1000, 20, [multiBonusEv]);
+    const bonuses = getActiveEventBonuses("logica", 1000, 20, [multiBonusEv], testNow);
     assert.equal(bonuses.multiplier, 2);
     assert.equal(bonuses.matchXpCap, 50);
     assert.equal(bonuses.dailyXpCap, 2500);

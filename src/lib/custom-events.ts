@@ -176,8 +176,9 @@ export function calculateCumulativeActiveBonuses(
 export function calculateEventXpMultiplier(
   gameId: GameId,
   activeEvents = getActiveSpecialEvents(),
+  now = new Date(),
 ): { multiplier: number; eventName?: string } {
-  const bonuses = getActiveEventBonuses(gameId, 1000, 20, activeEvents);
+  const bonuses = getActiveEventBonuses(gameId, 1000, 20, activeEvents, now);
   return {
     multiplier: bonuses.multiplier,
     eventName: bonuses.activeEventNames[0],

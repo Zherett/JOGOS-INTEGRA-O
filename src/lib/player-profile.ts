@@ -25,9 +25,22 @@ export const OFFICIAL_SEMED_SCHOOLS = [
 
 export type OfficialSemedSchoolName = (typeof OFFICIAL_SEMED_SCHOOLS)[number];
 
+export const FIFTH_GRADE_SCHOOLS = [
+  "Elisângela Litaiff",
+  "Raimunda Cruz",
+  "Maria de Nazaré",
+  "Ursulina Souza",
+] as const;
+
 export function isOfficialSemedSchool(school?: string | null): boolean {
   if (!school) return false;
   return OFFICIAL_SEMED_SCHOOLS.some((s) => s.toLowerCase() === school.trim().toLowerCase());
+}
+
+export function is5thGradeSchool(school?: string | null): boolean {
+  if (!school) return false;
+  const lower = school.trim().toLowerCase();
+  return FIFTH_GRADE_SCHOOLS.some((s) => s.toLowerCase() === lower);
 }
 
 /**
@@ -44,16 +57,35 @@ export function isEtapa3OrOlder(birthdate?: string | null, now = new Date()): bo
 
 /**
  * Returns available school options based on age:
- * - If 15+ years old (Etapa 3): only "Nenhuma" (default) and "Outro" are allowed.
- * - If under 15: all SEMED schools plus "Nenhuma" and "Outro" are allowed.
+ * - Ao ultrapassar os 15 anos: nenhuma escola oficial deve ser exibida (apenas "Nenhuma" e "Outro").
+ * - Ao ultrapassar os 11 anos (12 a 14 anos): escolas de 5º ano NÃO devem aparecer para serem selecionadas
+ *   (apenas "Raimundo Bezerra", "Nenhuma" e "Outro").
+ * - Até 11 anos: escolas de 5º ano aparecem normalmente.
  */
 export function getAvailableSchoolsForAge(
   birthdate?: string | null,
   now = new Date(),
 ): typeof SCHOOLS {
-  if (isEtapa3OrOlder(birthdate, now)) {
-    return SCHOOLS.filter((s) => s.name === "Nenhuma" || s.name === "Outro") as unknown as typeof SCHOOLS;
+  if (!birthdate) return SCHOOLS;
+
+  const age = ageFrom(birthdate, now);
+
+  // 1. Ao ultrapassar 15 anos: nenhuma escola oficial deve ser exibida
+  if (age >= 15 || isEtapa3OrOlder(birthdate, now)) {
+    return SCHOOLS.filter(
+      (s) => s.name === "Nenhuma" || s.name === "Outro",
+    ) as unknown as typeof SCHOOLS;
   }
+
+  // 2. Ao ultrapassar 11 anos (> 11 anos, ex: 12, 13, 14):
+  // Não deve aparecer escolas de 5º ano para serem selecionadas
+  if (age > 11) {
+    return SCHOOLS.filter(
+      (s) => !is5thGradeSchool(s.name),
+    ) as unknown as typeof SCHOOLS;
+  }
+
+  // 3. Até 11 anos: escolas de 5º ano aparecem normalmente
   return SCHOOLS;
 }
 

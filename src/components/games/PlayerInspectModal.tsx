@@ -6,6 +6,9 @@ import { usePlayerAuth } from "@/lib/player-auth";
 import {
   ageFrom,
   formatBirthdateBR,
+  getAvailableSchoolsForAge,
+  is5thGradeSchool,
+  isOfficialSemedSchool,
   levelProgress,
   MAX_LEVEL,
   SCHOOLS,
@@ -200,7 +203,18 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
                   <input
                     type="date"
                     value={editBirthdate}
-                    onChange={(e) => setEditBirthdate(e.target.value)}
+                    onChange={(e) => {
+                      const newDate = e.target.value;
+                      setEditBirthdate(newDate);
+                      const a = newDate ? ageFrom(newDate) : 0;
+                      if (a >= 15 && isOfficialSemedSchool(editSchool)) {
+                        setEditSchool("Nenhuma");
+                        setEditTurma("");
+                      } else if (a > 11 && is5thGradeSchool(editSchool)) {
+                        setEditSchool("Nenhuma");
+                        setEditTurma("");
+                      }
+                    }}
                     className="h-9 w-full rounded-xl border bg-background px-3 text-xs font-semibold"
                   />
                   {editBirthdate && (
@@ -224,7 +238,7 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
                     }}
                     className="h-9 w-full rounded-xl border bg-background px-3 text-xs font-semibold"
                   >
-                    {SCHOOLS.map((s) => (
+                    {getAvailableSchoolsForAge(editBirthdate).map((s) => (
                       <option key={s.name} value={s.name}>
                         {s.name}
                       </option>
