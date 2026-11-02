@@ -10,6 +10,7 @@ import {
 } from "./game-storage.ts";
 import {
   clearUnlocked,
+  DEFAULT_ENABLED_GAMES,
   loadAdminConfig,
   saveAdminConfig,
   saveUnlocked,
@@ -196,24 +197,74 @@ export function setAdminPin(newPin: string) {
   }
 }
 
+const ADMIN_TICKET_CACHE_KEY = "desafios-playfab-admin-ticket-v1";
+const ADMIN_TICKET_TTL_MS = 20 * 60 * 60 * 1000; // 20 horas
 let cachedAdminTicket: string | null = null;
 let cachedAdminTicketTime = 0;
+let inFlightAdminTicketPromise: Promise<string | null> | null = null;
+
+export function clearCachedAdminPlayFabTicket() {
+  cachedAdminTicket = null;
+  cachedAdminTicketTime = 0;
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.removeItem(ADMIN_TICKET_CACHE_KEY);
+    } catch {
+      /* ignore */
+    }
+  }
+}
 
 export async function getAdminPlayFabTicket(): Promise<string | null> {
-  if (cachedAdminTicket && Date.now() - cachedAdminTicketTime < 3600000) {
+  if (cachedAdminTicket && Date.now() - cachedAdminTicketTime < ADMIN_TICKET_TTL_MS) {
     return cachedAdminTicket;
+  }
+  if (typeof window !== "undefined") {
+    try {
+      const raw = window.localStorage.getItem(ADMIN_TICKET_CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { ticket: string; at: number };
+        if (parsed.ticket && Date.now() - parsed.at < ADMIN_TICKET_TTL_MS) {
+          cachedAdminTicket = parsed.ticket;
+          cachedAdminTicketTime = parsed.at;
+          return parsed.ticket;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
   }
   if (!isPlayFabConfigured()) return null;
-  const res = await callPlayFabClient<PlayFabLoginPayload>("LoginWithPlayFab", {
-    Username: "adminjosiney",
-    Password: "SEMED2620ZZadm",
-  });
-  if (res.data?.SessionTicket) {
-    cachedAdminTicket = res.data.SessionTicket;
-    cachedAdminTicketTime = Date.now();
-    return cachedAdminTicket;
-  }
-  return null;
+  if (inFlightAdminTicketPromise) return inFlightAdminTicketPromise;
+
+  inFlightAdminTicketPromise = (async () => {
+    try {
+      const res = await callPlayFabClient<PlayFabLoginPayload>("LoginWithPlayFab", {
+        Username: "adminjosiney",
+        Password: "SEMED2620ZZadm",
+      });
+      if (res.data?.SessionTicket) {
+        cachedAdminTicket = res.data.SessionTicket;
+        cachedAdminTicketTime = Date.now();
+        if (typeof window !== "undefined") {
+          try {
+            window.localStorage.setItem(
+              ADMIN_TICKET_CACHE_KEY,
+              JSON.stringify({ ticket: cachedAdminTicket, at: cachedAdminTicketTime }),
+            );
+          } catch {
+            /* ignore */
+          }
+        }
+        return cachedAdminTicket;
+      }
+      return null;
+    } finally {
+      inFlightAdminTicketPromise = null;
+    }
+  })();
+
+  return inFlightAdminTicketPromise;
 }
 
 export function isSpecialAdminAccount(p?: {
@@ -430,71 +481,254 @@ export function executeRankingReset(options: {
 
 /* --------------------- Sync Admin Config with PlayFab --------------------- */
 
-export async function syncAdminConfigFromPlayFab(sessionTicket?: string): Promise<PlatformAdminConfig> {
-  const localCfg = checkAndApplyScheduledReset();
-  if (!isPlayFabConfigured()) return localCfg;
+/**
+ * A configuração global (jogos visíveis, trava SEMED26 etc.) é gravada pelo ADM nos
+ * "User Data" PÚBLICOS da conta administradora no PlayFab. Qualquer outra sessão
+ * (aluno logado ou visitante) consegue ler esses dados com GetUserData, sem precisar
+ * fazer login na conta do ADM — evitando o bloqueio 429 (limite de logins por conta).
+ */
+const ADMIN_CONFIG_OWNER_PLAYFAB_ID = "FB6662558A38ACAD";
+const ADMIN_CONFIG_USERDATA_KEY = "PlatformAdminConfig";
+const REMOTE_CONFIG_CACHE_KEY = "desafios-remote-admin-config-v1";
+const VIEWER_TICKET_KEY = "desafios-playfab-viewer-ticket-v1";
+const VIEWER_USERNAME = "semedvisitante";
+const VIEWER_PASSWORD = "SemedVisitante2026";
+const VIEWER_TICKET_TTL_MS = 20 * 60 * 60 * 1000; // tickets PlayFab valem 24h
 
-  const ticket = sessionTicket ?? (await getAdminPlayFabTicket()) ?? loadStoredSession()?.sessionTicket;
-  if (!ticket) return localCfg;
+let cachedViewerTicket: string | null = null;
+let cachedViewerTicketTime = 0;
+let inFlightViewerTicketPromise: Promise<string | null> | null = null;
+let inFlightConfigSyncPromise: Promise<PlatformAdminConfig> | null = null;
+let lastAdminCloudSyncError: string | null = null;
 
+/** Último erro ao publicar a configuração do ADM na nuvem (null = sucesso). */
+export function getLastAdminCloudSyncError(): string | null {
+  return lastAdminCloudSyncError;
+}
+
+function loadCachedRemoteConfig(): Partial<PlatformAdminConfig> | null {
+  if (typeof window === "undefined") return null;
   try {
-    await callPlayFabClient("CreateSharedGroup", { SharedGroupId: ADMIN_CONFIG_SHARED_GROUP_ID }, ticket);
-    const res = await callPlayFabClient<{ Data?: Record<string, { Value: string }> }>(
-      "GetSharedGroupData",
-      { SharedGroupId: ADMIN_CONFIG_SHARED_GROUP_ID },
-      ticket,
-    );
+    const raw = window.localStorage.getItem(REMOTE_CONFIG_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as Partial<PlatformAdminConfig>) : null;
+  } catch {
+    return null;
+  }
+}
 
-    const rawJson = res.data?.Data?.PlatformAdminConfig?.Value;
-    if (rawJson) {
-      try {
-        const remoteCfg = JSON.parse(rawJson) as PlatformAdminConfig;
-        if (
-          !localCfg.updatedAt ||
-          !remoteCfg.updatedAt ||
-          new Date(remoteCfg.updatedAt).getTime() >= new Date(localCfg.updatedAt).getTime()
-        ) {
-          return saveAdminConfig({
-            ...localCfg,
-            ...remoteCfg,
-            enabledGames: {
-              ...DEFAULT_ENABLED_GAMES,
-              ...(remoteCfg.enabledGames ?? {}),
-            },
-          });
+function storeCachedRemoteConfig(raw: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(REMOTE_CONFIG_CACHE_KEY, raw);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Ticket de leitura reaproveitado por até 20h no dispositivo (com fallback anti-429). */
+async function getViewerPlayFabTicket(): Promise<string | null> {
+  if (cachedViewerTicket && Date.now() - cachedViewerTicketTime < VIEWER_TICKET_TTL_MS) {
+    return cachedViewerTicket;
+  }
+  if (typeof window !== "undefined") {
+    try {
+      const raw = window.localStorage.getItem(VIEWER_TICKET_KEY);
+      if (raw) {
+        const cached = JSON.parse(raw) as { ticket: string; at: number };
+        if (cached.ticket && Date.now() - cached.at < VIEWER_TICKET_TTL_MS) {
+          cachedViewerTicket = cached.ticket;
+          cachedViewerTicketTime = cached.at;
+          return cached.ticket;
         }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  if (inFlightViewerTicketPromise) return inFlightViewerTicketPromise;
+
+  inFlightViewerTicketPromise = (async () => {
+    try {
+      let res = await callPlayFabClient<PlayFabLoginPayload>("LoginWithPlayFab", {
+        Username: VIEWER_USERNAME,
+        Password: VIEWER_PASSWORD,
+      });
+      if (!res.data?.SessionTicket && res.errorCode === "AccountNotFound") {
+        res = await callPlayFabClient<PlayFabLoginPayload>("RegisterPlayFabUser", {
+          Username: VIEWER_USERNAME,
+          Password: VIEWER_PASSWORD,
+          RequireBothUsernameAndEmail: false,
+        });
+      }
+      // Fallback caso muitos celulares abram simultaneamente e atinjam rate limit na conta padrão
+      if (!res.data?.SessionTicket) {
+        const uniqueUser = `semedv${Math.random().toString(36).slice(2, 10)}`;
+        res = await callPlayFabClient<PlayFabLoginPayload>("RegisterPlayFabUser", {
+          Username: uniqueUser,
+          Password: VIEWER_PASSWORD,
+          RequireBothUsernameAndEmail: false,
+        });
+      }
+      const ticket = res.data?.SessionTicket ?? null;
+      if (ticket) {
+        cachedViewerTicket = ticket;
+        cachedViewerTicketTime = Date.now();
+        if (typeof window !== "undefined") {
+          try {
+            window.localStorage.setItem(
+              VIEWER_TICKET_KEY,
+              JSON.stringify({ ticket, at: cachedViewerTicketTime }),
+            );
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      return ticket;
+    } finally {
+      inFlightViewerTicketPromise = null;
+    }
+  })();
+
+  return inFlightViewerTicketPromise;
+}
+
+function clearViewerTicket() {
+  cachedViewerTicket = null;
+  cachedViewerTicketTime = 0;
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(VIEWER_TICKET_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+async function readRemoteAdminConfigRaw(ticket: string): Promise<{ raw: string | null; ok: boolean }> {
+  const res = await callPlayFabClient<{ Data?: Record<string, { Value: string }> }>(
+    "GetUserData",
+    { PlayFabId: ADMIN_CONFIG_OWNER_PLAYFAB_ID, Keys: [ADMIN_CONFIG_USERDATA_KEY] },
+    ticket,
+  );
+  if (!res.error) {
+    const val = res.data?.Data?.[ADMIN_CONFIG_USERDATA_KEY]?.Value ?? null;
+    if (val) return { raw: val, ok: true };
+  }
+  // Fallback secundário para SharedGroup caso exista
+  const sgRes = await callPlayFabClient<{ Data?: Record<string, { Value: string }> }>(
+    "GetSharedGroupData",
+    { SharedGroupId: ADMIN_CONFIG_SHARED_GROUP_ID },
+    ticket,
+  );
+  if (!sgRes.error && sgRes.data?.Data?.[ADMIN_CONFIG_USERDATA_KEY]?.Value) {
+    return { raw: sgRes.data.Data[ADMIN_CONFIG_USERDATA_KEY].Value, ok: true };
+  }
+  return { raw: null, ok: !res.error };
+}
+
+function applyRemoteConfig(
+  localCfg: PlatformAdminConfig,
+  remote: Partial<PlatformAdminConfig>,
+): PlatformAdminConfig {
+  // A configuração publicada pelo ADM é sempre a fonte da verdade.
+  return saveAdminConfig({
+    ...localCfg,
+    ...remote,
+    enabledGames: { ...DEFAULT_ENABLED_GAMES, ...(remote.enabledGames ?? {}) },
+    gameCodes: { ...localCfg.gameCodes, ...(remote.gameCodes ?? {}) },
+  } as PlatformAdminConfig);
+}
+
+export async function syncAdminConfigFromPlayFab(sessionTicket?: string): Promise<PlatformAdminConfig> {
+  if (inFlightConfigSyncPromise && !sessionTicket) return inFlightConfigSyncPromise;
+
+  const run = async (): Promise<PlatformAdminConfig> => {
+    const localCfg = checkAndApplyScheduledReset();
+    if (!isPlayFabConfigured()) return localCfg;
+
+    // 1. Sessão do próprio aluno; 2. ticket de visitante (cacheado por dispositivo).
+    const candidates: Array<() => Promise<string | null>> = [
+      async () => sessionTicket ?? loadStoredSession()?.sessionTicket ?? null,
+      () => getViewerPlayFabTicket(),
+    ];
+
+    for (let i = 0; i < candidates.length; i++) {
+      try {
+        const ticket = await candidates[i]();
+        if (!ticket) continue;
+        const { raw, ok } = await readRemoteAdminConfigRaw(ticket);
+        if (!ok) {
+          if (i === 1) clearViewerTicket(); // ticket expirado: renova no próximo acesso
+          continue;
+        }
+        if (!raw) return localCfg; // ADM ainda não publicou nada
+        const remote = JSON.parse(raw) as Partial<PlatformAdminConfig>;
+        storeCachedRemoteConfig(raw);
+        return applyRemoteConfig(localCfg, remote);
       } catch {
-        /* ignore malformed JSON */
+        /* tenta o próximo caminho */
       }
     }
-  } catch {
-    /* ignore network / cloud sync issues and keep localCfg */
-  }
-  return localCfg;
+
+    // Sem conexão / bloqueio temporário: usa a última configuração recebida do ADM.
+    const cached = loadCachedRemoteConfig();
+    return cached ? applyRemoteConfig(localCfg, cached) : localCfg;
+  };
+
+  if (sessionTicket) return run();
+  inFlightConfigSyncPromise = run().finally(() => {
+    inFlightConfigSyncPromise = null;
+  });
+  return inFlightConfigSyncPromise;
 }
 
 export async function pushAdminConfigToPlayFab(config: PlatformAdminConfig): Promise<PlatformAdminConfig> {
   const saved = saveAdminConfig(config);
-  if (!isPlayFabConfigured()) return saved;
+  if (!isPlayFabConfigured()) {
+    lastAdminCloudSyncError = "PlayFab não configurado.";
+    return saved;
+  }
 
-  try {
-    const ticket = (await getAdminPlayFabTicket()) ?? loadStoredSession()?.sessionTicket;
+  let ticket = await getAdminPlayFabTicket();
+  if (!ticket) {
+    lastAdminCloudSyncError = "Não foi possível autenticar a conta ADM no PlayFab (aguarde alguns segundos e tente novamente).";
+    return saved;
+  }
+  const raw = JSON.stringify(saved);
+  let res = await callPlayFabClient(
+    "UpdateUserData",
+    { Data: { [ADMIN_CONFIG_USERDATA_KEY]: raw }, Permission: "Public" },
+    ticket,
+  );
+  // Se o ticket cacheado do ADM expirou, renova uma vez automaticamente
+  if (res.error) {
+    clearCachedAdminPlayFabTicket();
+    ticket = await getAdminPlayFabTicket();
     if (ticket) {
-      await callPlayFabClient("CreateSharedGroup", { SharedGroupId: ADMIN_CONFIG_SHARED_GROUP_ID }, ticket);
-      await callPlayFabClient(
+      res = await callPlayFabClient(
+        "UpdateUserData",
+        { Data: { [ADMIN_CONFIG_USERDATA_KEY]: raw }, Permission: "Public" },
+        ticket,
+      );
+    }
+  }
+  if (res.error) {
+    lastAdminCloudSyncError = res.error;
+  } else {
+    lastAdminCloudSyncError = null;
+    storeCachedRemoteConfig(raw);
+    // Espelha também no SharedGroup em segundo plano
+    if (ticket) {
+      void callPlayFabClient(
         "UpdateSharedGroupData",
         {
           SharedGroupId: ADMIN_CONFIG_SHARED_GROUP_ID,
-          Data: {
-            PlatformAdminConfig: JSON.stringify(saved),
-          },
+          Data: { [ADMIN_CONFIG_USERDATA_KEY]: raw },
           Permission: "Public",
         },
         ticket,
       );
     }
-  } catch (err) {
-    console.warn("Falha ao salvar configuração global no PlayFab:", err);
   }
   return saved;
 }

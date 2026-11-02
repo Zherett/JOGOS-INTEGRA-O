@@ -50,6 +50,7 @@ import {
 } from "@/lib/player-profile";
 import {
   getAllRegisteredPlayers,
+  getLastAdminCloudSyncError,
   getPlayFabTitleId,
   grantPlayerMedalManually,
   isPlayFabConfigured,
@@ -240,6 +241,17 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     window.setTimeout(() => setSavedMsg(null), 3000);
   }
 
+  /** Mostra sucesso apenas se a configuração foi publicada na nuvem para todos os dispositivos. */
+  function flashCloudResult(successMsg: string) {
+    const err = getLastAdminCloudSyncError();
+    if (err) {
+      setSavedMsg(`⚠️ Salvo só neste dispositivo — falha ao publicar para todos: ${err}`);
+      window.setTimeout(() => setSavedMsg(null), 7000);
+    } else {
+      flashSaved(`${successMsg} (publicado para todos os dispositivos)`);
+    }
+  }
+
   function handlePinSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (auth.unlockAdminWithPin(pinInput)) {
@@ -253,7 +265,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   async function saveGamesAndCodes() {
     await auth.updateAdminConfig(draft);
     onConfigSaved?.();
-    flashSaved("Jogos e códigos salvos com sucesso!");
+    flashCloudResult("Jogos e códigos salvos com sucesso!");
   }
 
   async function handleToggleRequireCodeGate() {
@@ -262,7 +274,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     setDraft(updated);
     await auth.updateAdminConfig(updated);
     onConfigSaved?.();
-    flashSaved(
+    flashCloudResult(
       nextState
         ? `🔒 Jogos travados com código Master (${draft.masterCode || "SEMED26"})!`
         : "🔓 Jogos liberados para todos sem necessidade de código!",
@@ -277,7 +289,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     setDraft(updated);
     await auth.updateAdminConfig(updated);
     onConfigSaved?.();
-    flashSaved(
+    flashCloudResult(
       nextVal
         ? `✅ "${GAME_NAMES[id]}" ativado e visível na página inicial!`
         : `🚫 "${GAME_NAMES[id]}" desmarcado e ocultado da página inicial!`,
@@ -294,7 +306,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     setDraft(restored);
     await auth.updateAdminConfig(restored);
     onConfigSaved?.();
-    flashSaved("Códigos e jogos restaurados para o padrão com sucesso!");
+    flashCloudResult("Códigos e jogos restaurados para o padrão com sucesso!");
   }
 
   async function copyCodesList() {

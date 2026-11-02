@@ -247,7 +247,12 @@ function Index() {
           onBack={() => setAddingCode(false)}
         />
       )}
-      {view === "menu" && !showGate && (
+      {view === "menu" && (!mounted || auth.loading) && (
+        <div className="py-24 text-center text-sm font-semibold text-muted-foreground">
+          Carregando jogos disponíveis...
+        </div>
+      )}
+      {view === "menu" && mounted && !auth.loading && !showGate && (
         <Menu
           stats={displayStats}
           unlocked={unlocked}

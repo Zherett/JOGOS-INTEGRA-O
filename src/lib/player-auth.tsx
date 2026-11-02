@@ -121,7 +121,10 @@ export function PlayerAuthProvider({ children }: { children: ReactNode }) {
 
   // Periodically check if a scheduled ADM reset has become due or if focus changed
   useEffect(() => {
+    let lastFocusSync = Date.now();
     const onFocus = () => {
+      if (Date.now() - lastFocusSync < 60_000) return; // no máximo 1 consulta por minuto
+      lastFocusSync = Date.now();
       void syncAdminConfigFromPlayFab().then((cfg) => setAdminConfig(cfg));
     };
     window.addEventListener("focus", onFocus);
