@@ -517,10 +517,15 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
                         <div className="flex flex-wrap items-center gap-1.5 font-display font-bold text-foreground">
                           <Sparkles className="h-3.5 w-3.5 text-accent shrink-0" />
                           Faixa Etária alocada:{" "}
-                          <span className="rounded-full bg-card px-2 py-0.5 text-[11px] font-extrabold text-primary">
+                          <span className="rounded-full bg-card px-2.5 py-0.5 text-[11px] font-extrabold text-primary border border-primary/20 shadow-2xs">
                             {stageFromBirthdate(birthdate, new Date()).emoji}{" "}
-                            {stageFromBirthdate(birthdate, new Date()).label} ({calculatedAge} anos)
+                            {stageFromBirthdate(birthdate, new Date()).label}
                           </span>
+                          {calculatedAge !== null && (
+                            <span className="text-[11px] font-semibold text-muted-foreground">
+                              • Sua idade: <b>{calculatedAge} anos</b>
+                            </span>
+                          )}
                         </div>
                         <p className="text-[11px] text-muted-foreground">
                           O sistema aloca você automaticamente na sua Etapa de idade para garantir

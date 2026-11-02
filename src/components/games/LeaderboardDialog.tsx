@@ -145,12 +145,8 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
             <span>
               Etapa:{" "}
               {selectedStage === "TODAS"
-                ? "Geral (Todas as Séries)"
-                : selectedStage === "etapa_1"
-                ? "1ª Etapa (5º ano)"
-                : selectedStage === "etapa_2"
-                ? "2ª Etapa (6º ao 9º ano)"
-                : "3ª Etapa (Ensino Médio e EJA)"}
+                ? "Geral (Todas as Etapas)"
+                : getAgeStageInfo(selectedStage).label}
             </span>
             <ChevronDown
               className={`h-3.5 w-3.5 transition-transform duration-200 ${
@@ -193,11 +189,7 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
             </div>
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              {[
-                { id: "etapa_1" as AgeStageId, emoji: "🌱", label: "1ª Etapa", series: "5º ano" },
-                { id: "etapa_2" as AgeStageId, emoji: "⚡", label: "2ª Etapa", series: "6º ao 9º ano" },
-                { id: "etapa_3" as AgeStageId, emoji: "🔥", label: "3ª Etapa", series: "Ensino Médio e EJA" },
-              ].map((st) => {
+              {AGE_STAGES.map((st) => {
                 const isSelected = selectedStage === st.id;
                 const isMyStage = auth.profile && playerStage === st.id;
                 return (
@@ -216,7 +208,7 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
                   >
                     <div className="flex w-full items-center justify-between gap-1">
                       <span className="font-display text-sm font-extrabold">
-                        {st.emoji} {st.label}
+                        {st.emoji} {st.shortLabel}
                       </span>
                       {isMyStage && (
                         <span
@@ -235,7 +227,7 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
                         isSelected ? "text-primary-foreground/95" : "text-muted-foreground"
                       }`}
                     >
-                      {st.series}
+                      {st.ageRangeLabel} • {st.schoolCycleLabel}
                     </span>
                   </button>
                 );
