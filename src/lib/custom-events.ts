@@ -112,8 +112,10 @@ export function getActiveEventBonuses(
 
       // Linha 1: Multiplicador de XP (+0.5x, +1.0x, etc.)
       let mult = ev.xpMultiplier;
-      if (ev.bonusType === "dobro_xp" && (!mult || mult < 2)) mult = 2;
-      if (ev.bonusType === "xp_1_5x" && (!mult || mult < 1.5)) mult = 1.5;
+      const bType = "bonusType" in ev ? (ev as any).bonusType : undefined;
+      const bVal = "bonusValue" in ev ? (ev as any).bonusValue : undefined;
+      if (bType === "dobro_xp" && (!mult || mult < 2)) mult = 2;
+      if (bType === "xp_1_5x" && (!mult || mult < 1.5)) mult = 1.5;
       if (mult && mult > 1) {
         extraMultiplier += (mult - 1);
       }
@@ -124,7 +126,7 @@ export function getActiveEventBonuses(
       }
 
       // Linha 3: Limite diário de XP (adicional sobre 1000)
-      const dCap = ev.dailyXpCap ?? (ev.bonusType === "aumentar_limite_diario" ? ev.bonusValue : undefined);
+      const dCap = ev.dailyXpCap ?? (bType === "aumentar_limite_diario" ? bVal : undefined);
       if (dCap && dCap > baseDailyCap) {
         extraDaily += (dCap - baseDailyCap);
       }

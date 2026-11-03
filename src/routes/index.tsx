@@ -22,6 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { heartbeatOnlinePlayer, type X1Room } from "@/lib/x1-challenge";
+import { getLocalUserLastActiveAt, usePresenceTracker } from "@/lib/presence";
 import {
   getWeekInfo,
   recordWeeklyTournamentAttempt,
@@ -140,6 +141,11 @@ function Index() {
     return () => window.removeEventListener("desafios:admin-config-updated", handleCfgUpdate);
   }, [auth]);
 
+  // Track user presence and activity (Verde < 5min, Cinza 5-10min, Vermelho > 10min)
+  usePresenceTracker(
+    auth.profile ? { playerId: auth.profile.id, nick: auth.profile.nick } : null,
+  );
+
   // Keep logged-in student visible in the online players list across the platform
   useEffect(() => {
     if (!auth.profile) return;
@@ -154,6 +160,7 @@ function Index() {
         age: ageFrom(p.birthdate),
         stage: stageFromBirthdate(p.birthdate, new Date(), p.school).id,
         inRoomCode: activeX1Room?.code ?? null,
+        lastActiveAt: getLocalUserLastActiveAt(),
       });
     };
     pulse();

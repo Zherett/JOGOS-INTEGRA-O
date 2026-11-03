@@ -8,6 +8,7 @@ import {
   Lock,
   Search,
   CheckCircle,
+  HelpCircle,
 } from "lucide-react";
 import {
   getAllAvailableMedals,
@@ -45,6 +46,7 @@ const CATEGORY_LABELS: Record<MedalCategory, string> = {
   ranking: "Torneio",
   meta: "Meta-Medalhas",
   evento: "Eventos Especiais",
+  secreta: "Secretas",
 };
 
 export function PlayerMedalsInventory({
@@ -109,9 +111,12 @@ export function PlayerMedalsInventory({
     if (selectedRarity !== "ALL" && m.rarity !== selectedRarity) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
+      const isSecLocked = Boolean(m.isSecret && !unlockedMap.has(m.id));
+      const effectiveTitle = isSecLocked ? "medalha secreta" : m.title.toLowerCase();
+      const effectiveDesc = isSecLocked ? "medalha secreta jogue e descubra" : m.description.toLowerCase();
       return (
-        m.title.toLowerCase().includes(q) ||
-        m.description.toLowerCase().includes(q) ||
+        effectiveTitle.includes(q) ||
+        effectiveDesc.includes(q) ||
         RARITY_INFO[m.rarity].label.toLowerCase().includes(q)
       );
     }
@@ -275,6 +280,7 @@ export function PlayerMedalsInventory({
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-[48vh] overflow-y-auto pr-1">
             {filtered.map(({ medal: m, unlocked, progress }) => {
               const isUnlocked = Boolean(unlocked);
+              const isSecretLocked = Boolean(m.isSecret && !isUnlocked);
               const rarity = RARITY_INFO[m.rarity];
 
               return (
@@ -284,7 +290,9 @@ export function PlayerMedalsInventory({
                   className={`group relative flex flex-col justify-between rounded-2xl border-2 p-3 transition-all cursor-pointer hover:scale-[1.01] active:scale-95 ${
                     isUnlocked
                       ? `bg-card ${rarity.neonBorderClass}`
-                      : "border-border/50 bg-secondary/20 hover:border-border hover:bg-secondary/40"
+                      : isSecretLocked
+                        ? "border-dashed border-amber-500/30 bg-secondary/15 hover:border-amber-500/60"
+                        : "border-border/50 bg-secondary/20 hover:border-border hover:bg-secondary/40"
                   }`}
                   role="button"
                   tabIndex={0}
@@ -292,13 +300,19 @@ export function PlayerMedalsInventory({
                   <div className="flex items-start gap-2.5">
                     <div
                       className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl border ${
-                        isUnlocked ? rarity.badgeBgClass : "bg-muted text-muted-foreground border-border"
+                        isUnlocked
+                          ? rarity.badgeBgClass
+                          : isSecretLocked
+                            ? "border-amber-500/30 bg-amber-500/10 text-amber-500"
+                            : "bg-muted text-muted-foreground border-border"
                       }`}
                     >
                       {isUnlocked ? (
                         <div className={rarity.textColor}>
                           <MedalIcon name={m.iconName} className="h-5 w-5" />
                         </div>
+                      ) : isSecretLocked ? (
+                        <HelpCircle className="h-5 w-5 text-amber-500 animate-pulse" />
                       ) : (
                         <MedalIcon name={m.iconName} className="h-5 w-5 opacity-40" />
                       )}
@@ -317,6 +331,10 @@ export function PlayerMedalsInventory({
                           <span className="flex items-center gap-1 text-[9px] font-extrabold text-emerald-500">
                             <CheckCircle className="h-3 w-3" /> Obtida
                           </span>
+                        ) : isSecretLocked ? (
+                          <span className="text-[10px] font-black text-amber-500">
+                            ?
+                          </span>
                         ) : (
                           <span className="text-[9px] font-bold text-muted-foreground">
                             {progress.percent}%
@@ -324,16 +342,18 @@ export function PlayerMedalsInventory({
                         )}
                       </div>
                       <h5 className="truncate font-display text-xs font-black text-foreground">
-                        {m.title}
+                        {isSecretLocked ? "Medalha Secreta" : m.title}
                       </h5>
                       <p className="line-clamp-2 text-[10px] text-muted-foreground leading-tight mt-0.5">
-                        {m.description}
+                        {isSecretLocked
+                          ? "Medalha secreta. Jogue e descubra como conquistá-la!"
+                          : m.description}
                       </p>
                     </div>
                   </div>
 
-                  {/* Barra de progresso para medalhas bloqueadas */}
-                  {!isUnlocked && progress.percent > 0 && (
+                  {/* Barra de progresso apenas para medalhas normais não desbloqueadas */}
+                  {!isUnlocked && !isSecretLocked && progress.percent > 0 && (
                     <div className="mt-2 space-y-1">
                       <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                         <div

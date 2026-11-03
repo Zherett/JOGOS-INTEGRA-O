@@ -4,6 +4,7 @@ import {
   buildBaseMedalsCatalog,
   calculateMedalProgress,
   evaluatePlayerMedals,
+  getDailyPostCapMatches,
   getDistinctFlawlessGames,
   getTopShowcaseMedals,
   isFlawlessMatch,
@@ -12,6 +13,7 @@ import {
 } from "./medals-catalog.ts";
 import { ALL_GAME_IDS } from "./game-storage.ts";
 import type { PlayerProfile, GameStatRow } from "./playfab.ts";
+import { getLocalDateKey } from "./player-profile.ts";
 
 describe("Sistema Completo de Medalhas e Inventário", () => {
   it("constrói o catálogo base com todas as categorias solicitadas", () => {
@@ -534,5 +536,80 @@ describe("Sistema Completo de Medalhas e Inventário", () => {
     const prog8 = calculateMedalProgress(medal8, profileInflated, statsAll10, enabledOnly7);
     assert.ok(prog8.progressText.includes("7 de 8"));
     assert.equal(prog8.percent, 88);
+  });
+
+  it("avalia medalhas secretas 'Além do Limite' e reseta progresso diariamente às 00:00 se não obtidas", () => {
+    const today = getLocalDateKey();
+    const yesterday = "2026-11-02";
+
+    const baseProfile: PlayerProfile = {
+      id: "aluno-dedicado",
+      nick: "Dedicado",
+      nickNormalized: "dedicado",
+      full_name: "ALUNO DEDICADO",
+      school: "Raimundo Bezerra",
+      grade: "6º ano",
+      birthdate: "2014-04-10",
+      xp: 1500,
+      seasonXp: 1500,
+      level: 5,
+      wins: 20,
+      matchesPlayed: 40,
+      seasonId: 1,
+      badges: [],
+      dailyXp: 1000,
+      dailyXpDate: today,
+      dailyPostCapMatches: 29,
+      dailyPostCapDate: today,
+    };
+
+    // Com 29 partidas hoje após atingir o XP máximo diário:
+    // Conquista Bronze (10 partidas), mas AINDA NÃO conquista Prata (30 partidas)
+    const awarded29 = evaluatePlayerMedals({
+      profile: baseProfile,
+      stats: [],
+    });
+    const awardedIds29 = awarded29.map((m) => m.id);
+    assert.ok(awardedIds29.includes("post_cap_10"), "Deveria ter conquistado Além do Limite Bronze (10)");
+    assert.ok(!awardedIds29.includes("post_cap_30"), "Não deveria ter conquistado Além do Limite Prata (29/30)");
+
+    // Checa cálculo de progresso para a de Prata (29/30 = 97%)
+    const catalog = buildBaseMedalsCatalog();
+    const medalPrata = catalog.find((m) => m.id === "post_cap_30")!;
+    assert.ok(medalPrata.isSecret, "Medalha deve ser marcada como secreta");
+    assert.equal(medalPrata.category, "secreta");
+
+    const progPrata = calculateMedalProgress(medalPrata, baseProfile, []);
+    assert.equal(progPrata.percent, 97);
+    assert.ok(progPrata.progressText.includes("29 de 30"));
+
+    // Simula virada do dia para 00:00 (dailyPostCapDate fica sendo ontem e o dia atual muda)
+    const profileNewDay: PlayerProfile = {
+      ...baseProfile,
+      dailyPostCapMatches: 29,
+      dailyPostCapDate: yesterday, // data antiga/ontem!
+    };
+
+    // Ao virar o dia sem ter completado a de Prata, o progresso reseta para 0/30 (0%)
+    assert.equal(getDailyPostCapMatches(profileNewDay, today), 0);
+    const progPrataNewDay = calculateMedalProgress(medalPrata, profileNewDay, []);
+    assert.equal(progPrataNewDay.percent, 0);
+    assert.ok(progPrataNewDay.progressText.includes("0 de 30"));
+
+    // Jogou mais partidas no novo dia após bater o XP máximo: atinge 30, 60 e 100
+    const profile100: PlayerProfile = {
+      ...baseProfile,
+      dailyPostCapMatches: 100,
+      dailyPostCapDate: today,
+    };
+    const awarded100 = evaluatePlayerMedals({
+      profile: profile100,
+      stats: [],
+    });
+    const awardedIds100 = awarded100.map((m) => m.id);
+    assert.ok(awardedIds100.includes("post_cap_10"), "Conquista Bronze (10)");
+    assert.ok(awardedIds100.includes("post_cap_30"), "Conquista Prata (30)");
+    assert.ok(awardedIds100.includes("post_cap_60"), "Conquista Ouro (60)");
+    assert.ok(awardedIds100.includes("post_cap_100"), "Conquista Platina (100)");
   });
 });

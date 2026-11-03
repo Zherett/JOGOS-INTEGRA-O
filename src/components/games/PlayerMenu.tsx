@@ -26,6 +26,7 @@ import { PlayerAuthDialog } from "./PlayerAuthDialog";
 import { LeaderboardDialog } from "./LeaderboardDialog";
 import { AdminPanelDialog } from "./AdminPanelDialog";
 import { PlayerMedalsInventory } from "./PlayerMedalsInventory";
+import { PresenceDot } from "./PresenceDot";
 import { usePlayerAuth } from "@/lib/player-auth";
 import {
   ageFrom,
@@ -268,12 +269,21 @@ export function PlayerMenu({ onConfigChanged }: Props) {
           className="flex items-center gap-2 rounded-2xl border bg-card px-3 py-1.5 text-left shadow-sm transition-all hover:bg-secondary active:scale-95"
           aria-label={profile ? "Abrir meu perfil" : "Entrar na minha conta"}
         >
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground">
+          <span className="relative grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground">
             <User className="h-5 w-5" />
+            {profile && (
+              <PresenceDot
+                playerId={profile.id}
+                size="xs"
+                className="absolute -top-1 -right-1"
+              />
+            )}
           </span>
           <span className="min-w-0 pr-1">
-            <span className="block max-w-[9rem] truncate font-display text-sm font-bold leading-tight">
-              {profile ? profile.nick : "Entrar"}
+            <span className="flex items-center gap-1.5 max-w-[9rem]">
+              <span className="truncate font-display text-sm font-bold leading-tight">
+                {profile ? profile.nick : "Entrar"}
+              </span>
             </span>
             <span className="block text-[11px] leading-tight text-muted-foreground">
               {profile ? `Nível ${progress?.level} • ${profile.xp} XP` : "criar perfil"}
@@ -323,6 +333,7 @@ export function PlayerMenu({ onConfigChanged }: Props) {
                     <h2 className="truncate font-display text-2xl font-black text-foreground">
                       {profile.nick}
                     </h2>
+                    <PresenceDot playerId={profile.id} size="sm" />
                     {/* Tag Fixa da Turma (Quando já selecionada) */}
                     {profile.turma && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 border border-primary/30 px-2.5 py-0.5 text-xs font-bold text-primary">

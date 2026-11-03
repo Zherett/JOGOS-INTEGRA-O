@@ -110,6 +110,8 @@ export interface PlayerProfile {
   dailyTournamentXp?: number;
   dailyTournamentEntries?: number;
   dailyXpDate?: string;
+  dailyPostCapMatches?: number;
+  dailyPostCapDate?: string;
   streakDays?: number;
   lastActiveDate?: string;
   tournamentMedals?: TournamentMedal[];
@@ -785,6 +787,10 @@ function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig)
     acc.profile.dailyTournamentXp = 0;
     acc.profile.dailyTournamentEntries = 0;
     acc.profile.dailyXpDate = todayKey;
+  }
+  if (acc.profile.dailyPostCapDate !== todayKey) {
+    acc.profile.dailyPostCapMatches = 0;
+    acc.profile.dailyPostCapDate = todayKey;
   }
   const currentWeekKey = getCurrentWeekKey();
   if (acc.profile.weeklyX1WeekKey && acc.profile.weeklyX1WeekKey !== currentWeekKey) {
@@ -1668,6 +1674,8 @@ async function pushProfileToPlayFab(account: StoredAccount, sessionTicket?: stri
           dailyTournamentXp: p.dailyTournamentXp ?? 0,
           dailyTournamentEntries: p.dailyTournamentEntries ?? 0,
           dailyXpDate: p.dailyXpDate ?? getLocalDateKey(),
+          dailyPostCapMatches: p.dailyPostCapMatches ?? 0,
+          dailyPostCapDate: p.dailyPostCapDate ?? getLocalDateKey(),
           streakDays: p.streakDays ?? 1,
           lastActiveDate: p.lastActiveDate,
           tournamentMedals: p.tournamentMedals ?? [],
@@ -1791,6 +1799,8 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
             distinctGamesPlayed: parsed.distinctGamesPlayed ?? existing?.profile.distinctGamesPlayed ?? 0,
             dailyXp: existing?.profile.dailyXp ?? 0,
             dailyXpDate: existing?.profile.dailyXpDate,
+            dailyPostCapMatches: parsed.dailyPostCapMatches ?? existing?.profile.dailyPostCapMatches ?? 0,
+            dailyPostCapDate: parsed.dailyPostCapDate ?? existing?.profile.dailyPostCapDate,
             streakDays: Math.max(parsed.streakDays ?? 1, existing?.profile.streakDays ?? 1),
             lastActiveDate: parsed.lastActiveDate ?? existing?.profile.lastActiveDate,
             tournamentMedals: parsed.tournamentMedals ?? existing?.profile.tournamentMedals ?? [],
@@ -2149,16 +2159,31 @@ export async function playfabRecordMatch(args: {
       cappedMatchXp = adjustXpForGameMode(cappedMatchXp, true);
     }
 
+    const effectiveDailyCap = bonuses.dailyXpCap;
+    const wasAlreadyAtDailyCap =
+      acc.profile.dailyXpDate === todayKey && (acc.profile.dailyXp ?? 0) >= effectiveDailyCap;
+
     const dailyCapResult = applyDailyXpCap({
       rawEarnedXp: cappedMatchXp,
       currentDailyXp: acc.profile.dailyXp ?? 0,
       lastDateKey: acc.profile.dailyXpDate,
       todayKey,
-      dailyCap: bonuses.dailyXpCap,
+      dailyCap: effectiveDailyCap,
     });
     earnedXp = dailyCapResult.grantedXp;
     acc.profile.dailyXp = dailyCapResult.newDailyXp;
     acc.profile.dailyXpDate = dailyCapResult.dateKey;
+
+    // Reseta partidas pós-cap se mudou o dia
+    if (acc.profile.dailyPostCapDate !== todayKey) {
+      acc.profile.dailyPostCapMatches = 0;
+      acc.profile.dailyPostCapDate = todayKey;
+    }
+
+    // Se a partida foi jogada após o limite de XP diário já ter sido alcançado, incrementa o contador diário
+    if (wasAlreadyAtDailyCap) {
+      acc.profile.dailyPostCapMatches = (acc.profile.dailyPostCapMatches ?? 0) + 1;
+    }
   }
 
   const existingIdx = acc.stats.findIndex(

@@ -1,4 +1,4 @@
-import { Award, CheckCircle, Clock, Lock, Sparkles, X } from "lucide-react";
+import { Award, CheckCircle, Clock, HelpCircle, Lock, Sparkles, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -33,6 +33,7 @@ export function MedalDetailModal({
   if (!medal) return null;
 
   const isUnlocked = Boolean(unlockedInfo);
+  const isSecretLocked = Boolean(medal.isSecret && !isUnlocked);
   const rarity = RARITY_INFO[medal.rarity];
 
   let formattedDate: string | null = null;
@@ -55,7 +56,7 @@ export function MedalDetailModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[92vw] max-w-md rounded-3xl border bg-card p-6 shadow-2xl">
         <DialogHeader className="sr-only">
-          <DialogTitle>{medal.title}</DialogTitle>
+          <DialogTitle>{isSecretLocked ? "Medalha Secreta" : medal.title}</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col items-center text-center">
@@ -70,10 +71,14 @@ export function MedalDetailModal({
               boxShadow: isUnlocked ? `0 0 25px ${rarity.glowHex}` : undefined,
             }}
           >
-            <MedalIcon
-              name={medal.iconName}
-              className={`h-12 w-12 ${isUnlocked ? rarity.textColor : "text-muted-foreground"}`}
-            />
+            {isSecretLocked ? (
+              <HelpCircle className="h-12 w-12 text-amber-500/80" />
+            ) : (
+              <MedalIcon
+                name={medal.iconName}
+                className={`h-12 w-12 ${isUnlocked ? rarity.textColor : "text-muted-foreground"}`}
+              />
+            )}
             {isUnlocked && (
               <span className="absolute -top-1.5 -right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md">
                 <CheckCircle className="h-4 w-4" />
@@ -89,21 +94,23 @@ export function MedalDetailModal({
               {rarity.label}
             </span>
             <span className="rounded-full bg-amber-500/15 border border-amber-500/40 px-2.5 py-0.5 text-[11px] font-black text-amber-600 dark:text-amber-400">
-              +{MEDAL_XP_REWARDS[medal.rarity]} XP
+              {isSecretLocked ? "+?? XP" : `+${MEDAL_XP_REWARDS[medal.rarity]} XP`}
             </span>
             <span className="rounded-full bg-secondary/70 px-2.5 py-0.5 text-[11px] font-semibold text-muted-foreground">
-              {medal.category.replace("_", " ").toUpperCase()}
+              {isSecretLocked ? "SECRETA" : medal.category.replace("_", " ").toUpperCase()}
             </span>
           </div>
 
           {/* Title */}
           <h3 className="font-display text-xl font-black text-foreground">
-            {medal.title}
+            {isSecretLocked ? "Medalha Secreta" : medal.title}
           </h3>
 
           {/* Description */}
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            {medal.description}
+            {isSecretLocked
+              ? "Medalha secreta. Jogue e descubra como conquistá-la!"
+              : medal.description}
           </p>
 
           {/* Unlock Status / Progress */}
@@ -120,6 +127,11 @@ export function MedalDetailModal({
                     Obtida em: <b>{formattedDate}</b>
                   </p>
                 )}
+              </div>
+            ) : isSecretLocked ? (
+              <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground py-1">
+                <HelpCircle className="h-4 w-4 shrink-0 text-amber-500" />
+                <span>Requisitos ocultos. Jogue e descubra para desbloquear!</span>
               </div>
             ) : (
               <div className="space-y-2">

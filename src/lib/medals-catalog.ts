@@ -1,6 +1,7 @@
 import { ALL_GAME_IDS, GAME_NAMES, type GameId } from "./game-storage.ts";
 import type { PlayerProfile } from "./playfab.ts";
 import type { GameStatRow } from "./playfab.ts";
+import { getLocalDateKey } from "./player-profile.ts";
 
 export type MedalRarity = "bronze" | "prata" | "ouro" | "platina" | "diamante" | "heroi";
 
@@ -16,7 +17,8 @@ export type MedalCategory =
   | "atividade"
   | "ranking"
   | "meta"
-  | "evento";
+  | "evento"
+  | "secreta";
 
 export interface MedalCondition {
   type:
@@ -39,6 +41,7 @@ export interface MedalCondition {
     | "beta_tester_ouro"
     | "beta_tester_platina"
     | "beta_tester_heroi"
+    | "daily_post_cap_matches"
     | "manual_event";
   threshold?: number;
   gameId?: GameId;
@@ -56,6 +59,7 @@ export interface MedalDefinition {
   isCustom?: boolean;
   createdByAdmin?: boolean;
   gameId?: GameId;
+  isSecret?: boolean;
 }
 
 export interface PlayerUnlockedMedal {
@@ -537,7 +541,59 @@ export function buildBaseMedalsCatalog(): MedalDefinition[] {
     },
   );
 
+  // 13. Medalhas Secretas — Além do Limite (Jogar partidas após atingir o XP diário)
+  medals.push(
+    {
+      id: "post_cap_10",
+      title: "Além do Limite: Bronze",
+      description: "Jogue 10 partidas no mesmo dia após atingir o limite diário de XP.",
+      rarity: "bronze",
+      category: "secreta",
+      iconName: "Zap",
+      condition: { type: "daily_post_cap_matches", threshold: 10 },
+      isSecret: true,
+    },
+    {
+      id: "post_cap_30",
+      title: "Além do Limite: Prata",
+      description: "Jogue 30 partidas no mesmo dia após atingir o limite diário de XP.",
+      rarity: "prata",
+      category: "secreta",
+      iconName: "Zap",
+      condition: { type: "daily_post_cap_matches", threshold: 30 },
+      isSecret: true,
+    },
+    {
+      id: "post_cap_60",
+      title: "Além do Limite: Ouro",
+      description: "Jogue 60 partidas no mesmo dia após atingir o limite diário de XP.",
+      rarity: "ouro",
+      category: "secreta",
+      iconName: "Flame",
+      condition: { type: "daily_post_cap_matches", threshold: 60 },
+      isSecret: true,
+    },
+    {
+      id: "post_cap_100",
+      title: "Além do Limite: Platina",
+      description: "Jogue 100 partidas no mesmo dia após atingir o limite diário de XP.",
+      rarity: "platina",
+      category: "secreta",
+      iconName: "Crown",
+      condition: { type: "daily_post_cap_matches", threshold: 100 },
+      isSecret: true,
+    },
+  );
+
   return medals;
+}
+
+export function getDailyPostCapMatches(
+  profile?: { dailyPostCapDate?: string; dailyPostCapMatches?: number } | null,
+  todayKey = getLocalDateKey(),
+): number {
+  if (!profile || profile.dailyPostCapDate !== todayKey) return 0;
+  return profile.dailyPostCapMatches ?? 0;
 }
 
 /** Merges the default catalog with custom medals defined by the administrator */
@@ -901,6 +957,16 @@ export function evaluatePlayerMedals(
         }
         break;
 
+      case "daily_post_cap_matches": {
+        const todayKey = getLocalDateKey();
+        const postCapMatches = getDailyPostCapMatches(p, todayKey);
+        const target = cond.threshold ?? 10;
+        if (postCapMatches >= target) {
+          earned = true;
+        }
+        break;
+      }
+
       case "manual_event":
         // Only granted manually by ADM
         break;
@@ -1137,6 +1203,16 @@ export function calculateMedalProgress(
       return {
         percent: pct,
         progressText: `${games} de ${targetGames} jogos com 10+ partidas (Nível ${profile.level}/${lvlTarget})`,
+      };
+    }
+    case "daily_post_cap_matches": {
+      const todayKey = getLocalDateKey();
+      const postCapToday = getDailyPostCapMatches(profile, todayKey);
+      const target = cond.threshold ?? 10;
+      const pct = Math.min(100, Math.round((postCapToday / target) * 100));
+      return {
+        percent: pct,
+        progressText: `${postCapToday} de ${target} partidas hoje com limite de XP atingido`,
       };
     }
     default:

@@ -21,12 +21,9 @@ import {
   type RankingFilterCategory,
 } from "@/lib/player-profile";
 import { usePlayerAuth } from "@/lib/player-auth";
-import {
-  fetchLeaderboard,
-  getSchoolStandings,
-  type LeaderboardEntry,
-} from "@/lib/playfab";
+import { fetchLeaderboard, getSchoolStandings, type LeaderboardEntry } from "@/lib/playfab";
 import { PlayerInspectModal } from "./PlayerInspectModal";
+import { PresenceDot } from "./PresenceDot";
 
 interface Props {
   open: boolean;
@@ -431,6 +428,7 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
                           <span className="truncate font-display text-base font-black text-foreground">
                             {row.nick}
                           </span>
+                          <PresenceDot playerId={row.playerId} size="xs" />
                           <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">
                             {row.rankEmoji} Nv. {row.level}
                           </span>

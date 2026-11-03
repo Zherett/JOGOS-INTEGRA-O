@@ -43,6 +43,7 @@ import {
 import { usePlayerAuth } from "@/lib/player-auth";
 import {
   ageFrom,
+  levelProgress,
   stageFromBirthdate,
   SCHOOLS,
   VALID_TURMAS,
@@ -97,6 +98,8 @@ import {
 } from "@/lib/x1-challenge";
 import { MedalIcon } from "./MedalIcon";
 import { PlayerInspectModal } from "./PlayerInspectModal";
+import { PresenceDot } from "./PresenceDot";
+import { computePresenceSummary } from "@/lib/presence";
 
 interface Props {
   open: boolean;
@@ -2267,54 +2270,93 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                         );
                       }
 
+                      const presenceSummary = computePresenceSummary(filtered.map((s) => s.id));
+
                       return (
                         <div className="space-y-2">
-                          <div className="text-xs font-bold text-muted-foreground">
-                            Exibindo {filtered.length} aluno(s) de {selectedAdminSchool}
-                            {selectedAdminTurma !== "TODAS" ? ` • Turma ${selectedAdminTurma}` : ""}:
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="text-xs font-bold text-muted-foreground">
+                              Exibindo {filtered.length} aluno(s) de {selectedAdminSchool}
+                              {selectedAdminTurma !== "TODAS" ? ` • Turma ${selectedAdminTurma}` : ""}:
+                            </div>
+
+                            {/* Indicadores de Presenca Online / Inativo / Offline para o ADM */}
+                            <div className="flex items-center gap-2.5 rounded-lg border bg-secondary/30 px-2.5 py-1 text-[11px] font-bold">
+                              <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400" title="Alunos ativos interagindo nos ultimos 5 minutos">
+                                <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.9)]" />
+                                {presenceSummary.online} Online
+                              </span>
+                              <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400" title="Alunos conectados sem interacao entre 5 e 10 minutos">
+                                <span className="h-2 w-2 rounded-full bg-slate-400" />
+                                {presenceSummary.idle} Inativo
+                              </span>
+                              <span className="flex items-center gap-1 text-rose-500" title="Alunos desconectados ou sem interacao ha mais de 10 minutos">
+                                <span className="h-2 w-2 rounded-full bg-rose-500" />
+                                {presenceSummary.offline} Offline
+                              </span>
+                            </div>
                           </div>
+
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-80 overflow-y-auto pr-1">
-                            {filtered.map((st) => (
-                              <div
-                                key={st.id}
-                                onClick={() => setInspectStudentId(st.id)}
-                                className="flex items-center justify-between gap-3 rounded-2xl border bg-card p-3.5 cursor-pointer hover:border-primary/50 transition-all hover:scale-[1.01]"
-                                title="Clique para inspecionar perfil e medalhas deste aluno"
-                              >
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-display text-sm font-black text-foreground truncate">
-                                      {st.nick}
-                                    </span>
-                                    <span className="rounded-full bg-primary/15 px-2 py-0.2 text-[10px] font-bold text-primary">
-                                      Nv. {st.level}
-                                    </span>
-                                  </div>
-                                  <div className="text-xs text-muted-foreground uppercase truncate mt-0.5">
-                                    {st.full_name}
-                                  </div>
-                                  {Boolean(
-                                    st.turma &&
-                                      st.grade &&
-                                      st.school &&
-                                      st.school !== "Nenhuma" &&
-                                      st.school !== "Outro"
-                                  ) && (
-                                    <div className="text-[11px] text-muted-foreground mt-0.5 font-semibold">
-                                      {st.grade} {st.turma}
+                            {filtered.map((st) => {
+                              const stProg = levelProgress({
+                                xp: st.xp,
+                                matchesPlayed: st.totalMatches ?? 0,
+                                wins: st.wins ?? 0,
+                                distinctGames: st.distinctGamesPlayed ?? 0,
+                              });
+
+                              return (
+                                <div
+                                  key={st.id}
+                                  onClick={() => setInspectStudentId(st.id)}
+                                  className="flex items-center justify-between gap-3 rounded-2xl border bg-card p-3.5 cursor-pointer hover:border-primary/50 transition-all hover:scale-[1.01]"
+                                  title="Clique para inspecionar perfil, requisitos pendentes de nível e medalhas deste aluno"
+                                >
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="font-display text-sm font-black text-foreground truncate">
+                                        {st.nick}
+                                      </span>
+                                      <PresenceDot playerId={st.id} size="xs" />
+                                      <span className="rounded-full bg-primary/15 px-2 py-0.2 text-[10px] font-bold text-primary">
+                                        Nv. {st.level}
+                                      </span>
+                                      {stProg.isLockedByMissions && (
+                                        <span
+                                          className="rounded-full bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.2 text-[9px] font-extrabold text-amber-600 dark:text-amber-400"
+                                          title={`XP atingido (${st.xp} XP), mas faltam missões para destravar o Nível ${stProg.nextRequirement?.level}`}
+                                        >
+                                          🔒 Faltam missões (Nv. {stProg.nextRequirement?.level})
+                                        </span>
+                                      )}
                                     </div>
-                                  )}
-                                </div>
-                                <div className="text-right shrink-0">
-                                  <div className="font-display text-sm font-extrabold text-primary">
-                                    {st.xp} XP
+                                    <div className="text-xs text-muted-foreground uppercase truncate mt-0.5">
+                                      {st.full_name}
+                                    </div>
+                                    {Boolean(
+                                      st.turma &&
+                                        st.grade &&
+                                        st.school &&
+                                        st.school !== "Nenhuma" &&
+                                        st.school !== "Outro"
+                                    ) && (
+                                      <div className="text-[11px] text-muted-foreground mt-0.5 font-semibold">
+                                        {st.grade} {st.turma}
+                                      </div>
+                                    )}
                                   </div>
-                                  <span className="text-[10px] text-primary flex items-center justify-end gap-0.5 mt-0.5 font-bold">
-                                    Ver perfil <ChevronRight className="h-3 w-3" />
-                                  </span>
+                                  <div className="text-right shrink-0">
+                                    <div className="font-display text-sm font-extrabold text-primary">
+                                      {st.xp} XP
+                                    </div>
+                                    <span className="text-[10px] text-primary flex items-center justify-end gap-0.5 mt-0.5 font-bold">
+                                      Ver perfil <ChevronRight className="h-3 w-3" />
+                                    </span>
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       );
@@ -3000,31 +3042,52 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                     </p>
                   ) : (
                     <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
-                      {players.map((p) => (
-                        <div
-                          key={p.id}
-                          className="flex items-center justify-between rounded-xl border bg-background px-3 py-2 text-xs"
-                        >
-                          <div className="min-w-0">
-                            <div className="font-bold truncate">
-                              {p.nick} <span className="font-normal text-muted-foreground">({p.full_name})</span>
+                      {players.map((p) => {
+                        const pProg = levelProgress({
+                          xp: p.xp,
+                          matchesPlayed: p.totalMatches ?? 0,
+                          wins: p.wins ?? 0,
+                          distinctGames: p.distinctGamesPlayed ?? 0,
+                        });
+
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={() => setInspectStudentId(p.id)}
+                            className="flex items-center justify-between rounded-xl border bg-background px-3 py-2 text-xs cursor-pointer hover:border-primary/50 transition-colors"
+                            title="Clique para inspecionar perfil e requisitos de nível deste aluno"
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 font-bold truncate flex-wrap">
+                                <span className="truncate">{p.nick}</span>
+                                <PresenceDot playerId={p.id} size="xs" />
+                                <span className="font-normal text-muted-foreground truncate">({p.full_name})</span>
+                                {pProg.isLockedByMissions && (
+                                  <span
+                                    className="rounded-full bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.2 text-[9px] font-bold text-amber-600 dark:text-amber-400"
+                                    title={`Faltam missões para o Nível ${pProg.nextRequirement?.level}`}
+                                  >
+                                    🔒 Faltam missões (Nv. {pProg.nextRequirement?.level})
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-muted-foreground truncate">
+                                {p.school}
+                                {p.grade ? ` • ${p.grade}` : ""} •{" "}
+                                <b className="text-foreground">
+                                  {stageFromBirthdate(p.birthdate).shortLabel} ({ageFrom(p.birthdate)}{" "}
+                                  anos)
+                                </b>{" "}
+                                • Nasc:{" "}
+                                {new Date(`${p.birthdate}T00:00:00`).toLocaleDateString("pt-BR")}
+                              </div>
                             </div>
-                            <div className="text-muted-foreground truncate">
-                              {p.school}
-                              {p.grade ? ` • ${p.grade}` : ""} •{" "}
-                              <b className="text-foreground">
-                                {stageFromBirthdate(p.birthdate).shortLabel} ({ageFrom(p.birthdate)}{" "}
-                                anos)
-                              </b>{" "}
-                              • Nasc:{" "}
-                              {new Date(`${p.birthdate}T00:00:00`).toLocaleDateString("pt-BR")}
+                            <div className="text-right shrink-0 font-display font-bold text-primary">
+                              Nv. {p.level} ({p.xp} XP)
                             </div>
                           </div>
-                          <div className="text-right shrink-0 font-display font-bold text-primary">
-                            Nv. {p.level} ({p.xp} XP)
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>

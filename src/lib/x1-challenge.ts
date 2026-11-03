@@ -26,6 +26,7 @@ export interface X1OnlinePlayer {
   age?: number;
   stage?: AgeStageId;
   lastSeenAt: number; // epoch ms
+  lastActiveAt?: number; // epoch ms
   inRoomCode?: string | null;
 }
 
@@ -563,11 +564,15 @@ export function heartbeatOnlinePlayer(player: {
   age?: number;
   stage?: AgeStageId;
   inRoomCode?: string | null;
+  lastActiveAt?: number;
 }) {
   const store = loadStore();
+  const now = Date.now();
+  const existing = store.players[player.playerId];
   store.players[player.playerId] = {
     ...player,
-    lastSeenAt: Date.now(),
+    lastSeenAt: now,
+    lastActiveAt: player.lastActiveAt ?? existing?.lastActiveAt ?? now,
   };
   saveStore(store);
 }

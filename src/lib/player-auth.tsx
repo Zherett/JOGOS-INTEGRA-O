@@ -201,6 +201,7 @@ export function PlayerAuthProvider({ children }: { children: ReactNode }) {
     async (args: {
       gameId: GameId;
       mode?: string;
+      isTeam?: boolean;
       score: number;
       level: number;
       correct: number;

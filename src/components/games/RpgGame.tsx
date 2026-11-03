@@ -606,6 +606,47 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
                     from { transform: rotate(360deg); }
                     to { transform: rotate(0deg); }
                   }
+                  @keyframes robotIdleFloatBlue {
+                    0%, 100% { transform: translateY(0px) rotate(0deg); }
+                    50% { transform: translateY(-4px) rotate(0.8deg); }
+                  }
+                  @keyframes robotIdleFloatRed {
+                    0%, 100% { transform: translateY(0px) rotate(0deg); }
+                    50% { transform: translateY(-3.5px) rotate(-1deg); }
+                  }
+                  @keyframes prismEyeBlink {
+                    0%, 82%, 90%, 100% { transform: scaleY(1); opacity: 1; }
+                    86% { transform: scaleY(0.08); opacity: 0.2; }
+                  }
+                  @keyframes prismCoreGlow {
+                    0%, 100% { filter: drop-shadow(0 0 3px #10b981) brightness(1); }
+                    50% { filter: drop-shadow(0 0 10px #34d399) drop-shadow(0 0 16px #facc15) brightness(1.35); }
+                  }
+                  @keyframes prismAntennaGlow {
+                    0%, 100% { filter: drop-shadow(0 0 2px #38bdf8) brightness(1); }
+                    50% { filter: drop-shadow(0 0 8px #67e8f9) drop-shadow(0 0 14px #ffffff) brightness(1.4); }
+                  }
+                  @keyframes prismShoulderGlow {
+                    0%, 100% { filter: brightness(1); }
+                    50% { filter: drop-shadow(0 0 6px #f43f5e) brightness(1.3); }
+                  }
+                  @keyframes redEyeBlinkAngry {
+                    0%, 78%, 88%, 100% { transform: scaleY(1); opacity: 1; }
+                    83% { transform: scaleY(0.1); opacity: 0.25; }
+                  }
+                  @keyframes angryMouthGrimace {
+                    0%, 100% { transform: scale(1); }
+                    50% { transform: scale(1.08) translateY(-0.5px); }
+                  }
+                  @keyframes angryHornsTremble {
+                    0%, 100% { transform: rotate(0deg); }
+                    25% { transform: rotate(-1.5deg); }
+                    75% { transform: rotate(1.5deg); }
+                  }
+                  @keyframes redCorePulseAngry {
+                    0%, 100% { filter: drop-shadow(0 0 4px #ef4444) brightness(1); }
+                    50% { filter: drop-shadow(0 0 14px #dc2626) drop-shadow(0 0 22px #f97316) brightness(1.4); }
+                  }
                 `}</style>
 
                 <div className="flex items-center justify-between text-[11px] text-slate-300">
@@ -739,18 +780,26 @@ function PlayerGeoRobot({
     <svg
       viewBox="0 0 130 150"
       className="h-24 w-24 sm:h-32 sm:w-32 drop-shadow-[0_0_12px_rgba(56,189,248,0.55)]"
+      style={{
+        animation: hit ? "none" : "robotIdleFloatBlue 2.6s ease-in-out infinite",
+        transformOrigin: "bottom center",
+      }}
       aria-label="Robô colorido de formas geométricas do jogador"
     >
-      {/* Antena Circular + Triângulo Dourado */}
-      <circle
-        cx="55"
-        cy="12"
-        r="7"
-        fill={superCharging ? "#facc15" : "#38bdf8"}
-        stroke="#fff"
-        strokeWidth="2"
-      />
-      <polygon points="55,19 45,32 65,32" fill="#f59e0b" stroke="#fff" strokeWidth="1.5" />
+      {/* Antena Circular + Triângulo Dourado (brilhando e pulsando luz) */}
+      <g style={{ animation: "prismAntennaGlow 2s ease-in-out infinite" }}>
+        <circle
+          cx="55"
+          cy="12"
+          r="7"
+          fill={superCharging ? "#facc15" : "#38bdf8"}
+          stroke="#fff"
+          strokeWidth="2"
+        />
+        <polygon points="55,19 45,32 65,32" fill="#f59e0b" stroke="#fff" strokeWidth="1.5" />
+        {/* Ponto focal de brilho da antena */}
+        <circle cx="53" cy="10" r="2.5" fill="#ffffff" opacity="0.9" />
+      </g>
 
       {/* Cabeça Hexagonal / Retangular Colorida */}
       <polygon
@@ -759,10 +808,33 @@ function PlayerGeoRobot({
         stroke="#e0f2fe"
         strokeWidth="2.5"
       />
-      {/* Visor Luminoso Ciano */}
-      <rect x="38" y="41" width="38" height="12" rx="4" fill="#22d3ee" />
-      <circle cx="48" cy="47" r="3.5" fill="#0f172a" />
-      <circle cx="66" cy="47" r="3.5" fill="#0f172a" />
+      {/* Visor Luminoso Ciano com brilho suave */}
+      <rect
+        x="38"
+        y="41"
+        width="38"
+        height="12"
+        rx="4"
+        fill="#22d3ee"
+        style={{ filter: "drop-shadow(0 0 4px #38bdf8)" }}
+      />
+      
+      {/* Olhos do Robô Prisma que piscam dinamicamente */}
+      <g
+        style={{
+          animation: "prismEyeBlink 3.2s infinite",
+          transformOrigin: "55px 47px",
+        }}
+      >
+        {/* Olho Esquerdo */}
+        <circle cx="48" cy="47" r="3.5" fill="#0f172a" />
+        <circle cx="47" cy="46" r="1.3" fill="#67e8f9" />
+        <circle cx="49" cy="48" r="0.7" fill="#ffffff" />
+        {/* Olho Direito */}
+        <circle cx="66" cy="47" r="3.5" fill="#0f172a" />
+        <circle cx="65" cy="46" r="1.3" fill="#67e8f9" />
+        <circle cx="67" cy="48" r="0.7" fill="#ffffff" />
+      </g>
 
       {/* Tronco de Formas Geométricas (Quadrado + Losango Esmeralda + Triângulos) */}
       <rect
@@ -775,21 +847,41 @@ function PlayerGeoRobot({
         stroke="#e0f2fe"
         strokeWidth="2.5"
       />
-      {/* Losango Central Verde/Amarelo */}
-      <polygon
-        points="55,73 73,92 55,111 37,92"
-        fill="#10b981"
-        stroke="#fef08a"
-        strokeWidth="2"
-      />
-      <circle cx="55" cy="92" r="7" fill="#facc15" />
+      {/* Losango Central Verde/Amarelo com pulso contínuo de brilho neon (partes do corpo brilhando) */}
+      <g
+        style={{
+          animation: "prismCoreGlow 1.8s ease-in-out infinite",
+          transformOrigin: "55px 92px",
+        }}
+      >
+        <polygon
+          points="55,73 73,92 55,111 37,92"
+          fill="#10b981"
+          stroke="#fef08a"
+          strokeWidth="2"
+        />
+        <circle cx="55" cy="92" r="7" fill="#facc15" />
+        <polygon points="55,87 59,92 55,97 51,92" fill="#ffffff" opacity="0.9" />
+      </g>
 
-      {/* Ombro Esquerdo (Triângulo Roxo/Rosa) */}
-      <polygon points="10,70 26,68 26,94" fill="#ec4899" stroke="#fff" strokeWidth="1.5" />
+      {/* Ombro Esquerdo (Triângulo Roxo/Rosa com brilho pulsante) */}
+      <polygon
+        points="10,70 26,68 26,94"
+        fill="#ec4899"
+        stroke="#fff"
+        strokeWidth="1.5"
+        style={{ animation: "prismShoulderGlow 2.4s ease-in-out infinite" }}
+      />
 
       {/* Braço Direito Disparador do Raio Azul (Polígonos + Círculo Emissor) */}
       <rect x="84" y="78" width="24" height="14" rx="4" fill="#a855f7" stroke="#fff" strokeWidth="1.5" />
-      <polygon points="108,74 124,85 108,96" fill="#38bdf8" stroke="#fff" strokeWidth="1.5" />
+      <polygon
+        points="108,74 124,85 108,96"
+        fill="#38bdf8"
+        stroke="#fff"
+        strokeWidth="1.5"
+        style={{ filter: "drop-shadow(0 0 5px #38bdf8)" }}
+      />
       <circle
         cx="123"
         cy="85"
@@ -820,11 +912,17 @@ function EnemyGeoRobot({
     <svg
       viewBox="0 0 130 150"
       className="h-24 w-24 sm:h-32 sm:w-32 drop-shadow-[0_0_14px_rgba(239,68,68,0.65)]"
+      style={{
+        animation: hit ? "none" : "robotIdleFloatRed 2.3s ease-in-out infinite",
+        transformOrigin: "bottom center",
+      }}
       aria-label="Robô inimigo vermelho de formas geométricas"
     >
-      {/* Chifres / Crista Geométrica Vermelha */}
-      <polygon points="48,14 36,32 54,32" fill="#ef4444" stroke="#fecaca" strokeWidth="1.5" />
-      <polygon points="82,14 76,32 94,32" fill="#dc2626" stroke="#fecaca" strokeWidth="1.5" />
+      {/* Chifres / Crista Geométrica Vermelha com tremor agressivo */}
+      <g style={{ animation: "angryHornsTremble 2.8s ease-in-out infinite", transformOrigin: "65px 32px" }}>
+        <polygon points="48,14 36,32 54,32" fill="#ef4444" stroke="#fecaca" strokeWidth="1.5" />
+        <polygon points="82,14 76,32 94,32" fill="#dc2626" stroke="#fecaca" strokeWidth="1.5" />
+      </g>
 
       {/* Cabeça Geométrica Vermelha */}
       {theme === "triangle" ? (
@@ -843,9 +941,36 @@ function EnemyGeoRobot({
         />
       )}
 
-      {/* Visor Vermelho / Amarelo Agressivo */}
-      <polygon points="44,44 62,49 44,54" fill="#fef08a" />
-      <polygon points="86,44 68,49 86,54" fill="#fef08a" />
+      {/* Sobrancelhas Angulares de Bravo (fechadas, agressivas) */}
+      <polygon points="40,38 64,44 64,41 40,35" fill="#fecaca" opacity="0.9" />
+      <polygon points="90,38 66,44 66,41 90,35" fill="#fecaca" opacity="0.9" />
+
+      {/* Visor / Olhos Vermelho/Amarelos Agressivos com piscar dinâmico de cara de bravo */}
+      <g
+        style={{
+          animation: "redEyeBlinkAngry 2.8s infinite",
+          transformOrigin: "65px 49px",
+        }}
+      >
+        {/* Olho Esquerdo Agressivo (losango/triângulo inclinado com pupila de fúria) */}
+        <polygon points="43,43 62,49 45,55" fill="#fef08a" stroke="#dc2626" strokeWidth="1" />
+        <polygon points="50,47 58,49 52,51" fill="#7f1d1d" />
+
+        {/* Olho Direito Agressivo (inclinado em direção oposta) */}
+        <polygon points="87,43 68,49 85,55" fill="#fef08a" stroke="#dc2626" strokeWidth="1" />
+        <polygon points="80,47 72,49 78,51" fill="#7f1d1d" />
+      </g>
+
+      {/* Boca com Expressão de Bravo (boca metálica cerrando dentes pontudos geométricos) */}
+      <g style={{ animation: "angryMouthGrimace 2s ease-in-out infinite", transformOrigin: "65px 59px" }}>
+        <polygon points="50,58 80,58 76,62 54,62" fill="#1e1b4b" stroke="#fca5a5" strokeWidth="1" />
+        {/* Dentes metálicos afiados */}
+        <polygon points="54,58 57,60 60,58" fill="#fef08a" />
+        <polygon points="61,58 64,60 67,58" fill="#ffffff" />
+        <polygon points="68,58 71,60 74,58" fill="#fef08a" />
+        <polygon points="57,62 60,60 63,62" fill="#ffffff" />
+        <polygon points="64,62 67,60 70,62" fill="#ffffff" />
+      </g>
 
       {/* Corpo de Formas Geométricas em Tons de Vermelho */}
       <polygon
@@ -854,14 +979,22 @@ function EnemyGeoRobot({
         stroke="#fca5a5"
         strokeWidth="2.5"
       />
-      {/* Núcleo Geométrico Interno Vermelho-Escuro / Carmesim */}
-      <polygon
-        points="65,73 85,93 65,113 45,93"
-        fill="#7f1d1d"
-        stroke="#f87171"
-        strokeWidth="2"
-      />
-      <polygon points="65,81 75,93 65,105 55,93" fill="#ef4444" />
+      {/* Núcleo Geométrico Interno Vermelho-Escuro / Carmesim com pulso de fogo */}
+      <g
+        style={{
+          animation: "redCorePulseAngry 1.6s ease-in-out infinite",
+          transformOrigin: "65px 93px",
+        }}
+      >
+        <polygon
+          points="65,73 85,93 65,113 45,93"
+          fill="#7f1d1d"
+          stroke="#f87171"
+          strokeWidth="2"
+        />
+        <polygon points="65,81 75,93 65,105 55,93" fill="#ef4444" />
+        <polygon points="65,86 70,93 65,100 60,93" fill="#facc15" />
+      </g>
 
       {/* Canhão Esquerdo Apontado para a Barra Central (Disparando o Raio Vermelho) */}
       <rect x="18" y="78" width="22" height="14" rx="3" fill="#991b1b" stroke="#fca5a5" strokeWidth="1.5" />
