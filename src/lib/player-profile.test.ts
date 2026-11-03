@@ -6,6 +6,7 @@ import {
   calculatePlayerLevel,
   computeBadges,
   DEFAULT_DAILY_XP_CAP,
+  evaluateLeaderboardRankChanges,
   formatFullNameUpper,
   fullNameSlug,
   getAvailableSchoolsForAge,
@@ -15,9 +16,11 @@ import {
   isValidSchool,
   levelFromXp,
   levelProgress,
+  matchesRankingCategory,
   MAX_LEVEL,
   normalizeBirthdatePasswordInput,
   passwordFromBirthdate,
+  resolveDefaultRankingCategory,
   SCHOOLS,
   stageFromAge,
   stageFromBirthdate,
@@ -291,5 +294,74 @@ describe("Perfil do Jogador, Escolas, Trava de Níveis (1..10) e Limite Diário 
     assert.equal(isOfficialSemedSchool("Elisângela Litaiff"), true);
     assert.equal(isOfficialSemedSchool("Nenhuma"), false);
     assert.equal(isOfficialSemedSchool("Outro"), false);
+  });
+
+  it("calcula corretamente as setas de subida (▲ verde) e descida (▼ vermelha) no ranking sem jamais marcar 1º lugar com seta vermelha", () => {
+    // Leitura inicial do ranking
+    const firstSnapshot = evaluateLeaderboardRankChanges(
+      [
+        { playerId: "aluno_a", rank: 1 },
+        { playerId: "aluno_b", rank: 2 },
+        { playerId: "aluno_c", rank: 3 },
+      ],
+      {},
+    );
+
+    // O 1º colocado nunca fica com seta vermelha ("down")
+    assert.equal(firstSnapshot.entriesWithTrend[0].rankTrend, "up");
+    assert.notEqual(firstSnapshot.entriesWithTrend[0].rankTrend, "down");
+    assert.equal(firstSnapshot.entriesWithTrend[1].rankTrend, "same");
+    assert.equal(firstSnapshot.entriesWithTrend[2].rankTrend, "same");
+
+    // Na leitura seguinte: aluno_c subiu de 3º para 2º (▲ verde) e aluno_b caiu de 2º para 3º (▼ vermelha)
+    const secondSnapshot = evaluateLeaderboardRankChanges(
+      [
+        { playerId: "aluno_a", rank: 1 },
+        { playerId: "aluno_c", rank: 2 },
+        { playerId: "aluno_b", rank: 3 },
+      ],
+      firstSnapshot.nextHistory,
+    );
+
+    const rowA = secondSnapshot.entriesWithTrend.find((r) => r.playerId === "aluno_a")!;
+    const rowC = secondSnapshot.entriesWithTrend.find((r) => r.playerId === "aluno_c")!;
+    const rowB = secondSnapshot.entriesWithTrend.find((r) => r.playerId === "aluno_b")!;
+
+    assert.notEqual(rowA.rankTrend, "down"); // 1º lugar nunca cai
+    assert.equal(rowC.rankTrend, "up"); // subiu de 3º para 2º
+    assert.equal(rowC.previousRank, 3);
+    assert.equal(rowB.rankTrend, "down"); // caiu de 2º para 3º
+    assert.equal(rowB.previousRank, 2);
+  });
+
+  it("direciona cada aluno por padrão para o ranking da sua série concorrente (5º ano, 6º ano, 7º ano, etc.)", () => {
+    const refDate = new Date("2026-11-03T12:00:00");
+
+    const aluno5Ano = {
+      birthdate: "2015-09-15",
+      school: "Elisângela Litaiff",
+      grade: "5º ano",
+    };
+    const aluno6Ano = {
+      birthdate: "2014-05-10",
+      school: "Raimundo Bezerra",
+      grade: "6º ano",
+    };
+    const aluno7Ano = {
+      birthdate: "2013-04-20",
+      school: "Raimundo Bezerra",
+      grade: "7º ano",
+    };
+
+    assert.equal(resolveDefaultRankingCategory(aluno5Ano, refDate), "5º ano");
+    assert.equal(resolveDefaultRankingCategory(aluno6Ano, refDate), "6º ano");
+    assert.equal(resolveDefaultRankingCategory(aluno7Ano, refDate), "7º ano");
+
+    assert.equal(matchesRankingCategory(aluno5Ano, "5º ano", refDate), true);
+    assert.equal(matchesRankingCategory(aluno5Ano, "6º ano", refDate), false);
+    assert.equal(matchesRankingCategory(aluno6Ano, "6º ano", refDate), true);
+    assert.equal(matchesRankingCategory(aluno6Ano, "5º ano", refDate), false);
+    assert.equal(matchesRankingCategory(aluno6Ano, "7º ano", refDate), false);
+    assert.equal(matchesRankingCategory(aluno6Ano, "etapa_2", refDate), true);
   });
 });

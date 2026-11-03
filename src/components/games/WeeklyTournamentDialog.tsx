@@ -41,12 +41,12 @@ export function WeeklyTournamentDialog({
   const auth = usePlayerAuth();
   const profile = auth.profile;
   const [, setTick] = useState(0);
-  const myStageId = profile ? stageFromBirthdate(profile.birthdate).id : "etapa_1";
+  const myStageId = profile ? stageFromBirthdate(profile.birthdate, new Date(), profile.school).id : "etapa_1";
   const [selectedStage, setSelectedStage] = useState<AgeStageId | "TODAS">(myStageId);
 
   useEffect(() => {
     if (open && profile) {
-      setSelectedStage(stageFromBirthdate(profile.birthdate).id);
+      setSelectedStage(stageFromBirthdate(profile.birthdate, new Date(), profile.school).id);
     }
   }, [open, profile]);
 
@@ -313,16 +313,23 @@ export function WeeklyTournamentDialog({
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-secondary font-display text-lg font-extrabold">
-                          {row.projectedMedal.emoji}
+                        <span
+                          className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl font-display text-sm font-extrabold border shadow-xs ${
+                            row.rank === 1
+                              ? "bg-yellow-400 text-yellow-950 border-yellow-500"
+                              : row.rank === 2
+                                ? "bg-slate-300 text-slate-800 border-slate-400"
+                                : row.rank === 3
+                                  ? "bg-amber-700 text-amber-50 border-amber-800"
+                                  : "bg-secondary text-foreground border-border"
+                          }`}
+                        >
+                          {row.rank <= 3 ? <Medal className="h-5 w-5" /> : `${row.rank}º`}
                         </span>
-                        <div className="min-w-0">
+                        <div className="min-w-0 space-y-0.5">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="font-display text-sm font-extrabold truncate">
-                              #{row.rank} {row.nick}
-                            </span>
-                            <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-bold text-foreground">
-                              {row.stageLabel} ({row.age} anos)
+                            <span className="font-display text-sm font-extrabold truncate uppercase">
+                              {(row.fullName || row.nick).toUpperCase()}
                             </span>
                             {isMe && (
                               <span className="rounded-md bg-primary px-1.5 py-0.2 text-[10px] font-bold text-primary-foreground">
@@ -331,7 +338,7 @@ export function WeeklyTournamentDialog({
                             )}
                           </div>
                           <div className="text-[11px] text-muted-foreground truncate">
-                            {row.school} • Nv. {row.level} •{" "}
+                            {row.school} • Nv. {row.level} • {row.stageLabel} ({row.age} anos) •{" "}
                             <span className="inline-flex items-center gap-0.5 font-semibold text-accent">
                               <Clock className="h-3 w-3" /> {row.holdMinutes} min no Top 5 (+
                               {row.holdBonusPoints} pts)

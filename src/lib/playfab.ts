@@ -5,6 +5,7 @@
 import {
   ALL_GAME_IDS,
   clearLocalStats,
+  loadStats,
   updateBest,
   type GameId,
 } from "./game-storage.ts";
@@ -23,6 +24,7 @@ import {
   applyDailyXpCap,
   calculatePlayerLevel,
   computeBadges,
+  evaluateLeaderboardRankChanges,
   formatFullNameUpper,
   fullNameSlug,
   getLocalDateKey,
@@ -33,9 +35,11 @@ import {
   isValidSchool,
   levelFromXp,
   levelTitle,
+  matchesRankingCategory,
   nickSlug,
   normalizeBirthdatePasswordInput,
   passwordFromBirthdate,
+  schoolNeedsGrade,
   SCHOOLS,
   schoolSlug,
   stageFromBirthdate,
@@ -47,6 +51,9 @@ import {
   xpFromMatch,
   type AgeStageId,
   type Badge,
+  type RankingFilterCategory,
+  type RankHistoryState,
+  type RankTrendDirection,
   type TournamentMedal,
   type TurmaCode,
   createTurmaChangeRequest,
@@ -137,8 +144,12 @@ export interface LeaderboardEntry {
   level: number;
   rankTitle: string;
   rankEmoji: string;
-  value: number; // XP or Best Score depending on board
+  value: number; // Medals, XP, or Best Score depending on board
+  medalsCount?: number;
+  xpValue?: number;
   wins: number;
+  rankTrend?: RankTrendDirection;
+  previousRank?: number;
   isCurrentPlayer?: boolean;
 }
 
@@ -1536,6 +1547,7 @@ async function pushProfileToPlayFab(account: StoredAccount, sessionTicket?: stri
               distinctGamesPlayed: p.distinctGamesPlayed ?? 0,
               unlockedMedals: p.unlockedMedals ?? [],
               badges: p.badges ?? [],
+              stats: account.stats ?? [],
               isAdmin: p.isAdmin,
               seasonId: p.seasonId,
               updatedAt: account.updatedAt,
@@ -1612,13 +1624,41 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
             seasonId: parsed.seasonId ?? existing?.profile.seasonId ?? 1,
           };
 
+          // Merge stats per game_id keeping highest best_score, best_level, plays, and wins
+          const incomingStats: GameStatRow[] = Array.isArray((parsed as any).stats)
+            ? (parsed as any).stats
+            : [];
+          const existingStats: GameStatRow[] = existing?.stats ?? [];
+          const statsMap = new Map<string, GameStatRow>();
+          for (const st of [...existingStats, ...incomingStats]) {
+            if (!st || !st.game_id) continue;
+            const key = `${st.game_id}__${st.mode || "padrao"}`;
+            const cur = statsMap.get(key);
+            if (!cur) {
+              statsMap.set(key, { ...st });
+            } else {
+              statsMap.set(key, {
+                game_id: st.game_id,
+                mode: st.mode || "padrao",
+                plays: Math.max(cur.plays ?? 0, st.plays ?? 0),
+                wins: Math.max(cur.wins ?? 0, st.wins ?? 0),
+                best_score: Math.max(cur.best_score ?? 0, st.best_score ?? 0),
+                best_level: Math.max(cur.best_level ?? 1, st.best_level ?? 1),
+                last_played_at:
+                  (st.last_played_at || "") > (cur.last_played_at || "")
+                    ? st.last_played_at
+                    : cur.last_played_at,
+              });
+            }
+          }
+
           reg[slug] = {
             profile: mergedProfile,
             passwordHash:
               existing?.passwordHash ||
               simpleHash(passwordFromBirthdate(mergedProfile.birthdate)),
             unlocked: existing?.unlocked || [],
-            stats: existing?.stats || [],
+            stats: Array.from(statsMap.values()),
             updatedAt: (parsed as any).updatedAt || new Date().toISOString(),
           };
           updated = true;
@@ -1652,6 +1692,7 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
           distinctGamesPlayed: acc.profile.distinctGamesPlayed ?? 0,
           unlockedMedals: acc.profile.unlockedMedals ?? [],
           badges: acc.profile.badges ?? [],
+          stats: acc.stats ?? [],
           isAdmin: acc.profile.isAdmin,
           seasonId: acc.profile.seasonId,
           updatedAt: acc.updatedAt,
@@ -1749,8 +1790,12 @@ export async function updateStudentProfileByAdmin(args: {
   if (args.turma !== undefined) {
     acc.profile.turma = acc.profile.school === "Nenhuma" || acc.profile.school === "Outro" ? null : args.turma;
   }
-  if (args.grade !== undefined) {
-    acc.profile.grade = acc.profile.school === "Nenhuma" || acc.profile.school === "Outro" ? null : args.grade;
+  if (acc.profile.school === "Nenhuma" || acc.profile.school === "Outro") {
+    acc.profile.grade = null;
+  } else if (is5thGradeSchool(acc.profile.school)) {
+    acc.profile.grade = "5º ano";
+  } else if (args.grade !== undefined) {
+    acc.profile.grade = args.grade;
   }
   if (args.fullName) {
     acc.profile.full_name = formatFullNameUpper(args.fullName);
@@ -2025,13 +2070,19 @@ export async function playfabRecordMatch(args: {
     const sSlug = schoolSlug(acc.profile.school);
     const sId = cfg.seasonId;
     const playerStage = stageFromBirthdate(acc.profile.birthdate, new Date(), acc.profile.school);
+    const bestGameScore = Math.max(
+      safeScore,
+      ...acc.stats.filter((s) => s.game_id === args.gameId).map((s) => s.best_score),
+    );
+    const medalsTotal = acc.profile.unlockedMedals?.length ?? 0;
     const statistics = [
       { StatisticName: "XP_Total", Value: acc.profile.xp },
+      { StatisticName: "Medals_Total", Value: medalsTotal },
       { StatisticName: `XP_Season_S${sId}`, Value: acc.profile.seasonXp },
       { StatisticName: `XP_Season_S${sId}_${playerStage.id}`, Value: acc.profile.seasonXp },
-      { StatisticName: `Best_${args.gameId}`, Value: safeScore },
-      { StatisticName: `Best_${args.gameId}_S${sId}`, Value: safeScore },
-      { StatisticName: `Best_${args.gameId}_S${sId}_${playerStage.id}`, Value: safeScore },
+      { StatisticName: `Best_${args.gameId}`, Value: bestGameScore },
+      { StatisticName: `Best_${args.gameId}_S${sId}`, Value: bestGameScore },
+      { StatisticName: `Best_${args.gameId}_S${sId}_${playerStage.id}`, Value: bestGameScore },
       { StatisticName: `School_${sSlug}_XP`, Value: acc.profile.seasonXp },
     ];
 
@@ -2070,11 +2121,35 @@ export async function playfabRecordMatch(args: {
 
 /* --------------------- Leaderboards (Rankings) Query --------------------- */
 
+const RANK_HISTORY_STORAGE_KEY = "desafios-leaderboard-rank-history-v1";
+let lastRosterLeaderboardSyncAt = 0;
+
+function loadLeaderboardRankHistory(): Record<string, Record<string, RankHistoryState>> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(RANK_HISTORY_STORAGE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function saveLeaderboardRankHistory(history: Record<string, Record<string, RankHistoryState>>) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(RANK_HISTORY_STORAGE_KEY, JSON.stringify(history));
+  } catch {
+    /* ignore storage quota */
+  }
+}
+
 export type LeaderboardFilter =
-  | { kind: "xp_season"; stage?: AgeStageId | "TODAS" }
-  | { kind: "xp_total"; stage?: AgeStageId | "TODAS" }
-  | { kind: "game"; gameId: GameId; stage?: AgeStageId | "TODAS" }
-  | { kind: "school"; school: string; stage?: AgeStageId | "TODAS" };
+  | { kind: "medals"; stage?: RankingFilterCategory }
+  | { kind: "xp_season"; stage?: RankingFilterCategory }
+  | { kind: "xp_total"; stage?: RankingFilterCategory }
+  | { kind: "game"; gameId: GameId; stage?: RankingFilterCategory }
+  | { kind: "school"; school: string; stage?: RankingFilterCategory };
 
 export async function fetchLeaderboard(
   filter: LeaderboardFilter,
@@ -2082,21 +2157,83 @@ export async function fetchLeaderboard(
 ): Promise<LeaderboardEntry[]> {
   const cfg = checkAndApplyScheduledReset();
   const session = loadStoredSession();
-  const reg = loadRegistry();
   const currentId = session?.playerId;
-  const stageFilter = filter.stage && filter.stage !== "TODAS" ? filter.stage : null;
 
-  // Build entries from local registry & merge with PlayFab live leaderboard when configured
+  // 1. Merge browser's local game stats into the logged-in account so any game score is up-to-date
+  if (currentId) {
+    const regBefore = loadRegistry();
+    const activeAcc = regBefore[currentId];
+    if (activeAcc) {
+      const browserStats = loadStats();
+      let changedLocalStats = false;
+      for (const gId of ALL_GAME_IDS) {
+        const localBest = browserStats[gId]?.bestScore ?? 0;
+        const localLevel = browserStats[gId]?.bestLevel ?? 1;
+        if (localBest > 0) {
+          const existingIdx = activeAcc.stats.findIndex((s) => s.game_id === gId);
+          if (existingIdx >= 0) {
+            if (localBest > activeAcc.stats[existingIdx].best_score) {
+              activeAcc.stats[existingIdx].best_score = localBest;
+              activeAcc.stats[existingIdx].best_level = Math.max(
+                activeAcc.stats[existingIdx].best_level,
+                localLevel,
+              );
+              changedLocalStats = true;
+            }
+          } else {
+            activeAcc.stats.push({
+              game_id: gId,
+              mode: "padrao",
+              plays: 1,
+              wins: 1,
+              best_score: localBest,
+              best_level: localLevel,
+              last_played_at: new Date().toISOString(),
+            });
+            changedLocalStats = true;
+          }
+        }
+      }
+      if (changedLocalStats) {
+        regBefore[currentId] = activeAcc;
+        saveRegistry(regBefore);
+      }
+    }
+  }
+
+  // 2. Sync shared student roster from PlayFab cloud (throttled to every 8s) so all devices' scores/medals appear
+  if (isPlayFabConfigured() && Date.now() - lastRosterLeaderboardSyncAt > 8_000) {
+    lastRosterLeaderboardSyncAt = Date.now();
+    await syncStudentRosterFromPlayFab(session?.sessionTicket);
+  }
+
+  const reg = loadRegistry();
   const localAccounts = Object.values(reg).map((acc) => ensurePlayerSeasonAligned(acc, cfg));
 
-  if (session?.sessionTicket && isPlayFabConfigured()) {
-    let statName = stageFilter
-      ? `XP_Season_S${cfg.seasonId}_${stageFilter}`
+  // Map PlayFab live statistic values (if available) to augment local/roster values
+  const playfabStatByPlayer = new Map<string, number>();
+
+  if (session?.sessionTicket && isPlayFabConfigured() && filter.kind !== "medals") {
+    const stageParam =
+      filter.stage === "etapa_1" || filter.stage === "5º ano"
+        ? "etapa_1"
+        : filter.stage === "etapa_2" ||
+            filter.stage === "6º ano" ||
+            filter.stage === "7º ano" ||
+            filter.stage === "8º ano" ||
+            filter.stage === "9º ano"
+          ? "etapa_2"
+          : filter.stage === "etapa_3"
+            ? "etapa_3"
+            : null;
+
+    let statName = stageParam
+      ? `XP_Season_S${cfg.seasonId}_${stageParam}`
       : `XP_Season_S${cfg.seasonId}`;
     if (filter.kind === "xp_total") statName = "XP_Total";
     else if (filter.kind === "game") {
-      statName = stageFilter
-        ? `Best_${filter.gameId}_S${cfg.seasonId}_${stageFilter}`
+      statName = stageParam
+        ? `Best_${filter.gameId}_S${cfg.seasonId}_${stageParam}`
         : `Best_${filter.gameId}_S${cfg.seasonId}`;
     } else if (filter.kind === "school") {
       statName = `School_${schoolSlug(filter.school)}_XP`;
@@ -2120,47 +2257,18 @@ export async function fetchLeaderboard(
     );
 
     if (data?.Leaderboard && data.Leaderboard.length > 0) {
-      const mapped = data.Leaderboard.map((row, idx) => {
-        const localMatch = localAccounts.find(
-          (a) =>
-            a.profile.playfabId === row.PlayFabId ||
-            a.profile.nick.toLowerCase() === (row.DisplayName ?? "").toLowerCase(),
-        );
-        const p = localMatch?.profile;
-        if (isSpecialAdminAccount(p)) {
-          return null;
+      for (const row of data.Leaderboard) {
+        if (row.PlayFabId) {
+          playfabStatByPlayer.set(row.PlayFabId, row.StatValue);
         }
-        const bdate = p?.birthdate || "2015-01-01";
-        const pAge = ageFrom(bdate);
-        const stInfo = stageFromBirthdate(bdate, new Date(), p?.school);
-        const lvl = p ? p.level : filter.kind === "game" ? 1 : levelFromXp(row.StatValue);
-        const titleInfo = levelTitle(lvl);
-        return {
-          rank: row.Position + 1 || idx + 1,
-          playerId: row.PlayFabId,
-          nick: p?.nick || row.DisplayName || `Jogador ${idx + 1}`,
-          fullName: p?.full_name || "",
-          school: p?.school || (filter.kind === "school" ? filter.school : "Rede SEMED"),
-          grade: p?.grade ?? null,
-          age: pAge,
-          stage: stInfo.id,
-          stageLabel: stInfo.shortLabel,
-          level: lvl,
-          rankTitle: titleInfo.title,
-          rankEmoji: titleInfo.emoji,
-          value: row.StatValue,
-          wins: p?.wins ?? 0,
-          isCurrentPlayer:
-            row.PlayFabId === session.playfabId ||
-            (!!currentId && localMatch?.profile.nickNormalized === currentId),
-        };
-      }).filter((m): m is NonNullable<typeof m> => m !== null);
-      const filtered = stageFilter ? mapped.filter((m) => m.stage === stageFilter) : mapped;
-      return filtered.map((m, i) => ({ ...m, rank: i + 1 }));
+        if (row.DisplayName) {
+          playfabStatByPlayer.set(row.DisplayName.toLowerCase(), row.StatValue);
+        }
+      }
     }
   }
 
-  // Local / Hybrid evaluation
+  // 3. Evaluate all registered students (cloud roster + local accounts + PlayFab stats)
   const rows: Omit<LeaderboardEntry, "rank">[] = [];
 
   for (const acc of localAccounts) {
@@ -2168,21 +2276,30 @@ export async function fetchLeaderboard(
     // Admins are excluded from competitive student leaderboards
     if (isSpecialAdminAccount(p)) continue;
 
-    const pAge = ageFrom(p.birthdate);
-    const stInfo = stageFromBirthdate(p.birthdate, new Date(), p.school);
-
-    if (stageFilter && stInfo.id !== stageFilter) continue;
+    if (!matchesRankingCategory(p, filter.stage)) continue;
     if (filter.kind === "school" && p.school !== filter.school) continue;
 
+    const pAge = ageFrom(p.birthdate);
+    const stInfo = stageFromBirthdate(p.birthdate, new Date(), p.school);
+    const pfStatVal =
+      (p.playfabId ? playfabStatByPlayer.get(p.playfabId) : undefined) ??
+      playfabStatByPlayer.get(p.nick.toLowerCase()) ??
+      0;
+
+    const medalsCount = p.unlockedMedals?.length ?? 0;
+    const xpValue = p.seasonXp ?? p.xp;
+
     let value = 0;
-    if (filter.kind === "xp_total") {
-      value = p.xp;
+    if (filter.kind === "medals") {
+      value = medalsCount;
+    } else if (filter.kind === "xp_total") {
+      value = Math.max(p.xp, pfStatVal);
     } else if (filter.kind === "xp_season" || filter.kind === "school") {
-      value = p.seasonXp ?? p.xp;
+      value = Math.max(xpValue, pfStatVal);
     } else if (filter.kind === "game") {
       const gameRows = acc.stats.filter((s) => s.game_id === filter.gameId);
-      if (gameRows.length === 0) continue;
-      value = Math.max(...gameRows.map((g) => g.best_score));
+      const localBest = gameRows.length > 0 ? Math.max(...gameRows.map((g) => g.best_score)) : 0;
+      value = Math.max(localBest, pfStatVal);
     }
 
     if (value <= 0 && filter.kind === "game") continue;
@@ -2191,9 +2308,10 @@ export async function fetchLeaderboard(
     rows.push({
       playerId: p.id,
       nick: p.nick,
-      fullName: p.full_name,
+      fullName: p.full_name || p.nick,
       school: p.school,
-      grade: p.grade,
+      grade: p.grade ?? (is5thGradeSchool(p.school) ? "5º ano" : null),
+      turma: p.turma ?? null,
       age: pAge,
       stage: stInfo.id,
       stageLabel: stInfo.shortLabel,
@@ -2201,17 +2319,37 @@ export async function fetchLeaderboard(
       rankTitle: titleInfo.title,
       rankEmoji: titleInfo.emoji,
       value,
+      medalsCount,
+      xpValue,
       wins: p.wins ?? 0,
       isCurrentPlayer: p.nickNormalized === currentId,
     });
   }
 
-  rows.sort((a, b) => b.value - a.value || b.wins - a.wins || a.nick.localeCompare(b.nick));
+  // 4. Sort according to the selected leaderboard tab
+  rows.sort((a, b) => {
+    if (b.value !== a.value) return b.value - a.value;
+    if ((b.xpValue ?? 0) !== (a.xpValue ?? 0)) return (b.xpValue ?? 0) - (a.xpValue ?? 0);
+    if (b.wins !== a.wins) return b.wins - a.wins;
+    return (a.fullName || a.nick).localeCompare(b.fullName || b.nick);
+  });
 
-  return rows.slice(0, maxResults).map((r, i) => ({
+  const ranked: LeaderboardEntry[] = rows.slice(0, maxResults).map((r, i) => ({
     ...r,
     rank: i + 1,
   }));
+
+  // 5. Compute real rank movement arrows (up / down / same) and persist snapshot
+  const boardKey = `${filter.kind}_${filter.stage || "TODAS"}_${
+    filter.kind === "game" ? filter.gameId : filter.kind === "school" ? filter.school : "all"
+  }`;
+  const allHistory = loadLeaderboardRankHistory();
+  const prevBoardHistory = allHistory[boardKey] ?? {};
+  const { entriesWithTrend, nextHistory } = evaluateLeaderboardRankChanges(ranked, prevBoardHistory);
+  allHistory[boardKey] = nextHistory;
+  saveLeaderboardRankHistory(allHistory);
+
+  return entriesWithTrend;
 }
 
 /** Returns summary stats per school for the School Ranking tab & Admin overview. */
@@ -2238,7 +2376,7 @@ export function getSchoolStandings(): {
       studentsCount: members.length,
       totalXp,
       totalWins,
-      topStudent: members[0]?.profile.nick ?? null,
+      topStudent: members[0] ? (members[0].profile.full_name || members[0].profile.nick) : null,
     };
   }).sort((a, b) => b.totalXp - a.totalXp || b.totalWins - a.totalWins);
 }
@@ -2349,12 +2487,90 @@ export async function playfabSetInitialTurma(turma: TurmaCode): Promise<PlayerPr
   const acc = reg[session.playerId];
   if (!acc) return null;
 
+  // Regular players can only set their turma if it wasn't already set
+  if (acc.profile.turma && !acc.profile.isAdmin) {
+    return acc.profile;
+  }
+
   acc.profile.turma = turma;
   acc.updatedAt = new Date().toISOString();
   reg[session.playerId] = acc;
   saveRegistry(reg);
   syncLocalBrowserFromAccount(acc);
+  await pushProfileToPlayFab(acc, session.sessionTicket);
   return acc.profile;
+}
+
+/**
+ * Allows a regular player to set their School, Grade (Série) and Turma ONE TIME if they left them
+ * unset ("Nenhuma" or null) when creating their profile. Once selected, these fields become fixed
+ * and can only be modified by the Administrator (ADM).
+ */
+export async function playfabCompleteInitialSchoolSetup(args: {
+  school?: string;
+  grade?: string | null;
+  turma?: TurmaCode | null;
+}): Promise<{ profile: PlayerProfile | null; error: string | null }> {
+  const session = loadStoredSession();
+  if (!session) {
+    return { profile: null, error: "Você precisa estar logado para atualizar seu perfil." };
+  }
+  const reg = loadRegistry();
+  const acc = reg[session.playerId];
+  if (!acc) {
+    return { profile: null, error: "Perfil não encontrado." };
+  }
+
+  const p = acc.profile;
+  const currentAge = ageFrom(p.birthdate);
+  const isOver15 = currentAge >= 15 || isEtapa3OrOlder(p.birthdate);
+  const isOver11 = currentAge > 11;
+
+  if (isOver15) {
+    return {
+      profile: p,
+      error: "Para 15 anos ou mais (3ª Etapa • Comunidade), não há vínculo com escolas ou séries do ensino fundamental.",
+    };
+  }
+
+  const schoolAlreadyLocked = Boolean(p.school && p.school !== "Nenhuma");
+  const gradeAlreadyLocked = Boolean(p.grade);
+  const turmaAlreadyLocked = Boolean(p.turma);
+
+  // 1. School (only if not yet selected)
+  if (!schoolAlreadyLocked && args.school && args.school !== "Nenhuma") {
+    if (isOver11 && is5thGradeSchool(args.school)) {
+      return {
+        profile: p,
+        error: "Alunos acima de 11 anos não podem selecionar escolas de 5º ano.",
+      };
+    }
+    p.school = args.school;
+  }
+
+  // 2. Grade / Série (only if not yet selected)
+  if (!gradeAlreadyLocked) {
+    if (is5thGradeSchool(p.school)) {
+      p.grade = "5º ano";
+    } else if (schoolNeedsGrade(p.school)) {
+      if (args.grade) {
+        p.grade = args.grade;
+      }
+    }
+  }
+
+  // 3. Turma (only if not yet selected and school is an official SEMED school)
+  if (!turmaAlreadyLocked && args.turma && isOfficialSemedSchool(p.school)) {
+    p.turma = args.turma;
+  }
+
+  acc.updatedAt = new Date().toISOString();
+  reg[session.playerId] = acc;
+  saveRegistry(reg);
+  syncLocalBrowserFromAccount(acc);
+  await pushProfileToPlayFab(acc, session.sessionTicket);
+
+  return { profile: acc.profile, error: null };
 }
 
 /**

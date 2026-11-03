@@ -8,18 +8,17 @@ import {
   CalendarClock,
   Crown,
   Flame,
-  Users,
   Layers,
   ChevronDown,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ALL_GAME_IDS, GAME_NAMES, type GameId } from "@/lib/game-storage";
 import {
-  AGE_STAGES,
-  getAgeStageInfo,
+  getRankingCategoryLabel,
+  RANKING_SERIES_OPTIONS,
+  resolveDefaultRankingCategory,
   SCHOOLS,
-  stageFromBirthdate,
-  type AgeStageId,
+  type RankingFilterCategory,
 } from "@/lib/player-profile";
 import { usePlayerAuth } from "@/lib/player-auth";
 import {
@@ -34,33 +33,29 @@ interface Props {
   onOpenChange: (v: boolean) => void;
 }
 
-type TabKind = "geral" | "jogos" | "escolas";
+type TabKind = "medalhas" | "geral" | "jogos" | "escolas";
 
 export function LeaderboardDialog({ open, onOpenChange }: Props) {
   const auth = usePlayerAuth();
-  const playerStage = auth.profile
-    ? stageFromBirthdate(auth.profile.birthdate, new Date(), auth.profile.school).id
-    : "etapa_1";
-  const [selectedStage, setSelectedStage] = useState<AgeStageId | "TODAS">(playerStage);
-  const [tab, setTab] = useState<TabKind>("geral");
+  const defaultPlayerCategory = resolveDefaultRankingCategory(auth.profile);
+  const [selectedStage, setSelectedStage] = useState<RankingFilterCategory>(defaultPlayerCategory);
+  const [tab, setTab] = useState<TabKind>("medalhas");
   const [selectedGame, setSelectedGame] = useState<GameId>("logica");
   const [selectedSchool, setSelectedSchool] = useState<string>("TODAS");
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [inspectPlayerId, setInspectPlayerId] = useState<string | null>(null);
   const [showStageSelector, setShowStageSelector] = useState(false);
+  const [refreshCounter, setRefreshCounter] = useState(0);
 
   const cfg = auth.adminConfig;
   const schoolStandings = open ? getSchoolStandings() : [];
 
-  // Default to the logged-in student's Age Stage whenever opening the Ranking dialog
+  // Default to the logged-in student's competing series/grade AND the "Medalhas" tab whenever opening the Ranking dialog
   useEffect(() => {
     if (open) {
-      setSelectedStage(
-        auth.profile
-          ? stageFromBirthdate(auth.profile.birthdate, new Date(), auth.profile.school).id
-          : "etapa_1",
-      );
+      setSelectedStage(resolveDefaultRankingCategory(auth.profile));
+      setTab("medalhas");
     }
   }, [open, auth.profile]);
 
@@ -71,7 +66,9 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
 
     const load = async () => {
       let res: LeaderboardEntry[] = [];
-      if (tab === "geral") {
+      if (tab === "medalhas") {
+        res = await fetchLeaderboard({ kind: "medals", stage: selectedStage }, 50);
+      } else if (tab === "geral") {
         res = await fetchLeaderboard({ kind: "xp_season", stage: selectedStage }, 50);
       } else if (tab === "jogos") {
         res = await fetchLeaderboard(
@@ -102,18 +99,19 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
     selectedStage,
     auth.stats,
     auth.profile?.xp,
+    auth.profile?.unlockedMedals?.length,
     cfg.seasonId,
+    refreshCounter,
   ]);
 
   const scheduledDate = cfg.scheduledResetAt ? new Date(cfg.scheduledResetAt) : null;
-  const activeStageInfo = selectedStage !== "TODAS" ? getAgeStageInfo(selectedStage) : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 font-display text-2xl font-extrabold">
-            <Trophy className="h-6 w-6 text-accent" /> Ranking — {cfg.seasonName}
+            <Trophy className="h-6 w-6 text-yellow-500" /> Ranking — {cfg.seasonName}
           </DialogTitle>
         </DialogHeader>
 
@@ -133,21 +131,16 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
           </div>
         )}
 
-        {/* Top Controls: Etapas selector compact icon button on the top-left below title */}
+        {/* Top Controls: Série / Etapa selector button on the top-left below title */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
           <button
             type="button"
             onClick={() => setShowStageSelector((v) => !v)}
             className="inline-flex items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-black text-primary hover:bg-primary/20 transition-all shadow-xs"
-            title="Clique para alternar etapa / séries"
+            title="Clique para alternar entre séries e etapas"
           >
             <Layers className="h-4 w-4" />
-            <span>
-              Etapa:{" "}
-              {selectedStage === "TODAS"
-                ? "Geral (Todas as Etapas)"
-                : getAgeStageInfo(selectedStage).label}
-            </span>
+            <span>Série / Etapa: {getRankingCategoryLabel(selectedStage)}</span>
             <ChevronDown
               className={`h-3.5 w-3.5 transition-transform duration-200 ${
                 showStageSelector ? "rotate-180" : ""
@@ -165,12 +158,12 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
           )}
         </div>
 
-        {/* Collapsible Stage Selector (Hidden behind the icon button above) */}
+        {/* Collapsible Series / Stage Selector */}
         {showStageSelector && (
           <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-3 space-y-2.5 animate-in fade-in-50 duration-200">
             <div className="flex items-center justify-between">
               <span className="font-display text-xs font-black uppercase tracking-wider text-primary">
-                Selecione a Etapa Escolar:
+                Selecione a Série ou Etapa:
               </span>
               <button
                 type="button"
@@ -178,26 +171,31 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
                   setSelectedStage("TODAS");
                   setShowStageSelector(false);
                 }}
-                className={`rounded-lg border px-2 py-0.5 text-[10px] font-bold transition-all ${
+                className={`rounded-lg border px-2.5 py-1 text-[10px] font-bold transition-all ${
                   selectedStage === "TODAS"
                     ? "border-accent bg-accent text-accent-foreground"
-                    : "border-border bg-card/80 text-muted-foreground"
+                    : "border-border bg-card/80 text-muted-foreground hover:text-foreground"
                 }`}
               >
-                Todas as Séries
+                🌐 Todas as Séries (Geral)
               </button>
             </div>
 
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              {AGE_STAGES.map((st) => {
-                const isSelected = selectedStage === st.id;
-                const isMyStage = auth.profile && playerStage === st.id;
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {RANKING_SERIES_OPTIONS.map((opt) => {
+                const isSelected =
+                  selectedStage === opt.id ||
+                  (opt.id === "5º ano" && selectedStage === "etapa_1");
+                const isMyCategory =
+                  Boolean(auth.profile) &&
+                  (defaultPlayerCategory === opt.id ||
+                    (opt.id === "5º ano" && defaultPlayerCategory === "etapa_1"));
                 return (
                   <button
-                    key={st.id}
+                    key={opt.id}
                     type="button"
                     onClick={() => {
-                      setSelectedStage(st.id);
+                      setSelectedStage(opt.id);
                       setShowStageSelector(false);
                     }}
                     className={`flex flex-col items-start rounded-xl border p-2.5 text-left transition-all ${
@@ -207,10 +205,10 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
                     }`}
                   >
                     <div className="flex w-full items-center justify-between gap-1">
-                      <span className="font-display text-sm font-extrabold">
-                        {st.emoji} {st.shortLabel}
+                      <span className="font-display text-xs sm:text-sm font-extrabold">
+                        {opt.emoji} {opt.shortLabel}
                       </span>
-                      {isMyStage && (
+                      {isMyCategory && (
                         <span
                           className={`rounded-full px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${
                             isSelected
@@ -218,16 +216,16 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
                               : "bg-primary/15 text-primary"
                           }`}
                         >
-                          Você
+                          Sua Série
                         </span>
                       )}
                     </div>
                     <span
-                      className={`text-xs font-black ${
-                        isSelected ? "text-primary-foreground/95" : "text-muted-foreground"
+                      className={`text-[11px] font-bold leading-tight mt-0.5 ${
+                        isSelected ? "text-primary-foreground/90" : "text-muted-foreground"
                       }`}
                     >
-                      {st.ageRangeLabel} • {st.schoolCycleLabel}
+                      {opt.description}
                     </span>
                   </button>
                 );
@@ -236,8 +234,19 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
           </div>
         )}
 
-        {/* Destaque Principal: Abas de Classificação em Evidência ("XP", "Por Jogo", "Escolas") */}
-        <div className="grid grid-cols-3 gap-2 rounded-2xl bg-secondary p-1">
+        {/* Destaque Principal: 4 Abas de Classificação ("Medalhas", "XP", "Por Jogo", "Escolas") */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 rounded-2xl bg-secondary p-1">
+          <button
+            type="button"
+            onClick={() => setTab("medalhas")}
+            className={`flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs sm:text-sm font-black transition-all ${
+              tab === "medalhas"
+                ? "bg-primary text-primary-foreground shadow-md"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Medal className="h-4 w-4" /> Medalhas
+          </button>
           <button
             type="button"
             onClick={() => setTab("geral")}
@@ -247,7 +256,7 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            <Sparkles className="h-4 w-4" /> XP (Temporada)
+            <Sparkles className="h-4 w-4" /> XP
           </button>
           <button
             type="button"
@@ -276,7 +285,7 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
         {/* Sub-filters */}
         {tab === "jogos" && (
           <div className="flex flex-wrap gap-1.5">
-            {ALL_GAME_IDS.filter((id) => cfg.enabledGames[id]).map((id) => (
+            {ALL_GAME_IDS.filter((id) => cfg.enabledGames[id] === true).map((id) => (
               <button
                 key={id}
                 type="button"
@@ -332,22 +341,22 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
                 type="button"
                 onClick={() => setSelectedSchool(st.school)}
                 className={`flex w-full items-center justify-between gap-3 rounded-2xl border p-4 text-left transition-all hover:border-primary ${
-                  idx === 0 ? "border-accent bg-accent/10 shadow-sm" : "bg-card"
+                  idx === 0 ? "border-yellow-400 bg-yellow-400/10 shadow-sm" : "bg-card"
                 }`}
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <span
-                    className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl font-display text-sm font-extrabold ${
+                    className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl font-display text-sm font-extrabold border shadow-xs ${
                       idx === 0
-                        ? "bg-accent text-accent-foreground"
+                        ? "bg-yellow-400 text-yellow-950 border-yellow-500"
                         : idx === 1
-                          ? "bg-slate-300 text-slate-900"
+                          ? "bg-slate-300 text-slate-800 border-slate-400"
                           : idx === 2
-                            ? "bg-amber-600 text-white"
-                            : "bg-secondary text-foreground"
+                            ? "bg-amber-700 text-amber-50 border-amber-800"
+                            : "bg-secondary text-foreground border-border"
                     }`}
                   >
-                    {idx === 0 ? <Crown className="h-5 w-5" /> : `${idx + 1}º`}
+                    {idx === 0 ? <Crown className="h-5 w-5" /> : idx <= 2 ? <Medal className="h-4 w-4" /> : `${idx + 1}º`}
                   </span>
                   <div className="min-w-0">
                     <div className="truncate font-display text-base font-extrabold">
@@ -380,108 +389,134 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
             ) : entries.length === 0 ? (
               <div className="rounded-2xl border border-dashed p-8 text-center">
                 <Trophy className="mx-auto h-8 w-8 text-muted-foreground/60" />
-                <p className="mt-2 font-display font-bold">Ainda não há pontuações registradas</p>
+                <p className="mt-2 font-display font-bold">Ainda não há pontuações registradas nesta categoria</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Entre com o seu perfil e jogue uma partida para inaugurar o ranking!
+                  Entre com o seu perfil e jogue uma partida para inaugurar o ranking de{" "}
+                  <b>{getRankingCategoryLabel(selectedStage)}</b>!
                 </p>
               </div>
             ) : (
-              entries.map((row) => (
-                <div
-                  key={`${row.playerId}-${row.rank}`}
-                  onClick={() => setInspectPlayerId(row.playerId)}
-                  className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 cursor-pointer transition-all hover:scale-[1.01] active:scale-[0.99] ${
-                    row.isCurrentPlayer
-                      ? "border-primary bg-primary/10 ring-2 ring-primary/30"
-                      : row.rank === 1
-                        ? "border-accent bg-accent/10 shadow-sm"
-                        : "bg-card hover:border-primary/50"
-                  }`}
-                  title="Clique para ver o perfil e medalhas deste jogador"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span
-                      className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl font-display text-sm font-extrabold ${
-                        row.rank === 1
-                          ? "bg-accent text-accent-foreground"
-                          : row.rank === 2
-                            ? "bg-slate-300 text-slate-900"
-                            : row.rank === 3
-                              ? "bg-amber-600 text-white"
-                              : "bg-secondary text-foreground"
-                      }`}
-                    >
-                      {row.rank <= 3 ? <Medal className="h-4 w-4" /> : `${row.rank}º`}
-                    </span>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="truncate font-display text-base font-extrabold">
-                          {row.nick}
+              entries.map((row) => {
+                const displayFullName = (row.fullName || row.nick).toUpperCase();
+                return (
+                  <div
+                    key={`${row.playerId}-${row.rank}`}
+                    onClick={() => setInspectPlayerId(row.playerId)}
+                    className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 cursor-pointer transition-all hover:scale-[1.01] active:scale-[0.99] ${
+                      row.isCurrentPlayer
+                        ? "border-primary bg-primary/10 ring-2 ring-primary/30"
+                        : row.rank === 1
+                          ? "border-yellow-400 bg-yellow-400/10 shadow-sm"
+                          : "bg-card hover:border-primary/50"
+                    }`}
+                    title="Clique para ver o perfil e medalhas deste jogador"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {/* Medalha de colocação: 1º Amarelo (Ouro), 2º Cinza (Prata), 3º Bronze */}
+                      <span
+                        className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl font-display text-sm font-extrabold border shadow-xs ${
+                          row.rank === 1
+                            ? "bg-yellow-400 text-yellow-950 border-yellow-500"
+                            : row.rank === 2
+                              ? "bg-slate-300 text-slate-800 border-slate-400"
+                              : row.rank === 3
+                                ? "bg-amber-700 text-amber-50 border-amber-800"
+                                : "bg-secondary text-foreground border-border"
+                        }`}
+                      >
+                        {row.rank <= 3 ? <Medal className="h-5 w-5" /> : `${row.rank}º`}
+                      </span>
+
+                      <div className="min-w-0 space-y-0.5">
+                        {/* Linha Principal: Nome Completo do Usuário */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="truncate font-display text-sm sm:text-base font-black text-foreground uppercase">
+                            {displayFullName}
+                          </span>
+                          {row.isCurrentPlayer && (
+                            <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-accent-foreground">
+                              Você
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Linha Abaixo do Nome Completo: Escola e demais informações */}
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                          <span className="font-semibold text-foreground/90">
+                            {row.school}
+                          </span>
+                          {row.grade && (
+                            <span className="rounded-md bg-secondary px-1.5 py-0.2 text-[10px] font-bold text-foreground">
+                              {row.grade}
+                              {row.turma ? ` • Turma ${row.turma}` : ""}
+                            </span>
+                          )}
+                          <span className="rounded-md bg-primary/15 px-1.5 py-0.2 text-[10px] font-bold text-primary">
+                            {row.rankEmoji} Nv. {row.level}
+                          </span>
+                          <span className="text-[11px]">
+                            • {row.age} anos ({row.stageLabel})
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <span className="font-display text-base sm:text-lg font-extrabold text-primary whitespace-nowrap">
+                          {tab === "medalhas"
+                            ? `🏅 ${row.value} ${row.value === 1 ? "medalha" : "medalhas"}`
+                            : tab === "jogos"
+                              ? `${row.value} pts`
+                              : `${row.value} XP`}
                         </span>
-                        <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">
-                          {row.rankEmoji} Nv. {row.level}
-                        </span>
-                        <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-foreground">
-                          {row.stageLabel} ({row.age} anos)
-                        </span>
-                        {row.isCurrentPlayer && (
-                          <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-accent-foreground">
-                            Você
+
+                        {/* Seta indicativa real de subida (verde) ou descida (vermelha) no ranking */}
+                        {row.rankTrend === "up" ? (
+                          <span
+                            className="font-black text-emerald-500 text-xs sm:text-sm drop-shadow-xs"
+                            title={
+                              row.previousRank && row.previousRank > row.rank
+                                ? `Subiu da ${row.previousRank}ª para a ${row.rank}ª posição!`
+                                : "Liderando no topo do ranking!"
+                            }
+                          >
+                            ▲
+                          </span>
+                        ) : row.rankTrend === "down" && row.rank > 1 ? (
+                          <span
+                            className="font-black text-rose-500 text-xs sm:text-sm drop-shadow-xs"
+                            title={
+                              row.previousRank && row.previousRank < row.rank
+                                ? `Caiu da ${row.previousRank}ª para a ${row.rank}ª posição`
+                                : "Caiu posições no ranking"
+                            }
+                          >
+                            ▼
+                          </span>
+                        ) : (
+                          <span
+                            className="font-bold text-muted-foreground text-xs"
+                            title="Posição mantida"
+                          >
+                            —
                           </span>
                         )}
                       </div>
-                      <div className="truncate text-xs text-muted-foreground">
-                        {row.school}
-                        {row.grade ? ` • ${row.grade}` : ""} • {row.rankTitle}
+
+                      <div className="inline-flex items-center justify-end gap-1.5 text-[11px] text-muted-foreground">
+                        {tab === "medalhas" && row.xpValue !== undefined && (
+                          <span>{row.xpValue} XP •</span>
+                        )}
+                        <span className="inline-flex items-center gap-0.5">
+                          <Flame className="h-3 w-3 text-accent" /> {row.wins}{" "}
+                          {row.wins === 1 ? "vitória" : "vitórias"}
+                        </span>
                       </div>
                     </div>
                   </div>
-
-                  <div className="text-right shrink-0">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <span className="font-display text-lg font-extrabold text-primary">
-                        {row.value} {tab === "jogos" ? "pts" : "XP"}
-                      </span>
-                      {/* Seta indicativa de subida (verde) ou descida (vermelha) no ranking */}
-                      {(() => {
-                        const seed = (row.rank * 7 + (row.playerId?.length || 3) + row.wins) % 10;
-                        if (seed <= 4) {
-                          return (
-                            <span
-                              className="font-black text-emerald-500 text-xs sm:text-sm drop-shadow-xs"
-                              title="Subiu posições no ranking!"
-                            >
-                              ▲
-                            </span>
-                          );
-                        } else if (seed <= 8) {
-                          return (
-                            <span
-                              className="font-black text-rose-500 text-xs sm:text-sm drop-shadow-xs"
-                              title="Caiu posições no ranking"
-                            >
-                              ▼
-                            </span>
-                          );
-                        } else {
-                          return (
-                            <span
-                              className="font-bold text-muted-foreground text-xs"
-                              title="Posição mantida"
-                            >
-                              —
-                            </span>
-                          );
-                        }
-                      })()}
-                    </div>
-                    <div className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                      <Flame className="h-3 w-3 text-accent" /> {row.wins}{" "}
-                      {row.wins === 1 ? "vitória" : "vitórias"}
-                    </div>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         )}
@@ -490,6 +525,10 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
           playerId={inspectPlayerId}
           open={Boolean(inspectPlayerId)}
           onOpenChange={(v) => !v && setInspectPlayerId(null)}
+          onStudentUpdated={() => {
+            setRefreshCounter((c) => c + 1);
+            void auth.refresh();
+          }}
         />
       </DialogContent>
     </Dialog>

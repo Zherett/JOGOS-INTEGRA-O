@@ -31,9 +31,16 @@ import {
   ageFrom,
   birthdayInfo,
   DEFAULT_DAILY_XP_CAP,
+  getAvailableSchoolsForAge,
   getLocalDateKey,
+  is5thGradeSchool,
+  isEtapa3OrOlder,
+  isOfficialSemedSchool,
   levelProgress,
   MAX_LEVEL,
+  RAIMUNDO_GRADES,
+  resolveDefaultRankingCategory,
+  schoolNeedsGrade,
   stageFromBirthdate,
   TOURNAMENT_DAILY_ENTRIES_LIMIT,
   TOURNAMENT_DAILY_EXTRA_XP_CAP,
@@ -45,6 +52,7 @@ import { GAME_NAMES, type GameId } from "@/lib/game-storage";
 import { useSoundMuted } from "@/lib/sound";
 import {
   fetchLeaderboard,
+  playfabCompleteInitialSchoolSetup,
   playfabSetInitialTurma,
   playfabRequestTurmaChange,
 } from "@/lib/playfab";
@@ -99,7 +107,14 @@ export function PlayerMenu({ onConfigChanged }: Props) {
   const [selectedNewTurma, setSelectedNewTurma] = useState<TurmaCode>("A");
   const [turmaMsg, setTurmaMsg] = useState<string | null>(null);
 
-  // Player rank position in their stage
+  // One-time initial School / Grade / Turma setup states (for regular players who left them blank at signup)
+  const [initialSchool, setInitialSchool] = useState<string>("Nenhuma");
+  const [initialGrade, setInitialGrade] = useState<string>(RAIMUNDO_GRADES[0]);
+  const [initialTurma, setInitialTurma] = useState<string>("");
+  const [savingInitialSetup, setSavingInitialSetup] = useState(false);
+  const [initialSetupMsg, setInitialSetupMsg] = useState<string | null>(null);
+
+  // Player rank position in their competing series
   const [playerRank, setPlayerRank] = useState<number | null>(null);
 
   const profile = auth.profile;
@@ -132,11 +147,16 @@ export function PlayerMenu({ onConfigChanged }: Props) {
   const dailyPercent = Math.min(100, Math.round((dailyXp / Math.max(1, dailyCap)) * 100));
   const isDailyCapped = dailyXp >= dailyCap;
 
-  // Retrieve player's ranking position in their stage
+  // Retrieve player's ranking position in their competing series (Medalhas tab by default)
   useEffect(() => {
     if (!profileOpen || !profile) return;
-    const stage = stageFromBirthdate(profile.birthdate, new Date(), profile.school).id;
-    fetchLeaderboard({ kind: "xp_season", stage }, 100)
+    setInitialSchool(profile.school || "Nenhuma");
+    setInitialGrade(profile.grade || RAIMUNDO_GRADES[0]);
+    setInitialTurma(profile.turma || "");
+    setInitialSetupMsg(null);
+
+    const category = resolveDefaultRankingCategory(profile);
+    fetchLeaderboard({ kind: "medals", stage: category }, 100)
       .then((entries) => {
         const found = entries.find(
           (e) =>
@@ -151,6 +171,35 @@ export function PlayerMenu({ onConfigChanged }: Props) {
       })
       .catch(() => setPlayerRank(null));
   }, [profileOpen, profile]);
+
+  async function handleSaveInitialSchoolAndGrade() {
+    if (!profile) return;
+    setSavingInitialSetup(true);
+    setInitialSetupMsg(null);
+    const targetSchool =
+      profile.school && profile.school !== "Nenhuma" ? profile.school : initialSchool;
+    const targetGrade = profile.grade
+      ? profile.grade
+      : is5thGradeSchool(targetSchool)
+        ? "5º ano"
+        : schoolNeedsGrade(targetSchool)
+          ? initialGrade
+          : null;
+    const targetTurma = (profile.turma || initialTurma || null) as TurmaCode | null;
+
+    const res = await playfabCompleteInitialSchoolSetup({
+      school: targetSchool,
+      grade: targetGrade,
+      turma: targetTurma,
+    });
+    setSavingInitialSetup(false);
+    if (res.error) {
+      setInitialSetupMsg(res.error);
+      return;
+    }
+    setInitialSetupMsg("Vínculo escolar salvo e fixado com sucesso!");
+    await auth.refresh();
+  }
 
   async function handleSetInitialTurma(t: TurmaCode) {
     await playfabSetInitialTurma(t);
@@ -274,33 +323,11 @@ export function PlayerMenu({ onConfigChanged }: Props) {
                     <h2 className="truncate font-display text-2xl font-black text-foreground">
                       {profile.nick}
                     </h2>
-                    {/* Tag da Turma */}
-                    {profile.turma ? (
+                    {/* Tag Fixa da Turma (Quando já selecionada) */}
+                    {profile.turma && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 border border-primary/30 px-2.5 py-0.5 text-xs font-bold text-primary">
-                        Turma {profile.turma}
-                        <button
-                          type="button"
-                          onClick={() => setTurmaModalOpen(true)}
-                          className="ml-1 text-[10px] underline hover:text-foreground"
-                          title="Solicitar mudança de turma"
-                        >
-                          trocar
-                        </button>
+                        <Lock className="h-3 w-3" /> Turma {profile.turma}
                       </span>
-                    ) : (
-                      <div className="inline-flex items-center gap-1 rounded-xl bg-card border px-2 py-0.5 text-xs">
-                        <span className="text-muted-foreground text-[11px]">Escolher Turma:</span>
-                        {VALID_TURMAS.map((t) => (
-                          <button
-                            key={t}
-                            type="button"
-                            onClick={() => void handleSetInitialTurma(t)}
-                            className="rounded px-1.5 py-0.5 text-xs font-bold hover:bg-primary hover:text-primary-foreground"
-                          >
-                            {t}
-                          </button>
-                        ))}
-                      </div>
                     )}
                   </div>
 
@@ -308,9 +335,16 @@ export function PlayerMenu({ onConfigChanged }: Props) {
                     {profile.full_name}
                   </p>
 
-                  <p className="text-xs text-muted-foreground">
-                    {profile.school}
-                    {profile.grade ? ` • ${profile.grade}` : ""} • {age} anos
+                  <p className="text-xs text-muted-foreground flex flex-wrap items-center gap-1.5">
+                    <span>
+                      {profile.school}
+                      {profile.grade ? ` • ${profile.grade}` : ""} • {age} anos
+                    </span>
+                    {profile.school && profile.school !== "Nenhuma" && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-secondary px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground" title="Escola e série já fixadas no perfil. Somente o Administrador pode alterar.">
+                        <Lock className="h-2.5 w-2.5" /> Fixado (Só ADM altera)
+                      </span>
+                    )}
                   </p>
 
                   {/* Badges de Informações Simplificadas */}
@@ -340,6 +374,161 @@ export function PlayerMenu({ onConfigChanged }: Props) {
                   )}
                 </div>
               </div>
+
+              {/* Painel de Seleção Única de Escola, Série e Turma (Disponível APENAS se o jogador não selecionou na criação) */}
+              {(() => {
+                const isOver15 = isEtapa3OrOlder(profile.birthdate);
+                if (isOver15) return null;
+
+                const schoolNotSelected = !profile.school || profile.school === "Nenhuma";
+                const effectiveSchool = schoolNotSelected ? initialSchool : profile.school;
+                const needsGradeSelection =
+                  !profile.grade && schoolNeedsGrade(effectiveSchool);
+                const needsTurmaSelection =
+                  !profile.turma && isOfficialSemedSchool(effectiveSchool);
+
+                const hasUnselectedFields =
+                  schoolNotSelected || needsGradeSelection || needsTurmaSelection;
+
+                if (!hasUnselectedFields) return null;
+
+                const availableSchoolsForStudent = getAvailableSchoolsForAge(profile.birthdate).filter(
+                  (s) => s.name !== "Nenhuma",
+                );
+
+                return (
+                  <div className="rounded-3xl border-2 border-primary/40 bg-primary/5 p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 font-display text-sm font-extrabold text-primary">
+                        <School className="h-4 w-4" />
+                        <span>Completar Vínculo Escolar (Seleção Única)</span>
+                      </div>
+                      <span className="text-[11px] font-semibold text-muted-foreground">
+                        Após confirmar, a escola e a série ficam fixas (somente o ADM poderá alterar)
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {/* 1. Seleção de Escola (Disponível apenas se ainda estiver como "Nenhuma") */}
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-foreground flex items-center gap-1">
+                          Instituição (Escola):
+                          {!schoolNotSelected && <Lock className="h-3 w-3 text-muted-foreground" />}
+                        </label>
+                        {schoolNotSelected ? (
+                          <select
+                            value={initialSchool}
+                            onChange={(e) => {
+                              const nextS = e.target.value;
+                              setInitialSchool(nextS);
+                              if (is5thGradeSchool(nextS)) {
+                                setInitialGrade("5º ano");
+                              } else if (schoolNeedsGrade(nextS)) {
+                                setInitialGrade(RAIMUNDO_GRADES[0]);
+                              }
+                            }}
+                            className="h-9 w-full rounded-xl border bg-background px-3 text-xs font-semibold"
+                          >
+                            <option value="Nenhuma">Selecione sua escola...</option>
+                            {availableSchoolsForStudent.map((s) => (
+                              <option key={s.name} value={s.name}>
+                                {s.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div className="h-9 flex items-center rounded-xl border bg-muted/60 px-3 text-xs font-bold text-muted-foreground">
+                            🔒 {profile.school} (Já fixada)
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 2. Seleção de Série / Ano (Disponível apenas se ainda não selecionada) */}
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-foreground flex items-center gap-1">
+                          Série / Ano:
+                          {Boolean(profile.grade) && <Lock className="h-3 w-3 text-muted-foreground" />}
+                        </label>
+                        {profile.grade ? (
+                          <div className="h-9 flex items-center rounded-xl border bg-muted/60 px-3 text-xs font-bold text-muted-foreground">
+                            🔒 {profile.grade} (Já fixada)
+                          </div>
+                        ) : is5thGradeSchool(effectiveSchool) ? (
+                          <div className="h-9 flex items-center rounded-xl border bg-primary/10 px-3 text-xs font-extrabold text-primary">
+                            5º ano (Automático)
+                          </div>
+                        ) : schoolNeedsGrade(effectiveSchool) ? (
+                          <select
+                            value={initialGrade}
+                            onChange={(e) => setInitialGrade(e.target.value)}
+                            className="h-9 w-full rounded-xl border bg-background px-3 text-xs font-semibold"
+                          >
+                            {RAIMUNDO_GRADES.map((g) => (
+                              <option key={g} value={g}>
+                                {g}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div className="h-9 flex items-center rounded-xl border bg-muted/40 px-3 text-xs text-muted-foreground">
+                            Selecione a escola primeiro
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 3. Seleção de Turma (Disponível apenas se ainda não selecionada) */}
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-foreground flex items-center gap-1">
+                          Turma (A até F):
+                          {Boolean(profile.turma) && <Lock className="h-3 w-3 text-muted-foreground" />}
+                        </label>
+                        {profile.turma ? (
+                          <div className="h-9 flex items-center rounded-xl border bg-muted/60 px-3 text-xs font-bold text-muted-foreground">
+                            🔒 Turma {profile.turma} (Já fixada)
+                          </div>
+                        ) : isOfficialSemedSchool(effectiveSchool) ? (
+                          <select
+                            value={initialTurma}
+                            onChange={(e) => setInitialTurma(e.target.value)}
+                            className="h-9 w-full rounded-xl border bg-background px-3 text-xs font-semibold"
+                          >
+                            <option value="">Selecione a turma...</option>
+                            {VALID_TURMAS.map((t) => (
+                              <option key={t} value={t}>
+                                Turma {t}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div className="h-9 flex items-center rounded-xl border bg-muted/40 px-3 text-xs text-muted-foreground">
+                            Não se aplica
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {initialSetupMsg && (
+                      <p className="text-xs font-bold text-primary">{initialSetupMsg}</p>
+                    )}
+
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={
+                          savingInitialSetup ||
+                          (schoolNotSelected && initialSchool === "Nenhuma")
+                        }
+                        onClick={() => void handleSaveInitialSchoolAndGrade()}
+                        className="rounded-xl text-xs font-extrabold"
+                      >
+                        <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                        Confirmar e Fixar Escola / Série
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* ABA EXPANSÍVEL: NÍVEL & PROGRESSO */}
               <div className="rounded-3xl border bg-card p-4 space-y-3 transition-all">

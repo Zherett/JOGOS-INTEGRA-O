@@ -13,6 +13,8 @@ import {
   Award,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Flame,
   Rocket,
   Target,
@@ -77,6 +79,7 @@ export function Menu({
     calculateCumulativeActiveBonuses(),
   );
   const [currentEventIndex, setCurrentEventIndex] = useState(0);
+  const [eventsPanelOpen, setEventsPanelOpen] = useState(false);
 
   useEffect(() => {
     const update = () => {
@@ -119,190 +122,247 @@ export function Menu({
         />
       </div>
 
-      {/* Blocos de Bônus Ativos Acumulados (Soma de todos os eventos em vigor) */}
-      {cumulativeBonuses.hasActiveBonuses && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 animate-in fade-in-50">
-          {cumulativeBonuses.totalMultiplier > 1 && (
-            <div className="flex items-center gap-3.5 rounded-2xl border-2 border-amber-400/50 bg-gradient-to-br from-amber-500/15 via-amber-500/5 to-card p-3.5 shadow-sm">
-              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-amber-500 text-white shadow-xs">
-                <Flame className="h-6 w-6 fill-white" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">
-                  Multiplicador Total Ativo
-                </p>
-                <p className="font-display text-xl font-black text-foreground">
-                  {cumulativeBonuses.totalMultiplier}x de XP
-                </p>
-                <p className="text-[11px] font-semibold text-muted-foreground truncate">
-                  +{Math.round((cumulativeBonuses.totalMultiplier - 1) * 100)}% somado dos eventos
-                </p>
-              </div>
-            </div>
-          )}
-
-          {cumulativeBonuses.totalDailyCap > 1000 && (
-            <div className="flex items-center gap-3.5 rounded-2xl border-2 border-cyan-400/50 bg-gradient-to-br from-cyan-500/15 via-cyan-500/5 to-card p-3.5 shadow-sm">
-              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-cyan-500 text-white shadow-xs">
-                <Rocket className="h-6 w-6" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
-                  Limite Diário Total
-                </p>
-                <p className="font-display text-xl font-black text-foreground">
-                  {cumulativeBonuses.totalDailyCap.toLocaleString("pt-BR")} XP / dia
-                </p>
-                <p className="text-[11px] font-semibold text-muted-foreground truncate">
-                  Base 1.000 + {cumulativeBonuses.totalExtraDaily.toLocaleString("pt-BR")} XP somados
-                </p>
-              </div>
-            </div>
-          )}
-
-          {cumulativeBonuses.totalMatchCap > 20 && (
-            <div className="flex items-center gap-3.5 rounded-2xl border-2 border-primary/50 bg-gradient-to-br from-primary/15 via-primary/5 to-card p-3.5 shadow-sm">
-              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-xs">
-                <Target className="h-6 w-6" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-wider text-primary">
-                  Teto por Partida
-                </p>
-                <p className="font-display text-xl font-black text-foreground">
-                  {cumulativeBonuses.totalMatchCap} XP / partida
-                </p>
-                <p className="text-[11px] font-semibold text-muted-foreground truncate">
-                  Base 20 + {cumulativeBonuses.totalExtraMatch} XP somados
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Banner de Eventos Especiais Ativos (Carrossel com Setas e Cartão de Bônus) */}
-      {activeEvents.length > 0 && (() => {
-        const ev = activeEvents[currentEventIndex % activeEvents.length];
+      {/* Painel Retrátil Minimalista: Bônus Acumulados + Faixa de Eventos da Semana no Mesmo Bloco */}
+      {(cumulativeBonuses.hasActiveBonuses || activeEvents.length > 0) && (() => {
+        const currentEv =
+          activeEvents.length > 0 ? activeEvents[currentEventIndex % activeEvents.length] : null;
         const handlePrev = () => {
+          if (activeEvents.length <= 1) return;
           setCurrentEventIndex((prev) => (prev - 1 + activeEvents.length) % activeEvents.length);
         };
         const handleNext = () => {
+          if (activeEvents.length <= 1) return;
           setCurrentEventIndex((prev) => (prev + 1) % activeEvents.length);
         };
 
         return (
-          <div className="relative overflow-hidden rounded-3xl border-2 border-amber-400 bg-gradient-to-r from-amber-500/15 via-primary/5 to-amber-500/15 p-4 sm:p-5 pl-11 pr-11 sm:pl-14 sm:pr-14 shadow-lg animate-in fade-in-50">
-            {/* Seta Esquerda do Carrossel */}
+          <div className="rounded-3xl border-2 border-amber-400/70 bg-gradient-to-r from-amber-500/10 via-card to-amber-500/10 shadow-sm overflow-hidden transition-all">
+            {/* Barra Superior Minimalista (Sempre Visível — Clique para Abrir/Fechar) */}
             <button
               type="button"
-              onClick={handlePrev}
-              title="Evento anterior"
-              aria-label="Evento anterior"
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-neutral-900/70 text-white shadow-md transition-all hover:bg-neutral-900 hover:scale-110 active:scale-95"
+              onClick={() => setEventsPanelOpen((v) => !v)}
+              className="flex w-full flex-wrap items-center justify-between gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-amber-500/10"
             >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
+              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-500 px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wider text-white shadow-2xs">
+                  <Zap className="h-3 w-3 fill-white" /> Bônus & Eventos Ativos
+                </span>
 
-            {/* Seta Direita do Carrossel */}
-            <button
-              type="button"
-              onClick={handleNext}
-              title="Próximo evento"
-              aria-label="Próximo evento"
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-neutral-900/70 text-white shadow-md transition-all hover:bg-neutral-900 hover:scale-110 active:scale-95"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="space-y-1.5 flex-1 min-w-0">
-                {/* Linha de Badges */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500 px-3 py-1 text-xs font-black text-white uppercase tracking-wider shadow-sm">
-                    <Zap className="h-3.5 w-3.5 fill-white" /> {ev.badgeLabel}
+                {/* Resumo Minimalista dos Bônus em Pílulas Compactas */}
+                {cumulativeBonuses.totalMultiplier > 1 && (
+                  <span className="inline-flex items-center gap-1 rounded-lg border border-amber-400/50 bg-amber-500/15 px-2 py-0.5 text-[11px] font-extrabold text-amber-700 dark:text-amber-300">
+                    <Flame className="h-3 w-3 text-amber-500 fill-amber-500" />
+                    {cumulativeBonuses.totalMultiplier}x XP
                   </span>
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/90 dark:bg-card border border-amber-200 dark:border-amber-900/50 px-3 py-1 text-xs font-bold text-slate-700 dark:text-slate-300 shadow-sm">
-                    <Clock className="h-3.5 w-3.5 text-amber-500" /> {ev.remainingTime}
+                )}
+                {cumulativeBonuses.totalDailyCap > 1000 && (
+                  <span className="inline-flex items-center gap-1 rounded-lg border border-cyan-400/50 bg-cyan-500/15 px-2 py-0.5 text-[11px] font-extrabold text-cyan-700 dark:text-cyan-300">
+                    <Rocket className="h-3 w-3 text-cyan-500" />
+                    {cumulativeBonuses.totalDailyCap.toLocaleString("pt-BR")} XP/dia
                   </span>
-                  {ev.activePeriodLabel && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 dark:bg-card/80 border border-amber-200/60 dark:border-amber-900/40 px-2.5 py-1 text-xs font-semibold text-muted-foreground shadow-xs">
-                      <Calendar className="h-3 w-3 text-primary" /> {ev.activePeriodLabel}
-                    </span>
-                  )}
-                </div>
+                )}
+                {cumulativeBonuses.totalMatchCap > 20 && (
+                  <span className="inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/15 px-2 py-0.5 text-[11px] font-extrabold text-primary">
+                    <Target className="h-3 w-3" />
+                    {cumulativeBonuses.totalMatchCap} XP/partida
+                  </span>
+                )}
 
-                {/* Título do Evento */}
-                <h3 className="font-display text-xl sm:text-2xl lg:text-3xl font-black text-foreground tracking-tight">
-                  {ev.title}
-                </h3>
-
-                {/* Descrição */}
-                <p className="text-xs sm:text-sm text-muted-foreground font-medium">
-                  {ev.description}
-                </p>
+                {currentEv && (
+                  <span className=" truncate text-xs font-bold text-muted-foreground hidden md:inline">
+                    • {currentEv.title} ({currentEv.remainingTime})
+                  </span>
+                )}
               </div>
 
-              {/* Cartão de Destaque do Bônus à Direita (Mostra somente os bônus marcados) */}
-              <div className="shrink-0 w-full sm:w-auto">
-                <div className="rounded-2xl border-2 border-amber-300 dark:border-amber-600 bg-white dark:bg-card px-4 py-2.5 shadow-sm text-center flex flex-col items-center justify-center min-w-[210px] gap-1.5">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-500">
-                    {ev.bonusTitle}
-                  </span>
+              <span className="inline-flex items-center gap-1 rounded-xl border border-amber-400/60 bg-card px-3 py-1 text-xs font-extrabold text-foreground shadow-2xs shrink-0">
+                {eventsPanelOpen ? (
+                  <>
+                    Ocultar bônus e eventos <ChevronUp className="h-3.5 w-3.5 text-amber-500" />
+                  </>
+                ) : (
+                  <>
+                    Visualizar bônus e eventos <ChevronDown className="h-3.5 w-3.5 text-amber-500" />
+                  </>
+                )}
+              </span>
+            </button>
 
-                  {/* Bônus Específicos Marcados Neste Evento */}
-                  <div className="flex flex-col gap-1 w-full">
-                    {ev.bonusBadges && ev.bonusBadges.length > 0 ? (
-                      ev.bonusBadges.map((badge, bIdx) => (
-                        <div
-                          key={bIdx}
-                          className="flex items-center justify-center gap-1.5 rounded-xl border border-amber-400/30 bg-amber-500/10 px-2.5 py-1 text-xs font-black text-foreground shadow-2xs"
-                        >
-                          <span className="text-xs">{badge.icon}</span>
-                          <span className="whitespace-nowrap">{badge.label}</span>
+            {/* Conteúdo Retrátil: Bloquinhos Menores de Bônus + Faixa de Eventos da Semana */}
+            {eventsPanelOpen && (
+              <div className="border-t border-amber-400/30 p-3 sm:p-4 space-y-3 bg-card/60 animate-in fade-in-50 duration-200">
+                {/* 1. Bloquinhos Compactos de Bônus Ativos Acumulados */}
+                {cumulativeBonuses.hasActiveBonuses && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {cumulativeBonuses.totalMultiplier > 1 && (
+                      <div className="flex items-center gap-2.5 rounded-xl border border-amber-400/50 bg-gradient-to-br from-amber-500/15 via-amber-500/5 to-card px-3 py-2 shadow-2xs">
+                        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-amber-500 text-white">
+                          <Flame className="h-4 w-4 fill-white" />
                         </div>
-                      ))
-                    ) : (
-                      <span className="font-display text-base font-black text-foreground whitespace-nowrap">
-                        {ev.bonusHighlight}
-                      </span>
+                        <div className="min-w-0 leading-tight">
+                          <p className="text-[9px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                            Multiplicador Ativo
+                          </p>
+                          <p className="font-display text-sm sm:text-base font-black text-foreground">
+                            {cumulativeBonuses.totalMultiplier}x de XP{" "}
+                            <span className="text-[10px] font-semibold text-muted-foreground">
+                              (+{Math.round((cumulativeBonuses.totalMultiplier - 1) * 100)}%)
+                            </span>
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {cumulativeBonuses.totalDailyCap > 1000 && (
+                      <div className="flex items-center gap-2.5 rounded-xl border border-cyan-400/50 bg-gradient-to-br from-cyan-500/15 via-cyan-500/5 to-card px-3 py-2 shadow-2xs">
+                        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-cyan-500 text-white">
+                          <Rocket className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 leading-tight">
+                          <p className="text-[9px] font-black uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
+                            Limite Diário Total
+                          </p>
+                          <p className="font-display text-sm sm:text-base font-black text-foreground">
+                            {cumulativeBonuses.totalDailyCap.toLocaleString("pt-BR")} XP/dia{" "}
+                            <span className="text-[10px] font-semibold text-muted-foreground">
+                              (+{cumulativeBonuses.totalExtraDaily.toLocaleString("pt-BR")})
+                            </span>
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {cumulativeBonuses.totalMatchCap > 20 && (
+                      <div className="flex items-center gap-2.5 rounded-xl border border-primary/50 bg-gradient-to-br from-primary/15 via-primary/5 to-card px-3 py-2 shadow-2xs">
+                        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground">
+                          <Target className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 leading-tight">
+                          <p className="text-[9px] font-black uppercase tracking-wider text-primary">
+                            Teto por Partida
+                          </p>
+                          <p className="font-display text-sm sm:text-base font-black text-foreground">
+                            {cumulativeBonuses.totalMatchCap} XP/partida{" "}
+                            <span className="text-[10px] font-semibold text-muted-foreground">
+                              (+{cumulativeBonuses.totalExtraMatch})
+                            </span>
+                          </p>
+                        </div>
+                      </div>
                     )}
                   </div>
+                )}
 
-                  <span className="text-[10px] text-muted-foreground font-semibold">
-                    {ev.bonusScopeText}
-                  </span>
-                </div>
-              </div>
-            </div>
+                {/* 2. Faixa de Eventos da Semana (Carrossel Compacto Integrado) */}
+                {currentEv && (
+                  <div className="relative overflow-hidden rounded-2xl border border-amber-400/60 bg-gradient-to-r from-amber-500/10 via-primary/5 to-amber-500/10 p-3 sm:p-3.5 pl-9 pr-9 sm:pl-11 sm:pr-11">
+                    {activeEvents.length > 1 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handlePrev}
+                          title="Evento anterior"
+                          aria-label="Evento anterior"
+                          className="absolute left-1.5 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-neutral-900/70 text-white shadow-xs transition-all hover:bg-neutral-900"
+                        >
+                          <ChevronLeft className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleNext}
+                          title="Próximo evento"
+                          aria-label="Próximo evento"
+                          className="absolute right-1.5 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-neutral-900/70 text-white shadow-xs transition-all hover:bg-neutral-900"
+                        >
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    )}
 
-            {/* Medalha Comemorativa do Evento se houver */}
-            {ev.linkedMedalId && (
-              <div className="mt-3 flex items-center gap-2 rounded-xl bg-card/80 border p-2 text-xs">
-                <Award className="h-4 w-4 text-amber-500 shrink-0" />
-                <span className="font-bold text-foreground">Medalha Comemorativa do Evento:</span>
-                <span className="text-muted-foreground">
-                  {ev.objectiveDescription || "Conclua os desafios do evento para desbloquear!"}
-                </span>
-              </div>
-            )}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <div className="space-y-1 flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500 px-2.5 py-0.5 text-[10px] font-black text-white uppercase tracking-wider">
+                            <Zap className="h-3 w-3 fill-white" /> {currentEv.badgeLabel}
+                          </span>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-white/90 dark:bg-card border border-amber-200 dark:border-amber-900/50 px-2.5 py-0.5 text-[10px] font-bold text-slate-700 dark:text-slate-300">
+                            <Clock className="h-3 w-3 text-amber-500" /> {currentEv.remainingTime}
+                          </span>
+                          {currentEv.activePeriodLabel && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-white/80 dark:bg-card/80 border border-amber-200/60 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                              <Calendar className="h-2.5 w-2.5 text-primary" /> {currentEv.activePeriodLabel}
+                            </span>
+                          )}
+                        </div>
 
-            {/* Indicadores de bolinhas quando há mais de um evento */}
-            {activeEvents.length > 1 && (
-              <div className="mt-2.5 flex justify-center gap-1.5">
-                {activeEvents.map((_, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => setCurrentEventIndex(idx)}
-                    aria-label={`Ir para evento ${idx + 1}`}
-                    className={`h-1.5 rounded-full transition-all ${
-                      idx === currentEventIndex % activeEvents.length
-                        ? "w-6 bg-amber-500"
-                        : "w-1.5 bg-amber-300 dark:bg-amber-800"
-                    }`}
-                  />
-                ))}
+                        <h3 className="font-display text-base sm:text-lg font-black text-foreground tracking-tight">
+                          {currentEv.title}
+                        </h3>
+
+                        <p className="text-xs text-muted-foreground font-medium line-clamp-2">
+                          {currentEv.description}
+                        </p>
+                      </div>
+
+                      {/* Resumo dos Bônus deste Evento Específico */}
+                      <div className="shrink-0 w-full sm:w-auto">
+                        <div className="rounded-xl border border-amber-300 dark:border-amber-600 bg-white dark:bg-card px-3 py-2 shadow-2xs text-center flex flex-col items-center justify-center min-w-[170px] gap-1">
+                          <span className="text-[9px] font-black uppercase tracking-wider text-amber-500">
+                            {currentEv.bonusTitle}
+                          </span>
+                          <div className="flex flex-wrap justify-center gap-1 w-full">
+                            {currentEv.bonusBadges && currentEv.bonusBadges.length > 0 ? (
+                              currentEv.bonusBadges.map((badge, bIdx) => (
+                                <div
+                                  key={bIdx}
+                                  className="flex items-center justify-center gap-1 rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-black text-foreground"
+                                >
+                                  <span>{badge.icon}</span>
+                                  <span className="whitespace-nowrap">{badge.label}</span>
+                                </div>
+                              ))
+                            ) : (
+                              <span className="font-display text-xs font-black text-foreground whitespace-nowrap">
+                                {currentEv.bonusHighlight}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[9px] text-muted-foreground font-semibold">
+                            {currentEv.bonusScopeText}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {currentEv.linkedMedalId && (
+                      <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-card/80 border px-2.5 py-1.5 text-[11px]">
+                        <Award className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                        <span className="font-bold text-foreground">Medalha do Evento:</span>
+                        <span className="text-muted-foreground truncate">
+                          {currentEv.objectiveDescription || "Conclua os desafios do evento para desbloquear!"}
+                        </span>
+                      </div>
+                    )}
+
+                    {activeEvents.length > 1 && (
+                      <div className="mt-2 flex justify-center gap-1">
+                        {activeEvents.map((_, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setCurrentEventIndex(idx)}
+                            aria-label={`Ir para evento ${idx + 1}`}
+                            className={`h-1.5 rounded-full transition-all ${
+                              idx === currentEventIndex % activeEvents.length
+                                ? "w-5 bg-amber-500"
+                                : "w-1.5 bg-amber-300 dark:bg-amber-800"
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

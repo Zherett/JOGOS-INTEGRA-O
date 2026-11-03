@@ -410,6 +410,212 @@ export function stageForPlayer(
   return stageFromBirthdate(birthdate, now, school);
 }
 
+/* --------------------- Categorias de Série / Etapa para o Ranking --------------------- */
+
+export type RankingFilterCategory =
+  | AgeStageId
+  | "5º ano"
+  | "6º ano"
+  | "7º ano"
+  | "8º ano"
+  | "9º ano"
+  | "TODAS";
+
+export interface RankingSeriesOption {
+  id: Exclude<RankingFilterCategory, "TODAS" | "etapa_1">;
+  shortLabel: string;
+  label: string;
+  description: string;
+  emoji: string;
+}
+
+export const RANKING_SERIES_OPTIONS: readonly RankingSeriesOption[] = [
+  {
+    id: "5º ano",
+    shortLabel: "5º ano",
+    label: "5º ano (1ª Etapa • Até 11 anos)",
+    description: "Raimunda Cruz, Ursulina, Nazaré, Litaiff",
+    emoji: "🌱",
+  },
+  {
+    id: "6º ano",
+    shortLabel: "6º ano",
+    label: "6º ano (2ª Etapa)",
+    description: "Raimundo Bezerra • 6º ano",
+    emoji: "⚡",
+  },
+  {
+    id: "7º ano",
+    shortLabel: "7º ano",
+    label: "7º ano (2ª Etapa)",
+    description: "Raimundo Bezerra • 7º ano",
+    emoji: "⚡",
+  },
+  {
+    id: "8º ano",
+    shortLabel: "8º ano",
+    label: "8º ano (2ª Etapa)",
+    description: "Raimundo Bezerra • 8º ano",
+    emoji: "⚡",
+  },
+  {
+    id: "9º ano",
+    shortLabel: "9º ano",
+    label: "9º ano (2ª Etapa)",
+    description: "Raimundo Bezerra • 9º ano",
+    emoji: "⚡",
+  },
+  {
+    id: "etapa_2",
+    shortLabel: "2ª Etapa (6º ao 9º)",
+    label: "2ª Etapa Geral (6º ao 9º ano)",
+    description: "Todos os alunos de 11 a 14 anos",
+    emoji: "⚡",
+  },
+  {
+    id: "etapa_3",
+    shortLabel: "3ª Etapa (15+ anos)",
+    label: "3ª Etapa (15+ anos • Comunidade)",
+    description: "Comunidade / Outro",
+    emoji: "🚀",
+  },
+] as const;
+
+export function getRankingCategoryLabel(category: RankingFilterCategory): string {
+  if (category === "TODAS") return "Geral (Todas as Séries)";
+  if (category === "etapa_1" || category === "5º ano") {
+    return "5º ano (1ª Etapa • Até 11 anos)";
+  }
+  const found = RANKING_SERIES_OPTIONS.find((o) => o.id === category);
+  return found ? found.label : category;
+}
+
+/**
+ * Resolves the default Ranking filter for a logged-in player based on the grade/series they compete in:
+ * - Student in 5º ano (or 1ª Etapa): sees "5º ano"
+ * - Student in 6º, 7º, 8º or 9º ano: sees their exact grade ("6º ano", "7º ano", "8º ano", "9º ano")
+ * - Student in 2ª Etapa without specific grade set: sees "etapa_2"
+ * - Student in 3ª Etapa (15+ years): sees "etapa_3"
+ */
+export function resolveDefaultRankingCategory(
+  profile?: { birthdate?: string | null; school?: string | null; grade?: string | null } | null,
+  now = new Date(),
+): RankingFilterCategory {
+  if (!profile) return "5º ano";
+  const st = stageFromBirthdate(profile.birthdate, now, profile.school);
+  if (st.id === "etapa_3") return "etapa_3";
+  if (st.id === "etapa_1") return "5º ano";
+  if (
+    profile.grade === "6º ano" ||
+    profile.grade === "7º ano" ||
+    profile.grade === "8º ano" ||
+    profile.grade === "9º ano"
+  ) {
+    return profile.grade;
+  }
+  return "etapa_2";
+}
+
+/**
+ * Checks whether a student profile belongs to the selected Ranking series/stage filter.
+ */
+export function matchesRankingCategory(
+  profile: { birthdate?: string | null; school?: string | null; grade?: string | null },
+  category?: RankingFilterCategory | null,
+  now = new Date(),
+): boolean {
+  if (!category || category === "TODAS") return true;
+  const st = stageFromBirthdate(profile.birthdate, now, profile.school);
+  if (category === "etapa_3") return st.id === "etapa_3";
+  if (category === "etapa_1" || category === "5º ano") return st.id === "etapa_1";
+  if (category === "etapa_2") return st.id === "etapa_2";
+  if (
+    category === "6º ano" ||
+    category === "7º ano" ||
+    category === "8º ano" ||
+    category === "9º ano"
+  ) {
+    if (st.id !== "etapa_2") return false;
+    const normalizedGrade = profile.grade?.trim().toLowerCase() ?? "";
+    return normalizedGrade === category.toLowerCase();
+  }
+  return true;
+}
+
+/* --------------------- Cálculo Real de Subida / Descida no Ranking --------------------- */
+
+export type RankTrendDirection = "up" | "down" | "same";
+
+export interface RankHistoryState {
+  lastRank: number;
+  previousRank: number;
+  trend: RankTrendDirection;
+}
+
+/**
+ * Computes real rank movement arrows (up / down / same) by comparing each player's current rank
+ * against their previously recorded rank on the same leaderboard.
+ *
+ * Rules:
+ * - Se o aluno subiu de posição (ex: estava em 2º e foi para 1º, ou de 3º para 2º): `trend = "up"` (seta verde ▲).
+ * - Se o aluno caiu de posição (ex: estava em 1º e foi para 2º, ou de 2º para 3º): `trend = "down"` (seta vermelha ▼).
+ * - O 1º colocado (`rank === 1`) NUNCA pode ter seta vermelha (`"down"`), pois não há posição acima de 1º lugar.
+ */
+export function evaluateLeaderboardRankChanges<T extends { playerId: string; rank: number }>(
+  entries: T[],
+  prevHistory: Record<string, RankHistoryState> = {},
+): {
+  entriesWithTrend: (T & { rankTrend: RankTrendDirection; previousRank: number })[];
+  nextHistory: Record<string, RankHistoryState>;
+} {
+  const nextHistory: Record<string, RankHistoryState> = { ...prevHistory };
+
+  const entriesWithTrend = entries.map((entry) => {
+    const currentRank = entry.rank;
+    const prev = prevHistory[entry.playerId];
+    let trend: RankTrendDirection = "same";
+    let previousRank = currentRank;
+
+    if (!prev) {
+      // Primeiro registro deste jogador neste ranking: 1º lugar destaca em verde (topo), demais neutro
+      trend = currentRank === 1 ? "up" : "same";
+      previousRank = currentRank;
+    } else if (currentRank < prev.lastRank) {
+      // Subiu de colocação (ex: 2º -> 1º, 3º -> 2º)
+      trend = "up";
+      previousRank = prev.lastRank;
+    } else if (currentRank > prev.lastRank) {
+      // Caiu de colocação (ex: 1º -> 2º, 2º -> 3º)
+      trend = "down";
+      previousRank = prev.lastRank;
+    } else {
+      // Manteve a mesma colocação desde a última leitura
+      trend = prev.trend;
+      previousRank = prev.previousRank ?? currentRank;
+    }
+
+    // Regra de segurança absoluta: quem está em 1º lugar jamais pode estar com seta vermelha de queda
+    if (currentRank === 1 && trend === "down") {
+      trend = "up";
+      previousRank = 1;
+    }
+
+    nextHistory[entry.playerId] = {
+      lastRank: currentRank,
+      previousRank,
+      trend,
+    };
+
+    return {
+      ...entry,
+      rankTrend: trend,
+      previousRank,
+    };
+  });
+
+  return { entriesWithTrend, nextHistory };
+}
+
 /** Next birthday date and how many days are left. */
 export function birthdayInfo(birthdate: string) {
   const b = new Date(`${birthdate || "2015-01-01"}T00:00:00`);
