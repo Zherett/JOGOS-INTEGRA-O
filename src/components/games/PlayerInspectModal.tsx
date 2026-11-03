@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   Clock,
   Sparkles,
+  Gamepad2,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -39,7 +40,8 @@ import {
   VALID_TURMAS,
   type TurmaCode,
 } from "@/lib/player-profile";
-import { getDistinctGamesPlayed } from "@/lib/medals-catalog";
+import { aggregateStatsByGame, getDistinctGamesPlayed } from "@/lib/medals-catalog";
+import { ALL_GAME_IDS, GAME_NAMES } from "@/lib/game-storage";
 import { PlayerMedalsInventory } from "./PlayerMedalsInventory";
 import { PresenceDot } from "./PresenceDot";
 
@@ -644,6 +646,77 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
               </p>
             </div>
           )}
+
+          {/* Histórico e Partidas Jogadas por Jogo */}
+          {(() => {
+            const statsMap = aggregateStatsByGame(profile.stats ?? [], auth.adminConfig.enabledGames);
+            return (
+              <div className="rounded-2xl border bg-card p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 font-display text-sm font-black text-foreground">
+                    <Gamepad2 className="h-4 w-4 text-primary" />
+                    <span>Partidas Jogadas por Jogo</span>
+                  </div>
+                  <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-bold text-primary">
+                    {matchesCount} partida{matchesCount === 1 ? "" : "s"} no total
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {ALL_GAME_IDS.map((gId) => {
+                    const gName = GAME_NAMES[gId];
+                    const statRow = statsMap.get(gId);
+                    const plays = statRow ? statRow.plays : 0;
+                    const bestScore = statRow ? statRow.best_score : 0;
+                    const bestLevel = statRow ? statRow.best_level : 1;
+                    const isEnabled = auth.adminConfig.enabledGames[gId] !== false;
+
+                    return (
+                      <div
+                        key={gId}
+                        className={`flex items-center justify-between gap-2 rounded-xl border p-2.5 transition-all ${
+                          plays > 0
+                            ? "bg-card border-primary/30"
+                            : "bg-muted/30 border-dashed opacity-70"
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="font-display text-xs font-bold truncate text-foreground flex items-center gap-1.5">
+                            <span>{gName}</span>
+                            {!isEnabled && (
+                              <span className="rounded bg-muted px-1 text-[9px] font-bold text-muted-foreground">
+                                Oculto
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">
+                            {bestScore > 0 ? (
+                              <span>Recorde: {bestScore} pts • Nv. {bestLevel}</span>
+                            ) : (
+                              <span>Nenhuma partida registrada</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <span
+                            className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-black ${
+                              plays > 0
+                                ? "bg-primary text-primary-foreground shadow-xs"
+                                : "bg-muted text-muted-foreground"
+                            }`}
+                          >
+                            <Gamepad2 className="h-3 w-3" />
+                            {plays} partida{plays === 1 ? "" : "s"}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Inventário Completo de Medalhas */}
           <PlayerMedalsInventory

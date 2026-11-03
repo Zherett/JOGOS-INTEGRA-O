@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   User,
   LogOut,
@@ -7,6 +7,7 @@ import {
   Trophy,
   Star,
   Award,
+  Gamepad2,
   ShieldCheck,
   Volume2,
   VolumeX,
@@ -26,7 +27,7 @@ import { PlayerAuthDialog } from "./PlayerAuthDialog";
 import { LeaderboardDialog } from "./LeaderboardDialog";
 import { AdminPanelDialog } from "./AdminPanelDialog";
 import { PlayerMedalsInventory } from "./PlayerMedalsInventory";
-import { getDistinctGamesPlayed } from "@/lib/medals-catalog";
+import { aggregateStatsByGame, getDistinctGamesPlayed } from "@/lib/medals-catalog";
 import { PresenceDot } from "./PresenceDot";
 import { usePlayerAuth } from "@/lib/player-auth";
 import {
@@ -50,7 +51,7 @@ import {
   X1_DAILY_EXTRA_XP_CAP,
   type TurmaCode,
 } from "@/lib/player-profile";
-import { GAME_NAMES, type GameId } from "@/lib/game-storage";
+import { ALL_GAME_IDS, GAME_NAMES, type GameId } from "@/lib/game-storage";
 import { useSoundMuted } from "@/lib/sound";
 import {
   fetchLeaderboard,
@@ -103,6 +104,7 @@ export function PlayerMenu({ onConfigChanged }: Props) {
   // Accordion collapsible states
   const [levelExpanded, setLevelExpanded] = useState(false);
   const [medalsExpanded, setMedalsExpanded] = useState(false);
+  const [gamesExpanded, setGamesExpanded] = useState(true);
 
   // Turma change request dialog state
   const [turmaModalOpen, setTurmaModalOpen] = useState(false);
@@ -138,6 +140,10 @@ export function PlayerMenu({ onConfigChanged }: Props) {
         (profile as any).totalPlays ?? 0,
       )
     : 0;
+  const statsByGameMap = useMemo(
+    () => aggregateStatsByGame(auth.stats, auth.adminConfig.enabledGames),
+    [auth.stats, auth.adminConfig.enabledGames],
+  );
   const progress = profile
     ? levelProgress({
         xp: profile.xp,
@@ -723,6 +729,92 @@ export function PlayerMenu({ onConfigChanged }: Props) {
                       stats={auth.stats}
                       isOwner={true}
                     />
+                  </div>
+                )}
+              </div>
+
+              {/* ABA EXPANSÍVEL: LISTA DE JOGOS & PARTIDAS JOGADAS */}
+              <div className="rounded-3xl border bg-card p-4 space-y-3 transition-all">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 font-display text-base font-extrabold text-foreground">
+                    <Gamepad2 className="h-5 w-5 text-primary" />
+                    <span>Partidas por Jogo</span>
+                    <span className="rounded-full bg-primary/15 border border-primary/30 px-2 py-0.5 text-xs font-bold text-primary">
+                      {matchesCount} partida{matchesCount === 1 ? "" : "s"} no total
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setGamesExpanded(!gamesExpanded)}
+                    className="inline-flex items-center gap-1 font-display text-xs font-extrabold text-primary hover:underline"
+                  >
+                    {gamesExpanded ? (
+                      <>
+                        Recolher Lista <ChevronUp className="h-3.5 w-3.5" />
+                      </>
+                    ) : (
+                      <>
+                        Ver Lista de Jogos <ChevronDown className="h-3.5 w-3.5" />
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {gamesExpanded && (
+                  <div className="border-t pt-3 space-y-2 animate-in fade-in-50 duration-200">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {ALL_GAME_IDS.map((gId) => {
+                        const gName = GAME_NAMES[gId];
+                        const statRow = statsByGameMap.get(gId);
+                        const plays = statRow ? statRow.plays : 0;
+                        const bestScore = statRow ? statRow.best_score : 0;
+                        const bestLevel = statRow ? statRow.best_level : 1;
+                        const isEnabled = auth.adminConfig.enabledGames[gId] !== false;
+
+                        return (
+                          <div
+                            key={gId}
+                            className={`flex items-center justify-between gap-2 rounded-2xl border p-2.5 transition-all ${
+                              plays > 0
+                                ? "bg-card border-primary/30"
+                                : "bg-muted/30 border-dashed opacity-75"
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <div className="font-display text-xs font-black truncate text-foreground flex items-center gap-1.5">
+                                <span>{gName}</span>
+                                {!isEnabled && (
+                                  <span className="rounded bg-muted px-1 text-[9px] font-bold text-muted-foreground">
+                                    Oculto
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground mt-0.5">
+                                {bestScore > 0 ? (
+                                  <span>Recorde: {bestScore} pts • Nv. {bestLevel}</span>
+                                ) : (
+                                  <span>Nenhuma partida registrada</span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              <span
+                                className={`inline-flex items-center gap-1 rounded-xl px-2.5 py-1 text-xs font-black ${
+                                  plays > 0
+                                    ? "bg-primary text-primary-foreground shadow-xs"
+                                    : "bg-muted text-muted-foreground"
+                                }`}
+                              >
+                                <Gamepad2 className="h-3 w-3" />
+                                {plays} partida{plays === 1 ? "" : "s"}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>

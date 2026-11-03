@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ShieldCheck,
   Gamepad2,
@@ -196,6 +196,41 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [selectedStudentForGrant, setSelectedStudentForGrant] = useState<string>("");
   const [inspectStudentId, setInspectStudentId] = useState<string | null>(null);
   const [syncingRoster, setSyncingRoster] = useState(false);
+
+  // Consolidação de partidas jogadas por jogo para a Lista de Jogos do ADM
+  const gameStatsSummary = useMemo(() => {
+    const counts: Record<GameId, { totalPlays: number; admPlays: number }> = {} as any;
+    for (const gId of ALL_GAME_IDS) {
+      counts[gId] = { totalPlays: 0, admPlays: 0 };
+    }
+
+    // 1. Partidas disputadas pelos alunos cadastrados no sistema
+    for (const st of registeredStudents) {
+      if (Array.isArray(st.stats)) {
+        for (const row of st.stats) {
+          if (row && row.game_id && counts[row.game_id]) {
+            counts[row.game_id].totalPlays += Math.max(0, row.plays ?? 0);
+          }
+        }
+      }
+    }
+
+    // 2. Partidas jogadas pela conta do próprio ADM
+    if (Array.isArray(auth.stats)) {
+      const admAlreadyInStudents = registeredStudents.some((s) => s.id === auth.profile?.id);
+      for (const row of auth.stats) {
+        if (row && row.game_id && counts[row.game_id]) {
+          const p = Math.max(0, row.plays ?? 0);
+          counts[row.game_id].admPlays += p;
+          if (!admAlreadyInStudents) {
+            counts[row.game_id].totalPlays += p;
+          }
+        }
+      }
+    }
+
+    return counts;
+  }, [registeredStudents, auth.stats, auth.profile?.id]);
 
   useEffect(() => {
     if (!open) return;
@@ -951,6 +986,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
 
                   {ALL_GAME_IDS.map((id) => {
                     const enabled = Boolean(draft.enabledGames[id]);
+                    const gStats = gameStatsSummary[id] ?? { totalPlays: 0, admPlays: 0 };
                     return (
                       <div
                         key={id}
@@ -976,6 +1012,22 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                               {enabled
                                 ? "Liberado e visível na página inicial"
                                 : "Desmarcado (Oculto da página inicial para todos)"}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 mt-1">
+                              <span
+                                className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-black ${
+                                  gStats.totalPlays > 0
+                                    ? "bg-primary/15 border border-primary/30 text-primary"
+                                    : "bg-muted text-muted-foreground border border-border"
+                                }`}
+                              >
+                                🎮 {gStats.totalPlays} partida{gStats.totalPlays === 1 ? "" : "s"} jogada{gStats.totalPlays === 1 ? "" : "s"}
+                              </span>
+                              {gStats.admPlays > 0 && (
+                                <span className="text-[10px] font-bold text-muted-foreground">
+                                  ({gStats.admPlays} pelo seu perfil)
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
