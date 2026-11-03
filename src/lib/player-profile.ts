@@ -58,9 +58,10 @@ export function isEtapa3OrOlder(birthdate?: string | null, now = new Date()): bo
 /**
  * Returns available school options based on age:
  * - Ao ultrapassar os 15 anos (>= 15 anos): nenhuma escola oficial deve ser exibida (apenas "Nenhuma" e "Outro").
- * - A partir dos 11 anos (>= 11 anos): escolas de 5º ano NÃO devem aparecer para serem selecionadas
+ * - Ao ultrapassar os 11 anos (> 11 anos, ou seja, 12 a 14 anos): escolas de 5º ano NÃO devem aparecer para serem selecionadas
  *   (apenas "Raimundo Bezerra", "Nenhuma" e "Outro").
- * - Até 10 anos: escolas de 5º ano aparecem normalmente.
+ * - Até 11 anos (<= 11 anos, incluindo alunos nascidos em 2015 que completam 11 anos até dezembro de 2026):
+ *   escolas de 5º ano aparecem normalmente.
  */
 export function getAvailableSchoolsForAge(
   birthdate?: string | null,
@@ -77,14 +78,14 @@ export function getAvailableSchoolsForAge(
     ) as unknown as typeof SCHOOLS;
   }
 
-  // 2. A partir de 11 anos (>= 11 anos): não deve aparecer escolas de 5º ano
-  if (age >= 11) {
+  // 2. Ao ultrapassar 11 anos (> 11 anos, ex: 12 a 14 anos): não deve aparecer escolas de 5º ano
+  if (age > 11) {
     return SCHOOLS.filter(
       (s) => !is5thGradeSchool(s.name),
     ) as unknown as typeof SCHOOLS;
   }
 
-  // 3. Até 10 anos: escolas de 5º ano aparecem normalmente
+  // 3. Até 11 anos (<= 11 anos, válido até dezembro de 2026 para alunos do 5º ano): escolas de 5º ano aparecem normalmente
   return SCHOOLS;
 }
 
@@ -310,12 +311,12 @@ export const AGE_STAGES: readonly AgeStageInfo[] = [
   {
     id: "etapa_1",
     shortLabel: "1ª Etapa",
-    label: "1ª Etapa (Até 10 anos • 5º ano)",
-    ageRangeLabel: "Até 10 anos",
+    label: "1ª Etapa (Até 11 anos • 5º ano)",
+    ageRangeLabel: "Até 11 anos",
     schoolCycleLabel: "5º ano (Raimunda Cruz, Ursulina, Nazaré, Litaiff)",
     emoji: "🌱",
     minAge: 0,
-    maxAge: 10,
+    maxAge: 11,
   },
   {
     id: "etapa_2",
@@ -345,22 +346,24 @@ export function getAgeStageInfo(stageId: AgeStageId): AgeStageInfo {
 
 /**
  * Allocates a player into one of the 3 Age Stages based on their calculated age:
- * - 1ª Etapa (`etapa_1`): até 10 anos (ou completando 11 até março)
- * - 2ª Etapa (`etapa_2`): 11 a 14 anos
+ * - 1ª Etapa (`etapa_1`): até 11 anos (alunos do 5º ano que completam até 11 anos até dezembro de 2026)
+ * - 2ª Etapa (`etapa_2`): 12 a 14 anos (ou 11 anos no Raimundo Bezerra)
  * - 3ª Etapa (`etapa_3`): acima de 14 anos (>= 15)
  */
 export function stageFromAge(age: number): AgeStageInfo {
   const safeAge = Math.max(0, Math.floor(age));
-  if (safeAge <= 10) return AGE_STAGES[0];
+  if (safeAge <= 11) return AGE_STAGES[0];
   if (safeAge <= 14) return AGE_STAGES[1];
   return AGE_STAGES[2];
 }
 
 /**
- * Calculates the player's stage considering their actual age as the primary factor:
+ * Calculates the player's stage considering their actual age and school:
  * - Idade >= 15 anos -> 3ª Etapa (Jovens e Adultos / Comunidade)
- * - Idade 11 a 14 anos -> 2ª Etapa (6º ao 9º ano / Raimundo Bezerra)
- * - Idade <= 10 anos -> 1ª Etapa (5º ano)
+ * - Idade > 11 anos (12 a 14 anos) -> 2ª Etapa (6º ao 9º ano / Raimundo Bezerra)
+ * - Idade <= 11 anos (incluindo alunos que completam 11 anos até dezembro de 2026):
+ *   -> Se estiver na escola Raimundo Bezerra (6º ao 9º ano), aloca na 2ª Etapa;
+ *   -> Caso contrário (escolas de 5º ano), aloca na 1ª Etapa (5º ano).
  * - Se data não informada: usa a escola como critério auxiliar
  */
 export function stageFromBirthdate(
@@ -384,12 +387,18 @@ export function stageFromBirthdate(
     return AGE_STAGES[2];
   }
 
-  // 1. Jogadores com 11 a 14 anos pertencem estritamente à 2ª Etapa (6º ao 9º ano)
-  if (age >= 11) {
+  // 1. Jogadores que ultrapassaram 11 anos (12 a 14 anos) pertencem estritamente à 2ª Etapa (6º ao 9º ano)
+  if (age > 11) {
     return AGE_STAGES[1];
   }
 
-  // 2. Alunos com até 10 anos pertencem à 1ª Etapa (5º ano)
+  // 2. Alunos com até 11 anos (válido até dezembro de 2026):
+  // Se estiver matriculado no Raimundo Bezerra (6º ao 9º ano), participa da 2ª Etapa;
+  // caso contrário (5º ano), participa da 1ª Etapa.
+  if (school && school.toLowerCase().includes("bezerra")) {
+    return AGE_STAGES[1];
+  }
+
   return AGE_STAGES[0];
 }
 

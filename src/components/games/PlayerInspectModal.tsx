@@ -220,7 +220,7 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
                       if (a >= 15 && isOfficialSemedSchool(editSchool)) {
                         setEditSchool("Nenhuma");
                         setEditTurma("");
-                      } else if (a >= 11 && is5thGradeSchool(editSchool)) {
+                      } else if (a > 11 && is5thGradeSchool(editSchool)) {
                         setEditSchool("Nenhuma");
                         setEditTurma("");
                       }

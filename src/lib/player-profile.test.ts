@@ -177,37 +177,43 @@ describe("Perfil do Jogador, Escolas, Trava de Níveis (1..10) e Limite Diário 
     );
   });
 
-  it("aloca o aluno na etapa conforme corte rigoroso de idade e restringe escolas de 5º ano para 11+ anos", () => {
-    const refDate = new Date("2026-11-02T12:00:00");
+  it("aloca o aluno na etapa conforme corte de idade (11 anos até dezembro de 2026 no 5º ano) e restringe escolas de 5º ano para > 11 anos", () => {
+    const refDateNov = new Date("2026-11-02T12:00:00");
+    const refDateDec = new Date("2026-12-31T12:00:00");
 
     // 1. Fallback por Escola (quando data de nascimento não informada)
-    assert.equal(stageFromBirthdate(undefined, refDate, "Raimunda Cruz").id, "etapa_1");
-    assert.equal(stageFromBirthdate(undefined, refDate, "Ursulina Souza").id, "etapa_1");
-    assert.equal(stageFromBirthdate(undefined, refDate, "Maria de Nazaré").id, "etapa_1");
-    assert.equal(stageFromBirthdate(undefined, refDate, "Elisângela Litaiff").id, "etapa_1");
-    assert.equal(stageFromBirthdate(undefined, refDate, "Raimundo Bezerra").id, "etapa_2");
+    assert.equal(stageFromBirthdate(undefined, refDateNov, "Raimunda Cruz").id, "etapa_1");
+    assert.equal(stageFromBirthdate(undefined, refDateNov, "Ursulina Souza").id, "etapa_1");
+    assert.equal(stageFromBirthdate(undefined, refDateNov, "Maria de Nazaré").id, "etapa_1");
+    assert.equal(stageFromBirthdate(undefined, refDateNov, "Elisângela Litaiff").id, "etapa_1");
+    assert.equal(stageFromBirthdate(undefined, refDateNov, "Raimundo Bezerra").id, "etapa_2");
 
-    // 2. 1ª Etapa: até 10 anos
+    // 2. 1ª Etapa: até 11 anos (incluindo alunos nascidos em qualquer mês de 2015, como setembro/outubro/dezembro, válidos até dez/2026)
     assert.equal(stageFromAge(10).id, "etapa_1");
-    assert.equal(stageFromBirthdate("2016-05-10", refDate).id, "etapa_1"); // 10 anos
+    assert.equal(stageFromAge(11).id, "etapa_1");
+    assert.equal(stageFromBirthdate("2016-05-10", refDateNov).id, "etapa_1"); // 10 anos
+    assert.equal(stageFromBirthdate("2015-09-15", refDateNov, "Elisângela Litaiff").id, "etapa_1"); // 11 anos (mês 9)
+    assert.equal(stageFromBirthdate("2015-09-15", refDateDec, "Raimunda Cruz").id, "etapa_1"); // 11 anos em dez/2026
+    assert.equal(stageFromBirthdate("2015-10-15", refDateDec, "Maria de Nazaré").id, "etapa_1"); // 11 anos em dez/2026
+    assert.equal(stageFromBirthdate("2015-12-20", refDateDec, "Ursulina Souza").id, "etapa_1"); // 11 anos em dez/2026
 
-    // 3. 2ª Etapa: 11 a 14 anos (ex: 11 anos em 2015-10-15, 12 anos em 2014, 13 anos em 2013)
-    assert.equal(stageFromAge(11).id, "etapa_2");
+    // Se o aluno de 11 anos estiver no Raimundo Bezerra (6º ano), vai para 2ª Etapa
+    assert.equal(stageFromBirthdate("2015-09-15", refDateNov, "Raimundo Bezerra").id, "etapa_2");
+
+    // 3. 2ª Etapa: 12 a 14 anos (ultrapassou 11 anos)
     assert.equal(stageFromAge(12).id, "etapa_2");
     assert.equal(stageFromAge(14).id, "etapa_2");
-    assert.equal(stageFromBirthdate("2015-10-15", refDate).id, "etapa_2"); // 11 anos
-    assert.equal(stageFromBirthdate("2014-01-20", refDate).id, "etapa_2"); // 12 anos
-    assert.equal(stageFromBirthdate("2013-05-10", refDate).id, "etapa_2"); // 13 anos
+    assert.equal(stageFromBirthdate("2014-01-20", refDateNov).id, "etapa_2"); // 12 anos
+    assert.equal(stageFromBirthdate("2013-05-10", refDateNov).id, "etapa_2"); // 13 anos
 
-    // Aluno de 11+ anos JAMAIS é alocado em Etapa 1 mesmo que tente passar nome de escola de 5º ano
-    assert.equal(stageFromBirthdate("2015-10-15", refDate, "Raimunda Cruz").id, "etapa_2");
-    assert.equal(stageFromBirthdate("2014-05-10", refDate, "Elisângela Litaiff").id, "etapa_2");
+    // Aluno acima de 11 anos (12+ anos) JAMAIS é alocado em Etapa 1 mesmo que passe escola de 5º ano
+    assert.equal(stageFromBirthdate("2014-05-10", refDateNov, "Elisângela Litaiff").id, "etapa_2");
 
     // 4. 3ª Etapa: acima de 14 anos (15+ anos, ex: 15 ou 20 anos)
     assert.equal(stageFromAge(15).id, "etapa_3");
     assert.equal(stageFromAge(20).id, "etapa_3");
-    assert.equal(stageFromBirthdate("2011-05-10", refDate).id, "etapa_3"); // 15 anos
-    assert.equal(stageFromBirthdate("2006-05-10", refDate).id, "etapa_3"); // 20 anos
+    assert.equal(stageFromBirthdate("2011-05-10", refDateNov).id, "etapa_3"); // 15 anos
+    assert.equal(stageFromBirthdate("2006-05-10", refDateNov).id, "etapa_3"); // 20 anos
   });
 
   it("reconhece os dois administradores autorizados JOSINEY e QUEMUEL", () => {
@@ -252,14 +258,16 @@ describe("Perfil do Jogador, Escolas, Trava de Níveis (1..10) e Limite Diário 
     const schoolsOver15 = getAvailableSchoolsForAge("2001-05-10", refDate).map((s) => s.name);
     assert.deepEqual(schoolsOver15, ["Nenhuma", "Outro"]);
 
-    // Para quem tem 11 anos ou mais (ex: 11 anos em 2015-10-15, 12 anos em 2014): escolas de 5º ano NÃO devem aparecer
-    const schoolsExact11 = getAvailableSchoolsForAge("2015-10-15", refDate).map((s) => s.name);
-    assert.equal(schoolsExact11.includes("Raimundo Bezerra"), true);
-    assert.equal(schoolsExact11.includes("Elisângela Litaiff"), false);
-    assert.equal(schoolsExact11.includes("Raimunda Cruz"), false);
-    assert.equal(schoolsExact11.includes("Maria de Nazaré"), false);
-    assert.equal(schoolsExact11.includes("Ursulina Souza"), false);
+    // Para quem tem até 11 anos até dezembro de 2026 (ex: nascido no mês 9 de 2015 ou 2016): escolas de 5º ano DEVEM aparecer normalmente
+    const refDateDec = new Date("2026-12-31T12:00:00");
+    const schoolsSept2015 = getAvailableSchoolsForAge("2015-09-15", refDateDec).map((s) => s.name);
+    assert.equal(schoolsSept2015.includes("Raimundo Bezerra"), true);
+    assert.equal(schoolsSept2015.includes("Elisângela Litaiff"), true);
+    assert.equal(schoolsSept2015.includes("Raimunda Cruz"), true);
+    assert.equal(schoolsSept2015.includes("Maria de Nazaré"), true);
+    assert.equal(schoolsSept2015.includes("Ursulina Souza"), true);
 
+    // Para quem ultrapassou 11 anos (12 a 14 anos, ex: nascido em 2014): escolas de 5º ano NÃO devem aparecer
     const schoolsOver11 = getAvailableSchoolsForAge("2014-05-10", refDate).map((s) => s.name);
     assert.equal(schoolsOver11.includes("Raimundo Bezerra"), true);
     assert.equal(schoolsOver11.includes("Elisângela Litaiff"), false);
@@ -267,7 +275,7 @@ describe("Perfil do Jogador, Escolas, Trava de Níveis (1..10) e Limite Diário 
     assert.equal(schoolsOver11.includes("Maria de Nazaré"), false);
     assert.equal(schoolsOver11.includes("Ursulina Souza"), false);
 
-    // Para quem tem até 11 anos (ex: 10 anos em 2016): escolas de 5º ano aparecem normalmente
+    // Para quem tem 10 anos (ex: 2016): escolas de 5º ano aparecem normalmente
     const schoolsUpTo11 = getAvailableSchoolsForAge("2016-05-10", refDate).map((s) => s.name);
     assert.equal(schoolsUpTo11.includes("Elisângela Litaiff"), true);
     assert.equal(schoolsUpTo11.includes("Raimunda Cruz"), true);
