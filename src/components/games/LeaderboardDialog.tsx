@@ -428,10 +428,13 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
                       </span>
 
                       <div className="min-w-0 space-y-0.5">
-                        {/* Linha Principal: Nome Completo do Usuário */}
+                        {/* Linha Principal em Destaque: Apelido (Nick) escolhido pelo aluno */}
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="truncate font-display text-sm sm:text-base font-black text-foreground uppercase">
-                            {displayFullName}
+                          <span className="truncate font-display text-base font-black text-foreground">
+                            {row.nick}
+                          </span>
+                          <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">
+                            {row.rankEmoji} Nv. {row.level}
                           </span>
                           {row.isCurrentPlayer && (
                             <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-accent-foreground">
@@ -440,9 +443,16 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
                           )}
                         </div>
 
-                        {/* Linha Abaixo do Nome Completo: Escola e demais informações */}
+                        {/* Logo abaixo do Nick (com menos destaque): Nome Completo do aluno */}
+                        {row.fullName && row.fullName.toLowerCase() !== row.nick.toLowerCase() && (
+                          <div className="truncate text-[11px] font-semibold uppercase text-muted-foreground/90">
+                            {displayFullName}
+                          </div>
+                        )}
+
+                        {/* Linha de Escola e demais informações */}
                         <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                          <span className="font-semibold text-foreground/90">
+                          <span className="font-semibold text-foreground/85">
                             {row.school}
                           </span>
                           {row.grade && (
@@ -451,9 +461,6 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
                               {row.turma ? ` • Turma ${row.turma}` : ""}
                             </span>
                           )}
-                          <span className="rounded-md bg-primary/15 px-1.5 py-0.2 text-[10px] font-bold text-primary">
-                            {row.rankEmoji} Nv. {row.level}
-                          </span>
                           <span className="text-[11px]">
                             • {row.age} anos ({row.stageLabel})
                           </span>

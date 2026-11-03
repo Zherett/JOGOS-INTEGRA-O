@@ -328,8 +328,8 @@ export function WeeklyTournamentDialog({
                         </span>
                         <div className="min-w-0 space-y-0.5">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="font-display text-sm font-extrabold truncate uppercase">
-                              {(row.fullName || row.nick).toUpperCase()}
+                            <span className="font-display text-sm font-black truncate text-foreground">
+                              {row.nick}
                             </span>
                             {isMe && (
                               <span className="rounded-md bg-primary px-1.5 py-0.2 text-[10px] font-bold text-primary-foreground">
@@ -337,6 +337,11 @@ export function WeeklyTournamentDialog({
                               </span>
                             )}
                           </div>
+                          {row.fullName && row.fullName.toLowerCase() !== row.nick.toLowerCase() && (
+                            <div className="truncate text-[10px] font-semibold uppercase text-muted-foreground/90">
+                              {row.fullName}
+                            </div>
+                          )}
                           <div className="text-[11px] text-muted-foreground truncate">
                             {row.school} • Nv. {row.level} • {row.stageLabel} ({row.age} anos) •{" "}
                             <span className="inline-flex items-center gap-0.5 font-semibold text-accent">
