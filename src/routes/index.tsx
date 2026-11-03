@@ -38,6 +38,7 @@ import {
 import {
   DEFAULT_STATS,
   GAME_NAMES,
+  loadLastMatch,
   loadStats,
   type AllStats,
   type GameId,
@@ -98,8 +99,9 @@ function Index() {
     }
     const gId = activeRankedGameId;
     const latestStats = loadStats();
-    const score = latestStats[gId]?.bestScore ?? 0;
-    const level = latestStats[gId]?.bestLevel ?? 1;
+    const last = loadLastMatch(gId);
+    const score = last?.score ?? latestStats[gId]?.bestScore ?? 0;
+    const level = last?.level ?? latestStats[gId]?.bestLevel ?? 1;
     setActiveRankedGameId(null);
 
     if (auth.profile) {
@@ -112,8 +114,8 @@ function Index() {
         mode: "torneio_semanal",
         score: Math.max(10, score),
         level,
-        correct: 1,
-        wrong: 0,
+        correct: last?.correct ?? 0,
+        wrong: last?.wrong ?? 0,
       });
     }
     refreshLocal();

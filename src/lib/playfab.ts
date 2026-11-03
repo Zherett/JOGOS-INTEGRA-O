@@ -67,6 +67,8 @@ import {
 import {
   evaluatePlayerMedals,
   getAllAvailableMedals,
+  getDistinctFlawlessGames,
+  isFlawlessMatch,
   MEDAL_XP_REWARDS,
   type PlayerUnlockedMedal,
   type MedalDefinition,
@@ -96,13 +98,18 @@ export interface PlayerProfile {
   level: number;
   wins: number;
   x1Wins?: number;
+  weeklyX1Wins?: number;
+  weeklyX1WeekKey?: string;
   matchesPlayed: number;
+  totalPlays?: number;
   distinctGamesPlayed?: number;
   dailyXp?: number;
   dailyX1Xp?: number;
   dailyTournamentXp?: number;
   dailyTournamentEntries?: number;
   dailyXpDate?: string;
+  streakDays?: number;
+  lastActiveDate?: string;
   tournamentMedals?: TournamentMedal[];
   unlockedMedals?: PlayerUnlockedMedal[];
   badges: Badge[];
@@ -112,12 +119,16 @@ export interface PlayerProfile {
 
 export interface GameStatRow {
   game_id: GameId;
-  mode: string;
+  mode?: string;
   plays: number;
   wins: number;
+  flawless_wins?: number;
+  last_wrong?: number;
   best_score: number;
   best_level: number;
-  last_played_at: string;
+  last_played_at?: string;
+  player_id?: string;
+  updated_at?: string;
 }
 
 export interface SignUpData {
@@ -746,6 +757,23 @@ export async function pushAdminConfigToPlayFab(config: PlatformAdminConfig): Pro
 
 /* --------------------- Auth & Profile Operations --------------------- */
 
+function getCurrentWeekKey(now = new Date()): string {
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfYear = new Date(now.getFullYear(), 0, 1);
+  const startMondayOffset = (startOfYear.getDay() + 6) % 7;
+  const diffDays = Math.round((todayMidnight.getTime() - startOfYear.getTime()) / 86_400_000);
+  const weekNum = Math.floor((diffDays + startMondayOffset) / 7) + 1;
+  return `${now.getFullYear()}-W${String(weekNum).padStart(2, "0")}`;
+}
+
+function getPreviousDateKey(dateKey: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!match) return "";
+  const d = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  d.setDate(d.getDate() - 1);
+  return getLocalDateKey(d);
+}
+
 function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig): StoredAccount {
   const todayKey = getLocalDateKey();
   if (acc.profile.dailyXpDate !== todayKey) {
@@ -754,6 +782,11 @@ function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig)
     acc.profile.dailyTournamentXp = 0;
     acc.profile.dailyTournamentEntries = 0;
     acc.profile.dailyXpDate = todayKey;
+  }
+  const currentWeekKey = getCurrentWeekKey();
+  if (acc.profile.weeklyX1WeekKey && acc.profile.weeklyX1WeekKey !== currentWeekKey) {
+    acc.profile.weeklyX1Wins = 0;
+    acc.profile.weeklyX1WeekKey = currentWeekKey;
   }
   const distinctFromStats = new Set(acc.stats.map((s) => s.game_id)).size;
   acc.profile.distinctGamesPlayed = Math.max(
@@ -770,8 +803,32 @@ function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig)
   // Clean up any X1 medals mistakenly awarded to solo CPU games if player has 0 online X1 wins
   if (acc.profile.unlockedMedals && (acc.profile.x1Wins ?? 0) === 0) {
     acc.profile.unlockedMedals = acc.profile.unlockedMedals.filter(
-      (m) => !m.medalId.startsWith("m_x1_win_"),
+      (m) =>
+        !m.medalId.startsWith("m_x1_win_") &&
+        !m.medalId.startsWith("x1_wins_") &&
+        !m.medalId.startsWith("x1_weekly_"),
     );
+  }
+
+  // Reconcile multi-game flawless ("zero erros") medals:
+  // A student can only hold "flawless_3_games", "flawless_5_games", "flawless_8_games", or "meta_polymata_semed"
+  // if they genuinely have that many distinct games completed with 0 errors (wrong === 0 at game end).
+  if (acc.profile.unlockedMedals && acc.profile.unlockedMedals.length > 0) {
+    const trueFlawlessCount = getDistinctFlawlessGames(acc.profile, acc.stats).size;
+    const flawlessMaxThreshold = Math.max(4, ALL_GAME_IDS.length - 2);
+    acc.profile.unlockedMedals = acc.profile.unlockedMedals.filter((m) => {
+      if (m.medalId === "flawless_3_games" && trueFlawlessCount < 3) return false;
+      if (
+        (m.medalId === "flawless_5_games" || m.medalId === "meta_polymata_semed") &&
+        trueFlawlessCount < 5
+      ) {
+        return false;
+      }
+      if (m.medalId === "flawless_8_games" && trueFlawlessCount < flawlessMaxThreshold) {
+        return false;
+      }
+      return true;
+    });
   }
 
   // Sanitization: Players in Etapa 3 (15+ years old) cannot belong to elementary SEMED schools or classes.
@@ -794,6 +851,8 @@ function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig)
       profile: acc.profile,
       stats: acc.stats,
       todayXpEarned: acc.profile.dailyXp,
+      streakDays: acc.profile.streakDays,
+      weeklyX1Wins: acc.profile.weeklyX1Wins,
     },
     allAvailable,
   );
@@ -946,10 +1005,18 @@ function buildAccountFromPlayFabPayload(
       distinctGames: distinctGamesPlayed,
     }),
     wins,
+    x1Wins: parsedProfile.x1Wins ?? 0,
+    weeklyX1Wins: parsedProfile.weeklyX1Wins ?? 0,
+    weeklyX1WeekKey: parsedProfile.weeklyX1WeekKey,
     matchesPlayed,
     distinctGamesPlayed,
     dailyXp: parsedProfile.dailyXp ?? 0,
     dailyXpDate: parsedProfile.dailyXpDate ?? getLocalDateKey(),
+    streakDays: parsedProfile.streakDays ?? 1,
+    lastActiveDate: parsedProfile.lastActiveDate,
+    tournamentMedals: Array.isArray(parsedProfile.tournamentMedals)
+      ? parsedProfile.tournamentMedals
+      : [],
     unlockedMedals: Array.isArray(parsedProfile.unlockedMedals)
       ? parsedProfile.unlockedMedals
       : [],
@@ -1499,6 +1566,9 @@ async function pushProfileToPlayFab(account: StoredAccount, sessionTicket?: stri
           seasonXp: p.seasonXp,
           level: p.level,
           wins: p.wins,
+          x1Wins: p.x1Wins ?? 0,
+          weeklyX1Wins: p.weeklyX1Wins ?? 0,
+          weeklyX1WeekKey: p.weeklyX1WeekKey,
           matchesPlayed: p.matchesPlayed,
           distinctGamesPlayed: p.distinctGamesPlayed ?? 0,
           dailyXp: p.dailyXp ?? 0,
@@ -1506,7 +1576,10 @@ async function pushProfileToPlayFab(account: StoredAccount, sessionTicket?: stri
           dailyTournamentXp: p.dailyTournamentXp ?? 0,
           dailyTournamentEntries: p.dailyTournamentEntries ?? 0,
           dailyXpDate: p.dailyXpDate ?? getLocalDateKey(),
+          streakDays: p.streakDays ?? 1,
+          lastActiveDate: p.lastActiveDate,
           tournamentMedals: p.tournamentMedals ?? [],
+          unlockedMedals: p.unlockedMedals ?? [],
           badges: p.badges,
           isAdmin: p.isAdmin,
           seasonId: p.seasonId,
@@ -1543,8 +1616,14 @@ async function pushProfileToPlayFab(account: StoredAccount, sessionTicket?: stri
               seasonXp: p.seasonXp,
               level: p.level,
               wins: p.wins,
+              x1Wins: p.x1Wins ?? 0,
+              weeklyX1Wins: p.weeklyX1Wins ?? 0,
+              weeklyX1WeekKey: p.weeklyX1WeekKey,
               matchesPlayed: p.matchesPlayed,
               distinctGamesPlayed: p.distinctGamesPlayed ?? 0,
+              streakDays: p.streakDays ?? 1,
+              lastActiveDate: p.lastActiveDate,
+              tournamentMedals: p.tournamentMedals ?? [],
               unlockedMedals: p.unlockedMedals ?? [],
               badges: p.badges ?? [],
               stats: account.stats ?? [],
@@ -1611,6 +1690,9 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
             seasonXp: Math.max(parsed.seasonXp ?? 0, existing?.profile.seasonXp ?? 0),
             level: Math.max(parsed.level ?? 1, existing?.profile.level ?? 1),
             wins: Math.max(parsed.wins ?? 0, existing?.profile.wins ?? 0),
+            x1Wins: Math.max(parsed.x1Wins ?? 0, existing?.profile.x1Wins ?? 0),
+            weeklyX1Wins: Math.max(parsed.weeklyX1Wins ?? 0, existing?.profile.weeklyX1Wins ?? 0),
+            weeklyX1WeekKey: parsed.weeklyX1WeekKey ?? existing?.profile.weeklyX1WeekKey,
             matchesPlayed: Math.max(parsed.matchesPlayed ?? 0, existing?.profile.matchesPlayed ?? 0),
             distinctGamesPlayed: Math.max(
               parsed.distinctGamesPlayed ?? 0,
@@ -1618,13 +1700,16 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
             ),
             dailyXp: existing?.profile.dailyXp ?? 0,
             dailyXpDate: existing?.profile.dailyXpDate,
+            streakDays: Math.max(parsed.streakDays ?? 1, existing?.profile.streakDays ?? 1),
+            lastActiveDate: parsed.lastActiveDate ?? existing?.profile.lastActiveDate,
+            tournamentMedals: parsed.tournamentMedals ?? existing?.profile.tournamentMedals ?? [],
             unlockedMedals: parsed.unlockedMedals ?? existing?.profile.unlockedMedals ?? [],
             badges: parsed.badges ?? existing?.profile.badges ?? [],
             isAdmin: parsed.isAdmin ?? existing?.profile.isAdmin,
             seasonId: parsed.seasonId ?? existing?.profile.seasonId ?? 1,
           };
 
-          // Merge stats per game_id keeping highest best_score, best_level, plays, and wins
+          // Merge stats per game_id keeping highest best_score, best_level, plays, wins, and flawless_wins
           const incomingStats: GameStatRow[] = Array.isArray((parsed as any).stats)
             ? (parsed as any).stats
             : [];
@@ -1642,6 +1727,8 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
                 mode: st.mode || "padrao",
                 plays: Math.max(cur.plays ?? 0, st.plays ?? 0),
                 wins: Math.max(cur.wins ?? 0, st.wins ?? 0),
+                flawless_wins: Math.max(cur.flawless_wins ?? 0, st.flawless_wins ?? 0),
+                last_wrong: st.last_wrong ?? cur.last_wrong,
                 best_score: Math.max(cur.best_score ?? 0, st.best_score ?? 0),
                 best_level: Math.max(cur.best_level ?? 1, st.best_level ?? 1),
                 last_played_at:
@@ -1871,14 +1958,40 @@ export async function playfabRecordMatch(args: {
   const mode = args.mode ?? "padrao";
   const wrong = args.wrong ?? 0;
   const won = isMatchVictory(safeScore, args.correct, wrong);
+  const flawless = isFlawlessMatch({
+    score: safeScore,
+    correct: args.correct,
+    wrong,
+    mode,
+  });
   const rawEarnedXp = xpFromMatch(safeScore, args.correct, wrong, safeLevel);
   const todayKey = getLocalDateKey();
+  const currentWeekKey = getCurrentWeekKey();
+
+  // Update consecutive daily activity streak
+  if (acc.profile.lastActiveDate !== todayKey) {
+    const yesterdayKey = getPreviousDateKey(todayKey);
+    if (acc.profile.lastActiveDate === yesterdayKey) {
+      acc.profile.streakDays = (acc.profile.streakDays ?? 1) + 1;
+    } else {
+      acc.profile.streakDays = 1;
+    }
+    acc.profile.lastActiveDate = todayKey;
+  } else if (!acc.profile.streakDays) {
+    acc.profile.streakDays = 1;
+  }
 
   let earnedXp = 0;
   if (mode === "x1_online") {
     // Dedicated +100 XP/day extra cap for Arena X1 (unlimited matches per day)
     if (won) {
       acc.profile.x1Wins = (acc.profile.x1Wins ?? 0) + 1;
+      if (acc.profile.weeklyX1WeekKey !== currentWeekKey) {
+        acc.profile.weeklyX1Wins = 1;
+        acc.profile.weeklyX1WeekKey = currentWeekKey;
+      } else {
+        acc.profile.weeklyX1Wins = (acc.profile.weeklyX1Wins ?? 0) + 1;
+      }
     }
     const x1CapRes = applyDailyXpCap({
       rawEarnedXp: won ? 25 : 10,
@@ -1943,6 +2056,8 @@ export async function playfabRecordMatch(args: {
       ...cur,
       plays: cur.plays + 1,
       wins: (cur.wins ?? 0) + (won ? 1 : 0),
+      flawless_wins: (cur.flawless_wins ?? 0) + (flawless ? 1 : 0),
+      last_wrong: wrong,
       best_score: Math.max(cur.best_score, safeScore),
       best_level: Math.max(cur.best_level, safeLevel),
       last_played_at: nowIso,
@@ -1953,16 +2068,19 @@ export async function playfabRecordMatch(args: {
       mode,
       plays: 1,
       wins: won ? 1 : 0,
+      flawless_wins: flawless ? 1 : 0,
+      last_wrong: wrong,
       best_score: safeScore,
       best_level: safeLevel,
       last_played_at: nowIso,
     });
   }
 
+  const isSyntheticTournamentEntry = mode === "torneio_semanal";
   const nextXp = acc.profile.xp + earnedXp;
   const nextSeasonXp = (acc.profile.seasonXp ?? 0) + earnedXp;
-  const nextWins = (acc.profile.wins ?? 0) + (won ? 1 : 0);
-  const nextMatches = (acc.profile.matchesPlayed ?? 0) + 1;
+  const nextWins = (acc.profile.wins ?? 0) + (!isSyntheticTournamentEntry && won ? 1 : 0);
+  const nextMatches = (acc.profile.matchesPlayed ?? 0) + (isSyntheticTournamentEntry ? 0 : 1);
   const distinctInSeason = new Set(acc.stats.map((s) => s.game_id)).size;
   const distinctGames = Math.max(acc.profile.distinctGamesPlayed ?? 0, distinctInSeason);
 
@@ -1986,7 +2104,7 @@ export async function playfabRecordMatch(args: {
     lastMatchScore: safeScore,
   });
 
-  // Evaluate new medals
+  // Evaluate new medals at the end of the match using the exact final wrong/correct/score counts
   const allMedals = getAllAvailableMedals(cfg.customMedals);
   const newlyAwarded = evaluatePlayerMedals(
     {
@@ -2001,6 +2119,8 @@ export async function playfabRecordMatch(args: {
         mode,
       },
       todayXpEarned: acc.profile.dailyXp,
+      streakDays: acc.profile.streakDays,
+      weeklyX1Wins: acc.profile.weeklyX1Wins,
     },
     allMedals,
   );
@@ -2024,6 +2144,29 @@ export async function playfabRecordMatch(args: {
         wins: acc.profile.wins,
         distinctGames: acc.profile.distinctGamesPlayed ?? 1,
       });
+
+      // Re-evaluate in case the bonus XP or newly added medals unlocked a level/meta medal
+      const secondaryAwarded = evaluatePlayerMedals(
+        {
+          profile: acc.profile,
+          stats: acc.stats,
+          todayXpEarned: acc.profile.dailyXp,
+          streakDays: acc.profile.streakDays,
+          weeklyX1Wins: acc.profile.weeklyX1Wins,
+        },
+        allMedals,
+      );
+      for (const sm of secondaryAwarded) {
+        if (!currentUnlocked.some((u) => u.medalId === sm.id)) {
+          currentUnlocked.push({ medalId: sm.id, unlockedAt: nowIso });
+          newlyAwarded.push(sm);
+          const extraXp = MEDAL_XP_REWARDS[sm.rarity] ?? 10;
+          medalsBonusXp += extraXp;
+          acc.profile.xp += extraXp;
+          acc.profile.seasonXp = (acc.profile.seasonXp ?? 0) + extraXp;
+        }
+      }
+      acc.profile.unlockedMedals = currentUnlocked;
     }
 
     // Send notifications to Admin Mailbox

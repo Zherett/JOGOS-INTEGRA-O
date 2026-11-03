@@ -148,9 +148,9 @@ export function X1MatchOverlay({ initialRoom, onExitX1 }: Props) {
       level: 2,
       correct: Math.max(wonX1 ? 4 : 1, me.correct),
       wrong: me.wrong,
-      mode: "x1_online",
+      mode: room.guest?.isBot ? "x1_treino" : "x1_online",
     });
-  }, [room.status, room.winnerId, room.gameId, myId, me.score, me.correct, me.wrong]);
+  }, [room.status, room.winnerId, room.gameId, room.guest?.isBot, myId, me.score, me.correct, me.wrong]);
 
   const handleRobotAnswer = useCallback(
     (chosen: boolean) => {

@@ -35,7 +35,7 @@ function fmt(p: { x: number; y: number }) {
 }
 
 export function generateCartQuestion(level: number, range: number = 8): CartQuestion {
-  const count = 4;
+  const count = level >= 3 ? 6 : 4;
   const points = randomPoints(count, range);
   const target = points[rng(0, points.length - 1)];
 

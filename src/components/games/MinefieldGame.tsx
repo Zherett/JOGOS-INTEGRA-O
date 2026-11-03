@@ -67,6 +67,7 @@ export function MinefieldGame({ onExit, onStatsChange, isRanked }: Props) {
   const [correct, setCorrect] = useState(0);
   const [wrong, setWrong] = useState(0);
   const [finished, setFinished] = useState(false);
+  const currentLevel = Math.min(4, 1 + Math.floor(correct / 4));
 
   const timerRef = useRef<number | null>(null);
   const opening = useRef<Set<string>>(new Set());
@@ -85,12 +86,12 @@ export function MinefieldGame({ onExit, onStatsChange, isRanked }: Props) {
 
   useEffect(() => {
     if (finished) {
-      updateBest("minado", score, 1);
+      updateBest("minado", score, currentLevel);
       const m: LastMatch = {
         score,
         correct,
         wrong,
-        level: 1,
+        level: currentLevel,
         at: Date.now(),
         isTeam: team.activeSession,
         mode: team.activeSession ? "equipes" : "padrao",
@@ -285,7 +286,7 @@ export function MinefieldGame({ onExit, onStatsChange, isRanked }: Props) {
       <div className="space-y-4">
         <GameTopBar title="Campo Minado Lógico" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
         <ResultPanel
-          score={score} correct={correct} wrong={wrong} level={1}
+          score={score} correct={correct} wrong={wrong} level={currentLevel}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />
         <TeamResults session={team} />

@@ -2,8 +2,11 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildBaseMedalsCatalog,
+  calculateMedalProgress,
   evaluatePlayerMedals,
+  getDistinctFlawlessGames,
   getTopShowcaseMedals,
+  isFlawlessMatch,
   RARITY_INFO,
   type MedalDefinition,
 } from "./medals-catalog.ts";
@@ -281,5 +284,176 @@ describe("Sistema Completo de Medalhas e Inventário", () => {
     assert.equal(heroiMedal?.rarity, "heroi");
     assert.equal(RARITY_INFO.heroi.glowHex, "#ef4444");
     assert.equal(RARITY_INFO.heroi.label, "Herói");
+  });
+
+  it("NÃO concede medalha de zero erros (individual ou 3 jogos) se a aluna teve 1 ou mais erros no final do jogo", () => {
+    const profileWith1Error: PlayerProfile = {
+      id: "p_aluna",
+      nick: "AlunaTeste",
+      nickNormalized: "alunateste",
+      full_name: "ALUNA TESTE",
+      school: "Raimundo Bezerra",
+      grade: "6º ano",
+      birthdate: "2014-03-15",
+      xp: 600,
+      seasonXp: 600,
+      level: 3,
+      wins: 3,
+      matchesPlayed: 3,
+      distinctGamesPlayed: 3,
+      badges: [],
+      seasonId: 1,
+      unlockedMedals: [],
+    };
+
+    // Jogou 3 jogos distintos com pontuação alta (>= 30) e vitória (wins >= 1),
+    // mas cometeu 1 erro em cada (flawless_wins = 0, last_wrong = 1)
+    const statsWithErrors: GameStatRow[] = [
+      {
+        game_id: "logica",
+        mode: "padrao",
+        plays: 1,
+        wins: 1,
+        flawless_wins: 0,
+        last_wrong: 1,
+        best_score: 80,
+        best_level: 2,
+      },
+      {
+        game_id: "porcentagem",
+        mode: "padrao",
+        plays: 1,
+        wins: 1,
+        flawless_wins: 0,
+        last_wrong: 2,
+        best_score: 70,
+        best_level: 2,
+      },
+      {
+        game_id: "cartesiano",
+        mode: "padrao",
+        plays: 1,
+        wins: 1,
+        flawless_wins: 0,
+        last_wrong: 1,
+        best_score: 90,
+        best_level: 2,
+      },
+    ];
+
+    const lastMatchWith1Error = {
+      gameId: "cartesiano" as const,
+      score: 90,
+      level: 2,
+      correct: 9,
+      wrong: 1, // Cometeu 1 erro no final do jogo!
+    };
+
+    assert.equal(isFlawlessMatch(lastMatchWith1Error), false);
+    assert.equal(
+      getDistinctFlawlessGames(profileWith1Error, statsWithErrors, lastMatchWith1Error).size,
+      0,
+    );
+
+    const awarded = evaluatePlayerMedals({
+      profile: profileWith1Error,
+      stats: statsWithErrors,
+      lastMatch: lastMatchWith1Error,
+    });
+
+    const ids = awarded.map((m) => m.id);
+    // Não pode ganhar medalha individual sem erros nem a de 3 jogos sem erros
+    assert.ok(!ids.includes("game_cartesiano_flawless"));
+    assert.ok(!ids.includes("flawless_3_games"));
+    assert.ok(!ids.includes("flawless_5_games"));
+    assert.ok(!ids.includes("flawless_8_games"));
+
+    // Progresso da medalha flawless_3_games deve ser 0/3
+    const catalog = buildBaseMedalsCatalog();
+    const medal3Flawless = catalog.find((m) => m.id === "flawless_3_games")!;
+    const prog = calculateMedalProgress(medal3Flawless, profileWith1Error, statsWithErrors);
+    assert.equal(prog.percent, 0);
+    assert.ok(prog.progressText.includes("0 de 3"));
+  });
+
+  it("concede flawless_3_games somente quando 3 jogos DISTINTOS são finalizados com wrong === 0", () => {
+    const profileFlawless: PlayerProfile = {
+      id: "p_precisa",
+      nick: "MentePrecisa",
+      nickNormalized: "menteprecisa",
+      full_name: "ALUNA PRECISA",
+      school: "Raimundo Bezerra",
+      grade: "7º ano",
+      birthdate: "2013-07-10",
+      xp: 900,
+      seasonXp: 900,
+      level: 4,
+      wins: 4,
+      matchesPlayed: 4,
+      distinctGamesPlayed: 3,
+      badges: [],
+      seasonId: 1,
+      unlockedMedals: [],
+    };
+
+    // Se jogar o mesmo jogo em 2 modos ("padrao" e "equipes") sem erros + 1 segundo jogo sem erros,
+    // são apenas 2 jogos distintos (não pode ganhar flawless_3_games ainda)
+    const statsTwoDistinctGames: GameStatRow[] = [
+      {
+        game_id: "logica",
+        mode: "padrao",
+        plays: 1,
+        wins: 1,
+        flawless_wins: 1,
+        last_wrong: 0,
+        best_score: 60,
+        best_level: 2,
+      },
+      {
+        game_id: "logica",
+        mode: "equipes",
+        plays: 1,
+        wins: 1,
+        flawless_wins: 1,
+        last_wrong: 0,
+        best_score: 70,
+        best_level: 2,
+      },
+      {
+        game_id: "porcentagem",
+        mode: "padrao",
+        plays: 1,
+        wins: 1,
+        flawless_wins: 1,
+        last_wrong: 0,
+        best_score: 50,
+        best_level: 2,
+      },
+    ];
+
+    const awardedTwo = evaluatePlayerMedals({
+      profile: profileFlawless,
+      stats: statsTwoDistinctGames,
+    });
+    assert.ok(!awardedTwo.some((m) => m.id === "flawless_3_games"));
+
+    // Ao finalizar o 3º jogo distinto sem nenhum erro (wrong === 0, correct >= 3, score >= 30):
+    const thirdFlawlessMatch = {
+      gameId: "memoria" as const,
+      score: 80,
+      level: 2,
+      correct: 6,
+      wrong: 0,
+    };
+
+    const awardedThree = evaluatePlayerMedals({
+      profile: profileFlawless,
+      stats: statsTwoDistinctGames,
+      lastMatch: thirdFlawlessMatch,
+    });
+
+    const idsThree = awardedThree.map((m) => m.id);
+    assert.ok(idsThree.includes("game_memoria_flawless"));
+    assert.ok(idsThree.includes("flawless_3_games"));
   });
 });

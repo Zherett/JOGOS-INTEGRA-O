@@ -19,7 +19,7 @@ import { playCorrect, playWrong } from "@/lib/sound";
 
 const DURATION = 120;
 const LEVEL_UP_STREAK = 4;
-const MAX_LEVEL = 2;
+const MAX_LEVEL = 3;
 const POINTS_CORRECT = 10;
 const POINTS_WRONG = 5;
 

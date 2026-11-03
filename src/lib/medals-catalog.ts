@@ -586,6 +586,104 @@ export interface PlayerStatsContext {
 }
 
 /**
+ * Avalia ao final do jogo se a partida foi concluída sem NENHUM erro (wrong === 0),
+ * com participação real mínima (pelo menos 3 acertos) e pontuação >= threshold (padrão 30).
+ */
+export function isFlawlessMatch(
+  match?: {
+    score: number;
+    correct: number;
+    wrong: number;
+    mode?: string;
+  } | null,
+  minScore = 30,
+): boolean {
+  if (!match) return false;
+  // Ignora chamadas sintéticas de registro de entrada do torneio (a partida real já é salva pelo jogo)
+  if (match.mode === "torneio_semanal") return false;
+  return (
+    typeof match.wrong === "number" &&
+    match.wrong === 0 &&
+    match.correct >= 3 &&
+    match.score >= minScore
+  );
+}
+
+/**
+ * Consolida as estatísticas por `game_id` único (somando partidas jogadas/vitórias entre modos
+ * como padrão/equipes/frações e mantendo o maior nível e maior pontuação de cada jogo).
+ */
+export function aggregateStatsByGame(stats: GameStatRow[]): Map<
+  GameId,
+  GameStatRow & { flawless_wins: number }
+> {
+  const map = new Map<GameId, GameStatRow & { flawless_wins: number }>();
+  for (const row of stats) {
+    if (!row || !row.game_id) continue;
+    // Não duplica contagem de partidas se for linha sintética de entrada de torneio
+    const isSyntheticTournament = row.mode === "torneio_semanal";
+    const playsToAdd = isSyntheticTournament ? 0 : Math.max(0, row.plays ?? 0);
+    const winsToAdd = isSyntheticTournament ? 0 : Math.max(0, row.wins ?? 0);
+    const flawlessToAdd = isSyntheticTournament ? 0 : Math.max(0, row.flawless_wins ?? 0);
+
+    const existing = map.get(row.game_id);
+    if (!existing) {
+      map.set(row.game_id, {
+        ...row,
+        plays: playsToAdd,
+        wins: winsToAdd,
+        flawless_wins: flawlessToAdd,
+        best_score: Math.max(0, row.best_score ?? 0),
+        best_level: Math.max(1, row.best_level ?? 1),
+      });
+    } else {
+      map.set(row.game_id, {
+        ...existing,
+        plays: existing.plays + playsToAdd,
+        wins: existing.wins + winsToAdd,
+        flawless_wins: existing.flawless_wins + flawlessToAdd,
+        best_score: Math.max(existing.best_score, row.best_score ?? 0),
+        best_level: Math.max(existing.best_level, row.best_level ?? 1),
+        last_played_at:
+          (row.last_played_at || "") > (existing.last_played_at || "")
+            ? row.last_played_at
+            : existing.last_played_at,
+      });
+    }
+  }
+  return map;
+}
+
+/**
+ * Retorna o conjunto de jogos distintos (`GameId`) em que o jogador comprovadamente
+ * finalizou pelo menos uma partida com ZERO erros (`wrong === 0` ao final do jogo).
+ */
+export function getDistinctFlawlessGames(
+  profile?: PlayerProfile | null,
+  stats: GameStatRow[] = [],
+  lastMatch?: PlayerStatsContext["lastMatch"],
+): Set<GameId> {
+  const flawlessSet = new Set<GameId>();
+  const unlockedIds = new Set((profile?.unlockedMedals ?? []).map((m) => m.medalId));
+  const byGame = aggregateStatsByGame(stats);
+
+  for (const gId of ALL_GAME_IDS) {
+    const row = byGame.get(gId);
+    if (row && row.flawless_wins >= 1) {
+      flawlessSet.add(gId);
+    } else if (unlockedIds.has(`game_${gId}_flawless`)) {
+      flawlessSet.add(gId);
+    }
+  }
+
+  if (lastMatch && isFlawlessMatch(lastMatch, 30)) {
+    flawlessSet.add(lastMatch.gameId);
+  }
+
+  return flawlessSet;
+}
+
+/**
  * Evaluates all unlocked medals for a player and returns newly awarded medals.
  */
 export function evaluatePlayerMedals(
@@ -597,28 +695,26 @@ export function evaluatePlayerMedals(
   const newlyAwarded: MedalDefinition[] = [];
 
   const p = ctx.profile;
-  const statsMap = new Map<GameId, GameStatRow>();
-  ctx.stats.forEach((s) => statsMap.set(s.game_id, s));
+  const statsMap = aggregateStatsByGame(ctx.stats);
+  const aggregatedRows = Array.from(statsMap.values()).filter((s) => s.plays > 0 || s.best_score > 0);
 
   // Pre-calculate statistics
   const distinctGames = Math.max(
     p.distinctGamesPlayed ?? 0,
-    new Set(ctx.stats.map((s) => s.game_id)).size,
+    aggregatedRows.length,
   );
 
-  let flawlessGamesCount = 0;
-  for (const row of ctx.stats) {
-    // Has at least one win and best score is high
-    if (row.wins >= 1 && row.best_score >= 30) {
-      flawlessGamesCount++;
-    }
-  }
+  // Contagem estrita de jogos diferentes finalizados com ZERO erros (wrong === 0 no fim do jogo)
+  const flawlessGamesSet = getDistinctFlawlessGames(p, ctx.stats, ctx.lastMatch);
+  const flawlessGamesCount = flawlessGamesSet.size;
 
   const currentLevelMedals = [2, 3, 4, 5, 6, 7, 8, 9, 10].filter((lvl) => p.level >= lvl).length;
-  const totalCompletedPlays = ctx.stats.reduce((acc, s) => acc + s.plays, 0);
-  const gamesWith2Plays = ctx.stats.filter((s) => s.plays >= 2).length;
-  const gamesWith10Plays = ctx.stats.filter((s) => s.plays >= 10).length;
+  const totalCompletedPlays = aggregatedRows.reduce((acc, s) => acc + s.plays, 0);
+  const gamesWith2Plays = aggregatedRows.filter((s) => s.plays >= 2).length;
+  const gamesWith10Plays = aggregatedRows.filter((s) => s.plays >= 10).length;
   const isBetaActive = isBetaTesterPeriodActive(now);
+  const effectiveStreakDays = Math.max(ctx.streakDays ?? 0, p.streakDays ?? 1);
+  const effectiveWeeklyX1Wins = Math.max(ctx.weeklyX1Wins ?? 0, p.weeklyX1Wins ?? 0);
 
   for (const medal of allMedals) {
     if (existingSet.has(medal.id)) continue;
@@ -638,15 +734,17 @@ export function evaluatePlayerMedals(
         break;
 
       case "game_flawless":
-        if (
-          cond.gameId &&
-          ctx.lastMatch &&
-          ctx.lastMatch.gameId === cond.gameId &&
-          ctx.lastMatch.wrong === 0 &&
-          ctx.lastMatch.correct >= 3 &&
-          ctx.lastMatch.score >= (cond.threshold ?? 30)
-        ) {
-          earned = true;
+        if (cond.gameId) {
+          const minScore = cond.threshold ?? 30;
+          const row = statsMap.get(cond.gameId);
+          if (
+            (ctx.lastMatch &&
+              ctx.lastMatch.gameId === cond.gameId &&
+              isFlawlessMatch(ctx.lastMatch, minScore)) ||
+            (row && row.flawless_wins >= 1 && row.best_score >= minScore)
+          ) {
+            earned = true;
+          }
         }
         break;
 
@@ -663,7 +761,7 @@ export function evaluatePlayerMedals(
         break;
 
       case "x1_wins_weekly":
-        if ((ctx.weeklyX1Wins ?? 0) >= (cond.threshold ?? 5)) earned = true;
+        if (effectiveWeeklyX1Wins >= (cond.threshold ?? 5)) earned = true;
         break;
 
       case "distinct_games":
@@ -679,23 +777,41 @@ export function evaluatePlayerMedals(
         break;
 
       case "streak_days":
-        if ((ctx.streakDays ?? 1) >= (cond.threshold ?? 3)) earned = true;
+        if (effectiveStreakDays >= (cond.threshold ?? 3)) earned = true;
         break;
 
       case "tournament_rank":
-        // Awarded via tournament finish evaluator
+        if (
+          cond.targetRank &&
+          Array.isArray(p.tournamentMedals) &&
+          p.tournamentMedals.some((tm) => tm.rank === cond.targetRank)
+        ) {
+          earned = true;
+        }
         break;
 
       case "all_level_medals":
         if (currentLevelMedals === 9) earned = true;
         break;
 
+      case "all_game_medals": {
+        const allGameMasterMedalsUnlocked = ALL_GAME_IDS.every((gId) => {
+          const mId = `game_${gId}_lvl_master`;
+          return existingSet.has(mId) || newlyAwarded.some((m) => m.id === mId);
+        });
+        if (allGameMasterMedalsUnlocked) earned = true;
+        break;
+      }
+
       case "total_medals_count":
-        if ((ctx.profile.unlockedMedals?.length ?? 0) >= (cond.threshold ?? 50)) earned = true;
+        if (existingSet.size + newlyAwarded.length >= (cond.threshold ?? 50)) earned = true;
         break;
 
       case "beta_tester_bronze":
-        if (isBetaActive && (totalCompletedPlays >= 1 || (p.totalPlays ?? 0) >= 1)) {
+        if (
+          isBetaActive &&
+          (totalCompletedPlays >= 1 || (p.matchesPlayed ?? 0) >= 1 || (p.totalPlays ?? 0) >= 1)
+        ) {
           earned = true;
         }
         break;
@@ -734,6 +850,9 @@ export function evaluatePlayerMedals(
 
     if (earned) {
       newlyAwarded.push(medal);
+      if (medal.id.startsWith("game_") && medal.id.endsWith("_flawless") && cond.gameId) {
+        flawlessGamesSet.add(cond.gameId);
+      }
     }
   }
 
@@ -758,8 +877,8 @@ export function calculateMedalProgress(
   }
 
   const cond = medal.condition;
-  const statsMap = new Map<GameId, GameStatRow>();
-  stats.forEach((s) => statsMap.set(s.game_id, s));
+  const statsMap = aggregateStatsByGame(stats);
+  const aggregatedRows = Array.from(statsMap.values()).filter((s) => s.plays > 0 || s.best_score > 0);
 
   switch (cond.type) {
     case "player_level": {
@@ -781,6 +900,26 @@ export function calculateMedalProgress(
         progressText: `Nível ${cur} de ${target}`,
       };
     }
+    case "game_flawless": {
+      const gId = cond.gameId!;
+      const row = statsMap.get(gId);
+      const targetScore = cond.threshold ?? 30;
+      if (row && row.flawless_wins >= 1) {
+        return {
+          percent: 100,
+          progressText: "Concluído com 0 erros!",
+        };
+      }
+      const best = row?.best_score ?? 0;
+      const pct = Math.min(90, Math.round((Math.min(best, targetScore) / targetScore) * 50));
+      return {
+        percent: pct,
+        progressText:
+          row?.last_wrong !== undefined && row.last_wrong > 0
+            ? `Última partida teve ${row.last_wrong} erro(s) — finalize com 0 erros e ${targetScore}+ pts`
+            : `Finalize uma partida com 0 erros e ${targetScore}+ pts`,
+      };
+    }
     case "game_match_count": {
       const gId = cond.gameId!;
       const cur = statsMap.get(gId)?.plays ?? 0;
@@ -800,8 +939,17 @@ export function calculateMedalProgress(
         progressText: `${cur} de ${target} vitórias conquistadas no X1 Online`,
       };
     }
+    case "x1_wins_weekly": {
+      const cur = profile.weeklyX1Wins ?? 0;
+      const target = cond.threshold ?? 5;
+      const pct = Math.min(100, Math.round((cur / target) * 100));
+      return {
+        percent: pct,
+        progressText: `${cur} de ${target} vitórias no X1 nesta semana`,
+      };
+    }
     case "distinct_games": {
-      const distinct = Math.max(profile.distinctGamesPlayed ?? 0, stats.length);
+      const distinct = Math.max(profile.distinctGamesPlayed ?? 0, aggregatedRows.length);
       const target = cond.threshold ?? 3;
       const pct = Math.min(100, Math.round((distinct / target) * 100));
       return {
@@ -810,15 +958,44 @@ export function calculateMedalProgress(
       };
     }
     case "distinct_flawless_games": {
-      let count = 0;
-      for (const row of stats) {
-        if (row.wins >= 1 && row.best_score >= 30) count++;
-      }
+      const count = getDistinctFlawlessGames(profile, stats).size;
       const target = cond.threshold ?? 3;
       const pct = Math.min(100, Math.round((count / target) * 100));
       return {
         percent: pct,
-        progressText: `${count} de ${target} jogos com vitória sem erros`,
+        progressText: `${count} de ${target} jogos finalizados com zero erros`,
+      };
+    }
+    case "max_daily_xp": {
+      const cur = profile.dailyXp ?? 0;
+      const target = cond.threshold ?? 1000;
+      const pct = Math.min(100, Math.round((cur / target) * 100));
+      return {
+        percent: pct,
+        progressText: `${cur} de ${target} XP diário acumulado hoje`,
+      };
+    }
+    case "streak_days": {
+      const cur = profile.streakDays ?? 1;
+      const target = cond.threshold ?? 3;
+      const pct = Math.min(100, Math.round((cur / target) * 100));
+      return {
+        percent: pct,
+        progressText: `${cur} de ${target} dias consecutivos ativos`,
+      };
+    }
+    case "tournament_rank": {
+      const target = cond.targetRank ?? 1;
+      const bestRank =
+        profile.tournamentMedals && profile.tournamentMedals.length > 0
+          ? Math.min(...profile.tournamentMedals.map((m) => m.rank))
+          : null;
+      return {
+        percent: bestRank !== null && bestRank <= target ? 100 : 0,
+        progressText:
+          bestRank !== null
+            ? `Melhor colocação semanal: ${bestRank}º lugar (meta: ${target}º)`
+            : `Alcance o ${target}º lugar da sua etapa no Torneio Semanal`,
       };
     }
     case "total_medals_count": {
@@ -839,15 +1016,18 @@ export function calculateMedalProgress(
       };
     }
     case "beta_tester_bronze": {
-      const totalPlays = stats.reduce((acc, s) => acc + s.plays, 0);
-      const pct = totalPlays >= 1 || (profile.totalPlays ?? 0) >= 1 ? 100 : 0;
+      const totalPlays = aggregatedRows.reduce((acc, s) => acc + s.plays, 0);
+      const pct =
+        totalPlays >= 1 || (profile.matchesPlayed ?? 0) >= 1 || (profile.totalPlays ?? 0) >= 1
+          ? 100
+          : 0;
       return {
         percent: pct,
         progressText: `${pct === 100 ? 1 : 0} de 1 partida finalizada`,
       };
     }
     case "beta_tester_prata": {
-      const games = stats.filter((s) => s.plays >= 2).length;
+      const games = aggregatedRows.filter((s) => s.plays >= 2).length;
       const target = 4;
       const pct = Math.min(100, Math.round((games / target) * 100));
       return {
@@ -856,7 +1036,7 @@ export function calculateMedalProgress(
       };
     }
     case "beta_tester_ouro": {
-      const games = stats.filter((s) => s.plays >= 2).length;
+      const games = aggregatedRows.filter((s) => s.plays >= 2).length;
       const target = 6;
       const pct = Math.min(100, Math.round((games / target) * 100));
       return {
@@ -865,7 +1045,7 @@ export function calculateMedalProgress(
       };
     }
     case "beta_tester_platina": {
-      const games = stats.filter((s) => s.plays >= 2).length;
+      const games = aggregatedRows.filter((s) => s.plays >= 2).length;
       const target = ALL_GAME_IDS.length;
       const pct = Math.min(100, Math.round((games / target) * 100));
       return {
@@ -874,7 +1054,7 @@ export function calculateMedalProgress(
       };
     }
     case "beta_tester_heroi": {
-      const games = stats.filter((s) => s.plays >= 10).length;
+      const games = aggregatedRows.filter((s) => s.plays >= 10).length;
       const targetGames = ALL_GAME_IDS.length;
       const lvlTarget = 5;
       const lvlPct = Math.min(1, profile.level / lvlTarget);
