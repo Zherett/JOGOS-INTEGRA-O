@@ -131,16 +131,16 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
           </div>
         )}
 
-        {/* Top Controls: Série / Etapa selector button on the top-left below title */}
+        {/* Top Controls: Etapa selector button on the top-left below title */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
           <button
             type="button"
             onClick={() => setShowStageSelector((v) => !v)}
             className="inline-flex items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-black text-primary hover:bg-primary/20 transition-all shadow-xs"
-            title="Clique para alternar entre séries e etapas"
+            title="Clique para alternar entre as etapas"
           >
             <Layers className="h-4 w-4" />
-            <span>Série / Etapa: {getRankingCategoryLabel(selectedStage)}</span>
+            <span>Etapa: {getRankingCategoryLabel(selectedStage)}</span>
             <ChevronDown
               className={`h-3.5 w-3.5 transition-transform duration-200 ${
                 showStageSelector ? "rotate-180" : ""
@@ -158,12 +158,12 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
           )}
         </div>
 
-        {/* Collapsible Series / Stage Selector */}
+        {/* Collapsible Stage Selector (1ª Etapa, 2ª Etapa, 3ª Etapa) */}
         {showStageSelector && (
           <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-3 space-y-2.5 animate-in fade-in-50 duration-200">
             <div className="flex items-center justify-between">
               <span className="font-display text-xs font-black uppercase tracking-wider text-primary">
-                Selecione a Série ou Etapa:
+                Selecione a Etapa:
               </span>
               <button
                 type="button"
@@ -177,19 +177,17 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
                     : "border-border bg-card/80 text-muted-foreground hover:text-foreground"
                 }`}
               >
-                🌐 Todas as Séries (Geral)
+                🌐 Todas as Etapas (Geral)
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               {RANKING_SERIES_OPTIONS.map((opt) => {
                 const isSelected =
                   selectedStage === opt.id ||
-                  (opt.id === "5º ano" && selectedStage === "etapa_1");
+                  (opt.id === "etapa_1" && selectedStage === "5º ano");
                 const isMyCategory =
-                  Boolean(auth.profile) &&
-                  (defaultPlayerCategory === opt.id ||
-                    (opt.id === "5º ano" && defaultPlayerCategory === "etapa_1"));
+                  Boolean(auth.profile) && defaultPlayerCategory === opt.id;
                 return (
                   <button
                     key={opt.id}
@@ -216,7 +214,7 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
                               : "bg-primary/15 text-primary"
                           }`}
                         >
-                          Sua Série
+                          Sua Etapa
                         </span>
                       )}
                     </div>

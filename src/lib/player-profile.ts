@@ -422,7 +422,7 @@ export type RankingFilterCategory =
   | "TODAS";
 
 export interface RankingSeriesOption {
-  id: Exclude<RankingFilterCategory, "TODAS" | "etapa_1">;
+  id: AgeStageId;
   shortLabel: string;
   label: string;
   description: string;
@@ -431,89 +431,62 @@ export interface RankingSeriesOption {
 
 export const RANKING_SERIES_OPTIONS: readonly RankingSeriesOption[] = [
   {
-    id: "5º ano",
-    shortLabel: "5º ano",
-    label: "5º ano (1ª Etapa • Até 11 anos)",
+    id: "etapa_1",
+    shortLabel: "1ª Etapa (5º ano)",
+    label: "1ª Etapa (5º ano)",
     description: "Raimunda Cruz, Ursulina, Nazaré, Litaiff",
     emoji: "🌱",
   },
   {
-    id: "6º ano",
-    shortLabel: "6º ano",
-    label: "6º ano (2ª Etapa)",
-    description: "Raimundo Bezerra • 6º ano",
-    emoji: "⚡",
-  },
-  {
-    id: "7º ano",
-    shortLabel: "7º ano",
-    label: "7º ano (2ª Etapa)",
-    description: "Raimundo Bezerra • 7º ano",
-    emoji: "⚡",
-  },
-  {
-    id: "8º ano",
-    shortLabel: "8º ano",
-    label: "8º ano (2ª Etapa)",
-    description: "Raimundo Bezerra • 8º ano",
-    emoji: "⚡",
-  },
-  {
-    id: "9º ano",
-    shortLabel: "9º ano",
-    label: "9º ano (2ª Etapa)",
-    description: "Raimundo Bezerra • 9º ano",
-    emoji: "⚡",
-  },
-  {
     id: "etapa_2",
-    shortLabel: "2ª Etapa (6º ao 9º)",
-    label: "2ª Etapa Geral (6º ao 9º ano)",
-    description: "Todos os alunos de 11 a 14 anos",
+    shortLabel: "2ª Etapa (6º - 9º ano)",
+    label: "2ª Etapa (6º - 9º ano)",
+    description: "Raimundo Bezerra • 11 a 14 anos",
     emoji: "⚡",
   },
   {
     id: "etapa_3",
-    shortLabel: "3ª Etapa (15+ anos)",
-    label: "3ª Etapa (15+ anos • Comunidade)",
+    shortLabel: "3ª Etapa (15+)",
+    label: "3ª Etapa (15+)",
     description: "Comunidade / Outro",
     emoji: "🚀",
   },
 ] as const;
 
 export function getRankingCategoryLabel(category: RankingFilterCategory): string {
-  if (category === "TODAS") return "Geral (Todas as Séries)";
+  if (category === "TODAS") return "Geral (Todas as Etapas)";
   if (category === "etapa_1" || category === "5º ano") {
-    return "5º ano (1ª Etapa • Até 11 anos)";
+    return "1ª Etapa (5º ano)";
+  }
+  if (
+    category === "etapa_2" ||
+    category === "6º ano" ||
+    category === "7º ano" ||
+    category === "8º ano" ||
+    category === "9º ano"
+  ) {
+    return "2ª Etapa (6º - 9º ano)";
+  }
+  if (category === "etapa_3") {
+    return "3ª Etapa (15+)";
   }
   const found = RANKING_SERIES_OPTIONS.find((o) => o.id === category);
   return found ? found.label : category;
 }
 
 /**
- * Resolves the default Ranking filter for a logged-in player based on the grade/series they compete in:
- * - Student in 5º ano (or 1ª Etapa): sees "5º ano"
- * - Student in 6º, 7º, 8º or 9º ano: sees their exact grade ("6º ano", "7º ano", "8º ano", "9º ano")
- * - Student in 2ª Etapa without specific grade set: sees "etapa_2"
- * - Student in 3ª Etapa (15+ years): sees "etapa_3"
+ * Resolves the default Ranking filter for a logged-in player based on their stage:
+ * - Student in 1ª Etapa (5º ano): sees "etapa_1" ("1ª Etapa (5º ano)")
+ * - Student in 2ª Etapa (6º ano / 11-14 anos): sees "etapa_2" ("2ª Etapa (6º ano)")
+ * - Student in 3ª Etapa (15+ years): sees "etapa_3" ("3ª Etapa (15+)")
  */
 export function resolveDefaultRankingCategory(
   profile?: { birthdate?: string | null; school?: string | null; grade?: string | null } | null,
   now = new Date(),
 ): RankingFilterCategory {
-  if (!profile) return "5º ano";
+  if (!profile) return "etapa_1";
   const st = stageFromBirthdate(profile.birthdate, now, profile.school);
-  if (st.id === "etapa_3") return "etapa_3";
-  if (st.id === "etapa_1") return "5º ano";
-  if (
-    profile.grade === "6º ano" ||
-    profile.grade === "7º ano" ||
-    profile.grade === "8º ano" ||
-    profile.grade === "9º ano"
-  ) {
-    return profile.grade;
-  }
-  return "etapa_2";
+  return st.id;
 }
 
 /**
@@ -570,26 +543,54 @@ export function evaluateLeaderboardRankChanges<T extends { playerId: string; ran
 } {
   const nextHistory: Record<string, RankHistoryState> = { ...prevHistory };
 
-  const entriesWithTrend = entries.map((entry) => {
+  // 1. Identify players present in both the previous snapshot and the current leaderboard
+  const commonEntries = entries.filter((e) => Boolean(prevHistory[e.playerId]));
+
+  // Relative order in the previous snapshot (1..K) vs current snapshot (1..K)
+  const prevSortedIds = [...commonEntries]
+    .sort((a, b) => {
+      const diff = prevHistory[a.playerId].lastRank - prevHistory[b.playerId].lastRank;
+      return diff !== 0 ? diff : a.rank - b.rank;
+    })
+    .map((e) => e.playerId);
+
+  const prevRelMap = new Map<string, number>();
+  prevSortedIds.forEach((id, idx) => prevRelMap.set(id, idx + 1));
+
+  const currRelMap = new Map<string, number>();
+  commonEntries.forEach((e, idx) => currRelMap.set(e.playerId, idx + 1));
+
+  // Detect if any known competitor actually overtook another known competitor
+  const anyRelativeChange = commonEntries.some(
+    (e) => currRelMap.get(e.playerId) !== prevRelMap.get(e.playerId),
+  );
+
+  const rawResults = entries.map((entry) => {
     const currentRank = entry.rank;
     const prev = prevHistory[entry.playerId];
     let trend: RankTrendDirection = "same";
     let previousRank = currentRank;
 
     if (!prev) {
-      // Primeiro registro deste jogador neste ranking: 1º lugar destaca em verde (topo), demais neutro
+      // Primeiro registro deste jogador neste ranking: 1º lugar destaca em verde (topo), demais neutro (—)
       trend = currentRank === 1 ? "up" : "same";
       previousRank = currentRank;
-    } else if (currentRank < prev.lastRank) {
-      // Subiu de colocação (ex: 2º -> 1º, 3º -> 2º)
-      trend = "up";
-      previousRank = prev.lastRank;
-    } else if (currentRank > prev.lastRank) {
-      // Caiu de colocação (ex: 1º -> 2º, 2º -> 3º)
-      trend = "down";
-      previousRank = prev.lastRank;
+    } else if (anyRelativeChange) {
+      // Houve ultrapassagem real entre os competidores
+      const prevRel = prevRelMap.get(entry.playerId) ?? currentRank;
+      const currRel = currRelMap.get(entry.playerId) ?? currentRank;
+      if (currRel < prevRel) {
+        trend = "up";
+        previousRank = Math.max(currentRank + 1, prev.lastRank);
+      } else if (currRel > prevRel) {
+        trend = "down";
+        previousRank = Math.min(currentRank - 1, prev.lastRank);
+      } else {
+        trend = currentRank === 1 ? "up" : "same";
+        previousRank = currentRank;
+      }
     } else {
-      // Manteve a mesma colocação desde a última leitura
+      // Ninguém ultrapassou ninguém desde a última leitura: preserva último movimento válido
       trend = prev.trend;
       previousRank = prev.previousRank ?? currentRank;
     }
@@ -598,6 +599,34 @@ export function evaluateLeaderboardRankChanges<T extends { playerId: string; ran
     if (currentRank === 1 && trend === "down") {
       trend = "up";
       previousRank = 1;
+    }
+
+    return {
+      entry,
+      currentRank,
+      trend,
+      previousRank,
+    };
+  });
+
+  // 2. Invariante matemática: um jogador na posição R só pode ter seta vermelha ("down")
+  // se existir pelo menos um jogador acima dele (rank < R) que realmente subiu de posição ("up" com previousRank > rank).
+  // Isso impede que todos apareçam caindo ao mesmo tempo sem ninguém ter subido.
+  const entriesWithTrend = rawResults.map((item) => {
+    let { trend, previousRank } = item;
+    const { entry, currentRank } = item;
+
+    if (trend === "down") {
+      const someoneAboveClimbed = rawResults.some(
+        (other) =>
+          other.currentRank < currentRank &&
+          other.trend === "up" &&
+          other.previousRank > other.currentRank,
+      );
+      if (!someoneAboveClimbed) {
+        trend = currentRank === 1 ? "up" : "same";
+        previousRank = currentRank;
+      }
     }
 
     nextHistory[entry.playerId] = {

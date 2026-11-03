@@ -527,6 +527,7 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
             unlockedMedals={profile.unlockedMedals}
             customMedals={auth.adminConfig.customMedals}
             profile={profile}
+            stats={profile.stats ?? []}
             isOwner={isMe}
           />
         </div>

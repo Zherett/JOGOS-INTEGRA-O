@@ -121,48 +121,54 @@ export const RARITY_INFO: Record<
     label: "Bronze",
     weight: 1,
     neonBorderClass: "border-[#cd7f32] shadow-[0_0_10px_rgba(205,127,50,0.4)]",
-    badgeBgClass: "bg-[#cd7f32]/15 text-[#cd7f32] border-[#cd7f32]/30",
-    textColor: "text-[#cd7f32]",
+    badgeBgClass:
+      "bg-[#f7e4d0] dark:bg-[#3b2310] text-[#9a5213] dark:text-[#f5b070] border-[#cd7f32] font-black shadow-xs",
+    textColor: "text-[#b8661d] dark:text-[#cd7f32]",
     glowHex: "#cd7f32",
   },
   prata: {
     label: "Prata",
     weight: 2,
     neonBorderClass: "border-slate-400 shadow-[0_0_14px_rgba(148,163,184,0.8)]",
-    badgeBgClass: "bg-slate-300 dark:bg-slate-700 text-slate-900 dark:text-white border-slate-500 font-black shadow-xs",
-    textColor: "text-slate-800 dark:text-slate-200",
+    badgeBgClass:
+      "bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white border-slate-400 dark:border-slate-500 font-black shadow-xs",
+    textColor: "text-slate-700 dark:text-slate-200",
     glowHex: "#94a3b8",
   },
   ouro: {
     label: "Ouro",
     weight: 3,
     neonBorderClass: "border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.7)]",
-    badgeBgClass: "bg-amber-400/20 text-amber-300 border-amber-400/40",
-    textColor: "text-amber-400",
+    badgeBgClass:
+      "bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border-amber-400 font-black shadow-xs",
+    textColor: "text-amber-600 dark:text-amber-400",
     glowHex: "#fbbf24",
   },
   platina: {
     label: "Platina",
     weight: 4,
     neonBorderClass: "border-cyan-400 shadow-[0_0_18px_rgba(34,211,238,0.8)]",
-    badgeBgClass: "bg-cyan-400/20 text-cyan-300 border-cyan-400/40",
-    textColor: "text-cyan-400",
+    badgeBgClass:
+      "bg-cyan-100 dark:bg-cyan-950 text-cyan-800 dark:text-cyan-300 border-cyan-400 font-black shadow-xs",
+    textColor: "text-cyan-600 dark:text-cyan-400",
     glowHex: "#22d3ee",
   },
   diamante: {
     label: "Diamante",
     weight: 5,
     neonBorderClass: "border-fuchsia-400 shadow-[0_0_22px_rgba(232,121,249,0.9)]",
-    badgeBgClass: "bg-fuchsia-400/20 text-fuchsia-300 border-fuchsia-400/40",
-    textColor: "text-fuchsia-400",
+    badgeBgClass:
+      "bg-fuchsia-100 dark:bg-fuchsia-950 text-fuchsia-800 dark:text-fuchsia-300 border-fuchsia-400 font-black shadow-xs",
+    textColor: "text-fuchsia-600 dark:text-fuchsia-400",
     glowHex: "#e879f9",
   },
   heroi: {
     label: "Herói",
     weight: 6,
     neonBorderClass: "border-red-500 shadow-[0_0_24px_rgba(239,68,68,0.95)] animate-pulse",
-    badgeBgClass: "bg-red-500/25 text-red-500 dark:text-red-400 border-red-500/50 font-black",
-    textColor: "text-red-500 dark:text-red-400",
+    badgeBgClass:
+      "bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 border-red-500 font-black shadow-xs",
+    textColor: "text-red-600 dark:text-red-400",
     glowHex: "#ef4444",
   },
 };
@@ -583,6 +589,41 @@ export interface PlayerStatsContext {
   todayXpEarned?: number;
   streakDays?: number;
   weeklyX1Wins?: number;
+  enabledGames?: Partial<Record<GameId, boolean>>;
+}
+
+/**
+ * Retorna o conjunto de jogos habilitados pelo Administrador na plataforma.
+ * Jogos desabilitados (`enabledGames[id] === false`) não podem contar como
+ * jogos explorados nem conceder medalhas para alunos.
+ */
+export function getEnabledGameIdsSet(
+  enabledGamesOverride?: Partial<Record<GameId, boolean>>,
+): Set<GameId> {
+  let map: Partial<Record<GameId, boolean>> = {};
+  if (typeof window !== "undefined") {
+    try {
+      const raw = window.localStorage.getItem("desafios-logica-admin-config-v1");
+      if (raw) {
+        const parsed = JSON.parse(raw) as { enabledGames?: Partial<Record<GameId, boolean>> };
+        if (parsed?.enabledGames) {
+          map = { ...parsed.enabledGames };
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  if (enabledGamesOverride) {
+    map = { ...map, ...enabledGamesOverride };
+  }
+  const set = new Set<GameId>();
+  for (const gId of ALL_GAME_IDS) {
+    if (map[gId] !== false) {
+      set.add(gId);
+    }
+  }
+  return set;
 }
 
 /**
@@ -610,16 +651,18 @@ export function isFlawlessMatch(
 }
 
 /**
- * Consolida as estatísticas por `game_id` único (somando partidas jogadas/vitórias entre modos
+ * Consolida as estatísticas por `game_id` único habilitado (somando partidas jogadas/vitórias entre modos
  * como padrão/equipes/frações e mantendo o maior nível e maior pontuação de cada jogo).
  */
-export function aggregateStatsByGame(stats: GameStatRow[]): Map<
-  GameId,
-  GameStatRow & { flawless_wins: number }
-> {
+export function aggregateStatsByGame(
+  stats: GameStatRow[],
+  enabledGamesOverride?: Partial<Record<GameId, boolean>>,
+): Map<GameId, GameStatRow & { flawless_wins: number }> {
+  const enabledSet = getEnabledGameIdsSet(enabledGamesOverride);
   const map = new Map<GameId, GameStatRow & { flawless_wins: number }>();
   for (const row of stats) {
     if (!row || !row.game_id) continue;
+    if (!enabledSet.has(row.game_id)) continue;
     // Não duplica contagem de partidas se for linha sintética de entrada de torneio
     const isSyntheticTournament = row.mode === "torneio_semanal";
     const playsToAdd = isSyntheticTournament ? 0 : Math.max(0, row.plays ?? 0);
@@ -655,28 +698,32 @@ export function aggregateStatsByGame(stats: GameStatRow[]): Map<
 }
 
 /**
- * Retorna o conjunto de jogos distintos (`GameId`) em que o jogador comprovadamente
- * finalizou pelo menos uma partida com ZERO erros (`wrong === 0` ao final do jogo).
+ * Retorna o conjunto de jogos distintos habilitados (`GameId`) em que o jogador comprovadamente
+ * finalizou pelo menos uma partida com ZERO erros (`wrong === 0` ao final do jogo e `score >= 30`).
  */
 export function getDistinctFlawlessGames(
-  profile?: PlayerProfile | null,
+  _profile?: PlayerProfile | null,
   stats: GameStatRow[] = [],
   lastMatch?: PlayerStatsContext["lastMatch"],
+  enabledGamesOverride?: Partial<Record<GameId, boolean>>,
 ): Set<GameId> {
+  const enabledSet = getEnabledGameIdsSet(enabledGamesOverride);
   const flawlessSet = new Set<GameId>();
-  const unlockedIds = new Set((profile?.unlockedMedals ?? []).map((m) => m.medalId));
-  const byGame = aggregateStatsByGame(stats);
+  const byGame = aggregateStatsByGame(stats, enabledGamesOverride);
 
   for (const gId of ALL_GAME_IDS) {
+    if (!enabledSet.has(gId)) continue;
     const row = byGame.get(gId);
-    if (row && row.flawless_wins >= 1) {
-      flawlessSet.add(gId);
-    } else if (unlockedIds.has(`game_${gId}_flawless`)) {
+    if (row && row.flawless_wins >= 1 && row.best_score >= 30) {
       flawlessSet.add(gId);
     }
   }
 
-  if (lastMatch && isFlawlessMatch(lastMatch, 30)) {
+  if (
+    lastMatch &&
+    enabledSet.has(lastMatch.gameId) &&
+    isFlawlessMatch(lastMatch, 30)
+  ) {
     flawlessSet.add(lastMatch.gameId);
   }
 
@@ -695,17 +742,31 @@ export function evaluatePlayerMedals(
   const newlyAwarded: MedalDefinition[] = [];
 
   const p = ctx.profile;
-  const statsMap = aggregateStatsByGame(ctx.stats);
-  const aggregatedRows = Array.from(statsMap.values()).filter((s) => s.plays > 0 || s.best_score > 0);
+  const enabledSet = getEnabledGameIdsSet(ctx.enabledGames);
+  const statsMap = aggregateStatsByGame(ctx.stats, ctx.enabledGames);
+  const aggregatedRows = Array.from(statsMap.values()).filter((s) => s.plays > 0);
 
-  // Pre-calculate statistics
-  const distinctGames = Math.max(
-    p.distinctGamesPlayed ?? 0,
-    aggregatedRows.length,
-  );
+  // Contagem estrita de jogos diferentes habilitados realmente jogados
+  const distinctPlayedSet = new Set<GameId>(aggregatedRows.map((s) => s.game_id));
+  if (
+    ctx.lastMatch &&
+    ctx.lastMatch.mode !== "torneio_semanal" &&
+    enabledSet.has(ctx.lastMatch.gameId)
+  ) {
+    distinctPlayedSet.add(ctx.lastMatch.gameId);
+  }
+  const distinctGames =
+    ctx.stats.length > 0 || ctx.lastMatch
+      ? distinctPlayedSet.size
+      : Math.min(enabledSet.size, p.distinctGamesPlayed ?? 0);
 
   // Contagem estrita de jogos diferentes finalizados com ZERO erros (wrong === 0 no fim do jogo)
-  const flawlessGamesSet = getDistinctFlawlessGames(p, ctx.stats, ctx.lastMatch);
+  const flawlessGamesSet = getDistinctFlawlessGames(
+    p,
+    ctx.stats,
+    ctx.lastMatch,
+    ctx.enabledGames,
+  );
   const flawlessGamesCount = flawlessGamesSet.size;
 
   const currentLevelMedals = [2, 3, 4, 5, 6, 7, 8, 9, 10].filter((lvl) => p.level >= lvl).length;
@@ -727,14 +788,14 @@ export function evaluatePlayerMedals(
         break;
 
       case "game_best_level":
-        if (cond.gameId) {
+        if (cond.gameId && enabledSet.has(cond.gameId)) {
           const s = statsMap.get(cond.gameId);
-          if (s && s.best_level >= (cond.threshold ?? 1)) earned = true;
+          if (s && s.plays > 0 && s.best_level >= (cond.threshold ?? 1)) earned = true;
         }
         break;
 
       case "game_flawless":
-        if (cond.gameId) {
+        if (cond.gameId && enabledSet.has(cond.gameId)) {
           const minScore = cond.threshold ?? 30;
           const row = statsMap.get(cond.gameId);
           if (
@@ -749,7 +810,7 @@ export function evaluatePlayerMedals(
         break;
 
       case "game_match_count":
-        if (cond.gameId) {
+        if (cond.gameId && enabledSet.has(cond.gameId)) {
           const s = statsMap.get(cond.gameId);
           if (s && s.plays >= (cond.threshold ?? 10)) earned = true;
         }
@@ -871,14 +932,19 @@ export function calculateMedalProgress(
   medal: MedalDefinition,
   profile?: PlayerProfile | null,
   stats: GameStatRow[] = [],
+  enabledGamesOverride?: Partial<Record<GameId, boolean>>,
 ): MedalProgressInfo {
   if (!profile) {
     return { percent: 0, progressText: "" };
   }
 
   const cond = medal.condition;
-  const statsMap = aggregateStatsByGame(stats);
-  const aggregatedRows = Array.from(statsMap.values()).filter((s) => s.plays > 0 || s.best_score > 0);
+  const enabledSet = getEnabledGameIdsSet(enabledGamesOverride);
+  const statsMap = aggregateStatsByGame(stats, enabledGamesOverride);
+  const effectiveStats = stats.length > 0 ? stats : ((profile as any).stats ?? []);
+  const effectiveStatsMap =
+    stats.length > 0 ? statsMap : aggregateStatsByGame(effectiveStats, enabledGamesOverride);
+  const aggregatedRows = Array.from(effectiveStatsMap.values()).filter((s) => s.plays > 0);
 
   switch (cond.type) {
     case "player_level": {
@@ -892,7 +958,7 @@ export function calculateMedalProgress(
     }
     case "game_best_level": {
       const gId = cond.gameId!;
-      const cur = statsMap.get(gId)?.best_level ?? 1;
+      const cur = effectiveStatsMap.get(gId)?.best_level ?? 1;
       const target = cond.threshold ?? 3;
       const pct = Math.min(100, Math.round((cur / target) * 100));
       return {
@@ -902,9 +968,9 @@ export function calculateMedalProgress(
     }
     case "game_flawless": {
       const gId = cond.gameId!;
-      const row = statsMap.get(gId);
+      const row = effectiveStatsMap.get(gId);
       const targetScore = cond.threshold ?? 30;
-      if (row && row.flawless_wins >= 1) {
+      if (row && row.flawless_wins >= 1 && row.best_score >= targetScore) {
         return {
           percent: 100,
           progressText: "Concluído com 0 erros!",
@@ -922,7 +988,7 @@ export function calculateMedalProgress(
     }
     case "game_match_count": {
       const gId = cond.gameId!;
-      const cur = statsMap.get(gId)?.plays ?? 0;
+      const cur = effectiveStatsMap.get(gId)?.plays ?? 0;
       const target = cond.threshold ?? 10;
       const pct = Math.min(100, Math.round((cur / target) * 100));
       return {
@@ -949,7 +1015,10 @@ export function calculateMedalProgress(
       };
     }
     case "distinct_games": {
-      const distinct = Math.max(profile.distinctGamesPlayed ?? 0, aggregatedRows.length);
+      const distinct =
+        effectiveStats.length > 0
+          ? aggregatedRows.length
+          : Math.min(enabledSet.size, profile.distinctGamesPlayed ?? 0);
       const target = cond.threshold ?? 3;
       const pct = Math.min(100, Math.round((distinct / target) * 100));
       return {
@@ -958,7 +1027,12 @@ export function calculateMedalProgress(
       };
     }
     case "distinct_flawless_games": {
-      const count = getDistinctFlawlessGames(profile, stats).size;
+      const count = getDistinctFlawlessGames(
+        profile,
+        effectiveStats,
+        undefined,
+        enabledGamesOverride,
+      ).size;
       const target = cond.threshold ?? 3;
       const pct = Math.min(100, Math.round((count / target) * 100));
       return {

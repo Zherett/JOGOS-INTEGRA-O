@@ -456,4 +456,83 @@ describe("Sistema Completo de Medalhas e Inventário", () => {
     assert.ok(idsThree.includes("game_memoria_flawless"));
     assert.ok(idsThree.includes("flawless_3_games"));
   });
+
+  it("NÃO permite conquistar medalha de 8 jogos diferentes (flawless_8_games / explore_all_games) quando apenas 7 jogos estão habilitados", () => {
+    // Apenas 7 jogos habilitados pelo ADM (3 jogos desabilitados)
+    const enabledOnly7: Partial<Record<(typeof ALL_GAME_IDS)[number], boolean>> = {
+      logica: true,
+      cartesiano: true,
+      formas: true,
+      memoria: true,
+      variaveis: true,
+      robogrid: true,
+      minado: true,
+      porcentagem: false,
+      completar: false,
+      rpg: false,
+    };
+
+    const profileInflated: PlayerProfile = {
+      id: "p_7jogos",
+      nick: "Aluno7Jogos",
+      nickNormalized: "aluno7jogos",
+      full_name: "ALUNO SETE JOGOS",
+      school: "Raimundo Bezerra",
+      grade: "6º ano",
+      birthdate: "2014-05-10",
+      xp: 2500,
+      seasonXp: 2500,
+      level: 6,
+      wins: 15,
+      matchesPlayed: 20,
+      distinctGamesPlayed: 9, // Valor antigo inflado no banco
+      badges: [],
+      seasonId: 1,
+      unlockedMedals: [],
+    };
+
+    // Mesmo que o array stats tenha linhas para todos os 10 jogos (ou modos duplicados),
+    // apenas os 7 jogos habilitados podem ser contabilizados
+    const statsAll10: GameStatRow[] = ALL_GAME_IDS.map((gId) => ({
+      game_id: gId,
+      mode: "padrao",
+      plays: 3,
+      wins: 3,
+      flawless_wins: 2,
+      last_wrong: 0,
+      best_score: 90,
+      best_level: 3,
+    }));
+
+    const flawlessSet = getDistinctFlawlessGames(
+      profileInflated,
+      statsAll10,
+      undefined,
+      enabledOnly7,
+    );
+    assert.equal(flawlessSet.size, 7);
+
+    const awarded = evaluatePlayerMedals({
+      profile: profileInflated,
+      stats: statsAll10,
+      enabledGames: enabledOnly7,
+    });
+    const ids = awarded.map((m) => m.id);
+
+    // Conquista as de 3 e 5 jogos (pois jogou os 7 habilitados sem erros),
+    // mas JAMAIS conquista a de 8 jogos (flawless_8_games) nem a de 9 jogos (explore_all_games)
+    assert.ok(ids.includes("explore_3_games"));
+    assert.ok(ids.includes("explore_5_games"));
+    assert.ok(!ids.includes("explore_all_games"));
+    assert.ok(ids.includes("flawless_3_games"));
+    assert.ok(ids.includes("flawless_5_games"));
+    assert.ok(!ids.includes("flawless_8_games"));
+
+    // E o progresso da medalha de 8 jogos deve mostrar exatamente 7 de 8 (88%)
+    const catalog = buildBaseMedalsCatalog();
+    const medal8 = catalog.find((m) => m.id === "flawless_8_games")!;
+    const prog8 = calculateMedalProgress(medal8, profileInflated, statsAll10, enabledOnly7);
+    assert.ok(prog8.progressText.includes("7 de 8"));
+    assert.equal(prog8.percent, 88);
+  });
 });

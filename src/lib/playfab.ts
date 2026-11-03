@@ -65,6 +65,7 @@ import {
   getActiveEventBonuses,
 } from "./custom-events.ts";
 import {
+  aggregateStatsByGame,
   evaluatePlayerMedals,
   getAllAvailableMedals,
   getDistinctFlawlessGames,
@@ -101,6 +102,7 @@ export interface PlayerProfile {
   weeklyX1Wins?: number;
   weeklyX1WeekKey?: string;
   matchesPlayed: number;
+  totalMatches?: number;
   totalPlays?: number;
   distinctGamesPlayed?: number;
   dailyXp?: number;
@@ -112,6 +114,7 @@ export interface PlayerProfile {
   lastActiveDate?: string;
   tournamentMedals?: TournamentMedal[];
   unlockedMedals?: PlayerUnlockedMedal[];
+  stats?: GameStatRow[];
   badges: Badge[];
   isAdmin?: boolean;
   seasonId: number;
@@ -788,11 +791,31 @@ function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig)
     acc.profile.weeklyX1Wins = 0;
     acc.profile.weeklyX1WeekKey = currentWeekKey;
   }
-  const distinctFromStats = new Set(acc.stats.map((s) => s.game_id)).size;
-  acc.profile.distinctGamesPlayed = Math.max(
-    acc.profile.distinctGamesPlayed ?? 0,
-    distinctFromStats,
-  );
+
+  const isAdminAcc = isSpecialAdminAccount(acc.profile);
+
+  // Filter out invalid, synthetic tournament, or disabled games from student stats
+  if (!isAdminAcc && Array.isArray(acc.stats)) {
+    acc.stats = acc.stats.filter(
+      (s) =>
+        s &&
+        s.game_id &&
+        ALL_GAME_IDS.includes(s.game_id) &&
+        cfg.enabledGames[s.game_id] !== false &&
+        s.mode !== "torneio_semanal" &&
+        ((s.plays ?? 0) > 0 || (s.best_score ?? 0) > 0),
+    );
+  }
+
+  const statsMap = aggregateStatsByGame(acc.stats, cfg.enabledGames);
+  const aggregatedRows = Array.from(statsMap.values()).filter((s) => s.plays > 0);
+  const distinctFromStats = aggregatedRows.length;
+
+  // For students, distinctGamesPlayed is strictly the count of enabled games actually played (never inflated above available games)
+  acc.profile.distinctGamesPlayed = isAdminAcc
+    ? Math.max(acc.profile.distinctGamesPlayed ?? 0, distinctFromStats)
+    : distinctFromStats;
+
   acc.profile.level = calculatePlayerLevel({
     xp: acc.profile.xp,
     matchesPlayed: acc.profile.matchesPlayed,
@@ -800,35 +823,101 @@ function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig)
     distinctGames: acc.profile.distinctGamesPlayed,
   });
 
-  // Clean up any X1 medals mistakenly awarded to solo CPU games if player has 0 online X1 wins
-  if (acc.profile.unlockedMedals && (acc.profile.x1Wins ?? 0) === 0) {
-    acc.profile.unlockedMedals = acc.profile.unlockedMedals.filter(
-      (m) =>
-        !m.medalId.startsWith("m_x1_win_") &&
-        !m.medalId.startsWith("x1_wins_") &&
-        !m.medalId.startsWith("x1_weekly_"),
-    );
-  }
+  const allAvailable = getAllAvailableMedals(cfg.customMedals);
+  const medalDefMap = new Map<string, MedalDefinition>(allAvailable.map((m) => [m.id, m]));
+  const trueFlawlessSet = getDistinctFlawlessGames(
+    acc.profile,
+    acc.stats,
+    undefined,
+    cfg.enabledGames,
+  );
+  const trueFlawlessCount = trueFlawlessSet.size;
+  const gamesWith2Plays = aggregatedRows.filter((s) => s.plays >= 2).length;
+  const gamesWith10Plays = aggregatedRows.filter((s) => s.plays >= 10).length;
 
-  // Reconcile multi-game flawless ("zero erros") medals:
-  // A student can only hold "flawless_3_games", "flawless_5_games", "flawless_8_games", or "meta_polymata_semed"
-  // if they genuinely have that many distinct games completed with 0 errors (wrong === 0 at game end).
-  if (acc.profile.unlockedMedals && acc.profile.unlockedMedals.length > 0) {
-    const trueFlawlessCount = getDistinctFlawlessGames(acc.profile, acc.stats).size;
-    const flawlessMaxThreshold = Math.max(4, ALL_GAME_IDS.length - 2);
-    acc.profile.unlockedMedals = acc.profile.unlockedMedals.filter((m) => {
-      if (m.medalId === "flawless_3_games" && trueFlawlessCount < 3) return false;
-      if (
-        (m.medalId === "flawless_5_games" || m.medalId === "meta_polymata_semed") &&
-        trueFlawlessCount < 5
-      ) {
+  // Reconcile all unlocked medals so any improperly awarded medal returns to its proper progress
+  if (acc.profile.unlockedMedals && acc.profile.unlockedMedals.length > 0 && !isAdminAcc) {
+    let filtered = acc.profile.unlockedMedals.filter((m) => {
+      // Legacy X1 IDs
+      if (m.medalId.startsWith("m_x1_win_") && (acc.profile.x1Wins ?? 0) === 0) {
         return false;
       }
-      if (m.medalId === "flawless_8_games" && trueFlawlessCount < flawlessMaxThreshold) {
-        return false;
+      const def = medalDefMap.get(m.medalId);
+      if (!def) return true;
+      const cond = def.condition;
+
+      switch (cond.type) {
+        case "player_level":
+          return acc.profile.level >= (cond.threshold ?? 2);
+
+        case "all_level_medals":
+          return acc.profile.level >= 10;
+
+        case "game_best_level": {
+          if (!cond.gameId || cfg.enabledGames[cond.gameId] === false) return false;
+          const row = statsMap.get(cond.gameId);
+          return Boolean(row && row.plays > 0 && row.best_level >= (cond.threshold ?? 3));
+        }
+
+        case "game_flawless": {
+          if (!cond.gameId || cfg.enabledGames[cond.gameId] === false) return false;
+          const row = statsMap.get(cond.gameId);
+          const minScore = cond.threshold ?? 30;
+          return Boolean(row && row.flawless_wins >= 1 && row.best_score >= minScore);
+        }
+
+        case "game_match_count": {
+          if (!cond.gameId || cfg.enabledGames[cond.gameId] === false) return false;
+          const row = statsMap.get(cond.gameId);
+          return Boolean(row && row.plays >= (cond.threshold ?? 10));
+        }
+
+        case "distinct_games":
+          return distinctFromStats >= (cond.threshold ?? 3);
+
+        case "distinct_flawless_games":
+          return trueFlawlessCount >= (cond.threshold ?? 3);
+
+        case "x1_wins_total":
+          return (acc.profile.x1Wins ?? 0) >= (cond.threshold ?? 1);
+
+        case "x1_wins_weekly":
+          return (acc.profile.x1Wins ?? 0) >= (cond.threshold ?? 5);
+
+        case "beta_tester_prata":
+          return gamesWith2Plays >= 4;
+
+        case "beta_tester_ouro":
+          return gamesWith2Plays >= 6;
+
+        case "beta_tester_platina":
+          return gamesWith2Plays >= ALL_GAME_IDS.length;
+
+        case "beta_tester_heroi":
+          return gamesWith10Plays >= ALL_GAME_IDS.length && acc.profile.level >= 5;
+
+        case "all_game_medals":
+          return ALL_GAME_IDS.every((gId) => {
+            if (cfg.enabledGames[gId] === false) return false;
+            const r = statsMap.get(gId);
+            return Boolean(r && r.plays > 0 && r.best_level >= 3);
+          });
+
+        default:
+          return true;
+      }
+    });
+
+    // Check total_medals_count (meta_collector_50 / meta_collector_80) after filtering
+    filtered = filtered.filter((m) => {
+      const def = medalDefMap.get(m.medalId);
+      if (def?.condition.type === "total_medals_count") {
+        return filtered.length >= (def.condition.threshold ?? 50);
       }
       return true;
     });
+
+    acc.profile.unlockedMedals = filtered;
   }
 
   // Sanitization: Players in Etapa 3 (15+ years old) cannot belong to elementary SEMED schools or classes.
@@ -845,7 +934,6 @@ function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig)
   }
 
   // Ensure passive/cumulative medals (level, distinct games, total count, etc.) are awarded when criteria met
-  const allAvailable = getAllAvailableMedals(cfg.customMedals);
   const earnedPassively = evaluatePlayerMedals(
     {
       profile: acc.profile,
@@ -853,6 +941,7 @@ function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig)
       todayXpEarned: acc.profile.dailyXp,
       streakDays: acc.profile.streakDays,
       weeklyX1Wins: acc.profile.weeklyX1Wins,
+      enabledGames: cfg.enabledGames,
     },
     allAvailable,
   );
@@ -884,6 +973,9 @@ function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig)
       acc.profile.dailyXp = 0;
     }
   }
+
+  acc.profile.totalMatches = acc.profile.matchesPlayed;
+  acc.profile.stats = acc.stats;
   return acc;
 }
 
@@ -1646,6 +1738,7 @@ async function pushProfileToPlayFab(account: StoredAccount, sessionTicket?: stri
  * Downloads and merges all registered students across all schools/devices from PlayFab.
  */
 export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Promise<PlayerProfile[]> {
+  const cfg = checkAndApplyScheduledReset();
   const ticket = (await getAdminPlayFabTicket()) ?? sessionTicket ?? loadStoredSession()?.sessionTicket;
   if (!ticket || !isPlayFabConfigured()) {
     return getAllRegisteredPlayers();
@@ -1662,6 +1755,7 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
     const data = res.data?.Data;
     const reg = loadRegistry();
     let updated = false;
+    const needsCloudSanitize = new Set<string>();
 
     // 1. If we received students from the cloud, merge them into local registry
     if (data && Object.keys(data).length > 0) {
@@ -1694,10 +1788,7 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
             weeklyX1Wins: Math.max(parsed.weeklyX1Wins ?? 0, existing?.profile.weeklyX1Wins ?? 0),
             weeklyX1WeekKey: parsed.weeklyX1WeekKey ?? existing?.profile.weeklyX1WeekKey,
             matchesPlayed: Math.max(parsed.matchesPlayed ?? 0, existing?.profile.matchesPlayed ?? 0),
-            distinctGamesPlayed: Math.max(
-              parsed.distinctGamesPlayed ?? 0,
-              existing?.profile.distinctGamesPlayed ?? 0,
-            ),
+            distinctGamesPlayed: parsed.distinctGamesPlayed ?? existing?.profile.distinctGamesPlayed ?? 0,
             dailyXp: existing?.profile.dailyXp ?? 0,
             dailyXpDate: existing?.profile.dailyXpDate,
             streakDays: Math.max(parsed.streakDays ?? 1, existing?.profile.streakDays ?? 1),
@@ -1739,15 +1830,32 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
             }
           }
 
-          reg[slug] = {
-            profile: mergedProfile,
-            passwordHash:
-              existing?.passwordHash ||
-              simpleHash(passwordFromBirthdate(mergedProfile.birthdate)),
-            unlocked: existing?.unlocked || [],
-            stats: Array.from(statsMap.values()),
-            updatedAt: (parsed as any).updatedAt || new Date().toISOString(),
-          };
+          const incomingMedalsCount = Array.isArray(parsed.unlockedMedals)
+            ? parsed.unlockedMedals.length
+            : 0;
+          const incomingDistinct = parsed.distinctGamesPlayed ?? 0;
+
+          const aligned = ensurePlayerSeasonAligned(
+            {
+              profile: mergedProfile,
+              passwordHash:
+                existing?.passwordHash ||
+                simpleHash(passwordFromBirthdate(mergedProfile.birthdate)),
+              unlocked: existing?.unlocked || [],
+              stats: Array.from(statsMap.values()),
+              updatedAt: (parsed as any).updatedAt || new Date().toISOString(),
+            },
+            cfg,
+          );
+
+          if (
+            (aligned.profile.unlockedMedals?.length ?? 0) !== incomingMedalsCount ||
+            (aligned.profile.distinctGamesPlayed ?? 0) !== incomingDistinct
+          ) {
+            needsCloudSanitize.add(slug);
+          }
+
+          reg[slug] = aligned;
           updated = true;
         } catch {
           /* ignore JSON parse error */
@@ -1755,12 +1863,14 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
       }
     }
 
-    // 2. Push any local students that are not yet in the cloud roster
+    // 2. Push any local students that are not yet in the cloud roster (or whose medals/stats were reconciled)
     const missingInCloud: Record<string, string> = {};
-    for (const [slug, acc] of Object.entries(reg)) {
+    for (const [slug, rawAcc] of Object.entries(reg)) {
+      const acc = ensurePlayerSeasonAligned(rawAcc, cfg);
+      reg[slug] = acc;
       if (isSpecialAdminAccount(acc.profile)) continue;
       const key = `stu_${slug}`;
-      if (!data || !data[key]) {
+      if (!data || !data[key] || needsCloudSanitize.has(slug)) {
         missingInCloud[key] = JSON.stringify({
           id: acc.profile.id,
           playfabId: acc.profile.playfabId,
@@ -1775,8 +1885,14 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
           seasonXp: acc.profile.seasonXp,
           level: acc.profile.level,
           wins: acc.profile.wins,
+          x1Wins: acc.profile.x1Wins ?? 0,
+          weeklyX1Wins: acc.profile.weeklyX1Wins ?? 0,
+          weeklyX1WeekKey: acc.profile.weeklyX1WeekKey,
           matchesPlayed: acc.profile.matchesPlayed,
           distinctGamesPlayed: acc.profile.distinctGamesPlayed ?? 0,
+          streakDays: acc.profile.streakDays ?? 1,
+          lastActiveDate: acc.profile.lastActiveDate,
+          tournamentMedals: acc.profile.tournamentMedals ?? [],
           unlockedMedals: acc.profile.unlockedMedals ?? [],
           badges: acc.profile.badges ?? [],
           stats: acc.stats ?? [],
@@ -2081,13 +2197,17 @@ export async function playfabRecordMatch(args: {
   const nextSeasonXp = (acc.profile.seasonXp ?? 0) + earnedXp;
   const nextWins = (acc.profile.wins ?? 0) + (!isSyntheticTournamentEntry && won ? 1 : 0);
   const nextMatches = (acc.profile.matchesPlayed ?? 0) + (isSyntheticTournamentEntry ? 0 : 1);
-  const distinctInSeason = new Set(acc.stats.map((s) => s.game_id)).size;
-  const distinctGames = Math.max(acc.profile.distinctGamesPlayed ?? 0, distinctInSeason);
+  const statsByGame = aggregateStatsByGame(acc.stats, cfg.enabledGames);
+  const distinctInSeason = Array.from(statsByGame.values()).filter((s) => s.plays > 0).length;
+  const distinctGames = isSpecialAdminAccount(acc.profile)
+    ? Math.max(acc.profile.distinctGamesPlayed ?? 0, distinctInSeason)
+    : distinctInSeason;
 
   acc.profile.xp = nextXp;
   acc.profile.seasonXp = nextSeasonXp;
   acc.profile.wins = nextWins;
   acc.profile.matchesPlayed = nextMatches;
+  acc.profile.totalMatches = nextMatches;
   acc.profile.distinctGamesPlayed = distinctGames;
   acc.profile.level = calculatePlayerLevel({
     xp: nextXp,
@@ -2121,6 +2241,7 @@ export async function playfabRecordMatch(args: {
       todayXpEarned: acc.profile.dailyXp,
       streakDays: acc.profile.streakDays,
       weeklyX1Wins: acc.profile.weeklyX1Wins,
+      enabledGames: cfg.enabledGames,
     },
     allMedals,
   );
@@ -2153,6 +2274,7 @@ export async function playfabRecordMatch(args: {
           todayXpEarned: acc.profile.dailyXp,
           streakDays: acc.profile.streakDays,
           weeklyX1Wins: acc.profile.weeklyX1Wins,
+          enabledGames: cfg.enabledGames,
         },
         allMedals,
       );
@@ -2264,7 +2386,7 @@ export async function playfabRecordMatch(args: {
 
 /* --------------------- Leaderboards (Rankings) Query --------------------- */
 
-const RANK_HISTORY_STORAGE_KEY = "desafios-leaderboard-rank-history-v1";
+const RANK_HISTORY_STORAGE_KEY = "desafios-leaderboard-rank-history-v2";
 let lastRosterLeaderboardSyncAt = 0;
 
 function loadLeaderboardRankHistory(): Record<string, Record<string, RankHistoryState>> {
@@ -2302,7 +2424,7 @@ export async function fetchLeaderboard(
   const session = loadStoredSession();
   const currentId = session?.playerId;
 
-  // 1. Merge browser's local game stats into the logged-in account so any game score is up-to-date
+  // 1. Update best_score for already-played enabled games in the logged-in account (never inject unplayed games from shared browser storage)
   if (currentId) {
     const regBefore = loadRegistry();
     const activeAcc = regBefore[currentId];
@@ -2310,29 +2432,17 @@ export async function fetchLeaderboard(
       const browserStats = loadStats();
       let changedLocalStats = false;
       for (const gId of ALL_GAME_IDS) {
+        if (cfg.enabledGames[gId] === false) continue;
         const localBest = browserStats[gId]?.bestScore ?? 0;
         const localLevel = browserStats[gId]?.bestLevel ?? 1;
         if (localBest > 0) {
           const existingIdx = activeAcc.stats.findIndex((s) => s.game_id === gId);
-          if (existingIdx >= 0) {
-            if (localBest > activeAcc.stats[existingIdx].best_score) {
-              activeAcc.stats[existingIdx].best_score = localBest;
-              activeAcc.stats[existingIdx].best_level = Math.max(
-                activeAcc.stats[existingIdx].best_level,
-                localLevel,
-              );
-              changedLocalStats = true;
-            }
-          } else {
-            activeAcc.stats.push({
-              game_id: gId,
-              mode: "padrao",
-              plays: 1,
-              wins: 1,
-              best_score: localBest,
-              best_level: localLevel,
-              last_played_at: new Date().toISOString(),
-            });
+          if (existingIdx >= 0 && localBest > activeAcc.stats[existingIdx].best_score) {
+            activeAcc.stats[existingIdx].best_score = localBest;
+            activeAcc.stats[existingIdx].best_level = Math.max(
+              activeAcc.stats[existingIdx].best_level,
+              localLevel,
+            );
             changedLocalStats = true;
           }
         }
@@ -2352,6 +2462,7 @@ export async function fetchLeaderboard(
 
   const reg = loadRegistry();
   const localAccounts = Object.values(reg).map((acc) => ensurePlayerSeasonAligned(acc, cfg));
+  saveRegistry(reg);
 
   // Map PlayFab live statistic values (if available) to augment local/roster values
   const playfabStatByPlayer = new Map<string, number>();
@@ -2483,7 +2594,19 @@ export async function fetchLeaderboard(
   }));
 
   // 5. Compute real rank movement arrows (up / down / same) and persist snapshot
-  const boardKey = `${filter.kind}_${filter.stage || "TODAS"}_${
+  const normalizedStageKey =
+    filter.stage === "etapa_1" || filter.stage === "5º ano"
+      ? "etapa_1"
+      : filter.stage === "etapa_2" ||
+          filter.stage === "6º ano" ||
+          filter.stage === "7º ano" ||
+          filter.stage === "8º ano" ||
+          filter.stage === "9º ano"
+        ? "etapa_2"
+        : filter.stage === "etapa_3"
+          ? "etapa_3"
+          : "TODAS";
+  const boardKey = `${filter.kind}_${normalizedStageKey}_${
     filter.kind === "game" ? filter.gameId : filter.kind === "school" ? filter.school : "all"
   }`;
   const allHistory = loadLeaderboardRankHistory();

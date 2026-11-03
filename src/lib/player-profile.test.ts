@@ -20,6 +20,7 @@ import {
   MAX_LEVEL,
   normalizeBirthdatePasswordInput,
   passwordFromBirthdate,
+  RANKING_SERIES_OPTIONS,
   resolveDefaultRankingCategory,
   SCHOOLS,
   stageFromAge,
@@ -332,10 +333,51 @@ describe("Perfil do Jogador, Escolas, Trava de Níveis (1..10) e Limite Diário 
     assert.equal(rowC.previousRank, 3);
     assert.equal(rowB.rankTrend, "down"); // caiu de 2º para 3º
     assert.equal(rowB.previousRank, 2);
+
+    // Se um novo jogador (sincronizado da nuvem) entrar no topo sem que os demais tenham ultrapassado uns aos outros,
+    // NINGUÉM abaixo dele deve ficar com seta vermelha ("down") em cascata
+    const thirdSnapshotWithNewCloudPlayer = evaluateLeaderboardRankChanges(
+      [
+        { playerId: "novo_lider", rank: 1 },
+        { playerId: "aluno_a", rank: 2 },
+        { playerId: "aluno_c", rank: 3 },
+        { playerId: "aluno_b", rank: 4 },
+      ],
+      firstSnapshot.nextHistory, // aluno_a(1), aluno_b(2), aluno_c(3) -> aluno_c passou aluno_b, mas aluno_a não foi ultrapassado por b ou c
+    );
+    const rowANew = thirdSnapshotWithNewCloudPlayer.entriesWithTrend.find((r) => r.playerId === "aluno_a")!;
+    assert.equal(rowANew.rankTrend, "same"); // não caiu em relação aos competidores conhecidos
+
+    // E se houver um histórico antigo corrompido onde todos estavam marcados como "down" sem ninguém ter subido,
+    // a invariante corrige todos automaticamente para "same" (—)
+    const corruptedHistory = {
+      lucas: { lastRank: 3, previousRank: 2, trend: "down" as const },
+      andriu: { lastRank: 4, previousRank: 3, trend: "down" as const },
+      mika: { lastRank: 5, previousRank: 4, trend: "down" as const },
+      renan: { lastRank: 6, previousRank: 5, trend: "down" as const },
+    };
+    const healedSnapshot = evaluateLeaderboardRankChanges(
+      [
+        { playerId: "lucas", rank: 3 },
+        { playerId: "andriu", rank: 4 },
+        { playerId: "mika", rank: 5 },
+        { playerId: "renan", rank: 6 },
+      ],
+      corruptedHistory,
+    );
+    for (const row of healedSnapshot.entriesWithTrend) {
+      assert.equal(row.rankTrend, "same", `Jogador ${row.playerId} não pode ter seta vermelha sem alguém acima ter subido`);
+    }
   });
 
-  it("direciona cada aluno por padrão para o ranking da sua série concorrente (5º ano, 6º ano, 7º ano, etc.)", () => {
+  it("mantém a seleção da etapa somente em 1ª Etapa (5º ano), 2ª Etapa (6º - 9º ano) e 3ª Etapa (15+) e direciona cada aluno para sua etapa", () => {
     const refDate = new Date("2026-11-03T12:00:00");
+
+    assert.equal(RANKING_SERIES_OPTIONS.length, 3);
+    assert.deepEqual(
+      RANKING_SERIES_OPTIONS.map((o) => o.shortLabel),
+      ["1ª Etapa (5º ano)", "2ª Etapa (6º - 9º ano)", "3ª Etapa (15+)"],
+    );
 
     const aluno5Ano = {
       birthdate: "2015-09-15",
@@ -352,16 +394,21 @@ describe("Perfil do Jogador, Escolas, Trava de Níveis (1..10) e Limite Diário 
       school: "Raimundo Bezerra",
       grade: "7º ano",
     };
+    const alunoEtapa3 = {
+      birthdate: "2008-03-10",
+      school: "Outro",
+      grade: null,
+    };
 
-    assert.equal(resolveDefaultRankingCategory(aluno5Ano, refDate), "5º ano");
-    assert.equal(resolveDefaultRankingCategory(aluno6Ano, refDate), "6º ano");
-    assert.equal(resolveDefaultRankingCategory(aluno7Ano, refDate), "7º ano");
+    assert.equal(resolveDefaultRankingCategory(aluno5Ano, refDate), "etapa_1");
+    assert.equal(resolveDefaultRankingCategory(aluno6Ano, refDate), "etapa_2");
+    assert.equal(resolveDefaultRankingCategory(aluno7Ano, refDate), "etapa_2");
+    assert.equal(resolveDefaultRankingCategory(alunoEtapa3, refDate), "etapa_3");
 
-    assert.equal(matchesRankingCategory(aluno5Ano, "5º ano", refDate), true);
-    assert.equal(matchesRankingCategory(aluno5Ano, "6º ano", refDate), false);
-    assert.equal(matchesRankingCategory(aluno6Ano, "6º ano", refDate), true);
-    assert.equal(matchesRankingCategory(aluno6Ano, "5º ano", refDate), false);
-    assert.equal(matchesRankingCategory(aluno6Ano, "7º ano", refDate), false);
+    assert.equal(matchesRankingCategory(aluno5Ano, "etapa_1", refDate), true);
+    assert.equal(matchesRankingCategory(aluno5Ano, "etapa_2", refDate), false);
     assert.equal(matchesRankingCategory(aluno6Ano, "etapa_2", refDate), true);
+    assert.equal(matchesRankingCategory(aluno7Ano, "etapa_2", refDate), true);
+    assert.equal(matchesRankingCategory(alunoEtapa3, "etapa_3", refDate), true);
   });
 });

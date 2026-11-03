@@ -52,13 +52,13 @@ export function MedalUnlockNotification() {
               <MedalIcon name={current.iconName} className="h-12 w-12" />
             </div>
             <span
-              className={`absolute -bottom-3 rounded-full border px-3 py-0.5 text-[10px] font-black uppercase tracking-wider ${rarity.badgeBgClass}`}
+              className={`absolute -bottom-3.5 z-10 rounded-full border-2 px-3.5 py-0.5 text-[10px] font-black uppercase tracking-wider shadow-sm ${rarity.badgeBgClass}`}
             >
               {rarity.label}
             </span>
           </div>
 
-          <h3 className="mt-5 font-display text-2xl font-black text-foreground">{current.title}</h3>
+          <h3 className="mt-6 font-display text-2xl font-black text-foreground">{current.title}</h3>
           
           <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 border border-amber-500/40 px-3 py-1 text-xs font-black text-amber-600 dark:text-amber-400">
             <Sparkles className="h-3.5 w-3.5" /> Recompensa: +{MEDAL_XP_REWARDS[current.rarity]} XP adicionados ao seu perfil!
