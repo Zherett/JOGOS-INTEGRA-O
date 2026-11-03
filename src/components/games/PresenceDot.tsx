@@ -39,9 +39,11 @@ export const PresenceDot: React.FC<PresenceDotProps> = ({
     offline: "bg-rose-500 ring-rose-500/30",
   }[status];
 
+  const isAbsolute = className.includes("absolute");
+
   return (
     <span
-      className={`relative inline-flex shrink-0 items-center justify-center ${className}`}
+      className={`${isAbsolute ? "" : "relative"} inline-flex shrink-0 items-center justify-center ${className}`}
       title={tooltip}
       aria-label={tooltip}
     >
@@ -52,7 +54,7 @@ export const PresenceDot: React.FC<PresenceDotProps> = ({
         />
       )}
       <span
-        className={`relative inline-block rounded-full ring-2 ring-background transition-colors duration-300 ${sizeClasses} ${colorClasses}`}
+        className={`relative inline-block rounded-full ring-2 ring-card transition-colors duration-300 ${sizeClasses} ${colorClasses}`}
       />
     </span>
   );

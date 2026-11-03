@@ -85,6 +85,7 @@ import {
 import {
   AVAILABLE_MEDAL_ICONS,
   getAllAvailableMedals,
+  getDistinctGamesPlayed,
   RARITY_INFO,
   type MedalDefinition,
   type MedalRarity,
@@ -168,7 +169,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
 
   // Turmas & Escolas states (2 Sub-abas: 1 = Visão por Escolas & Turmas, 2 = Solicitações de Troca)
   const [turmaSubTab, setTurmaSubTab] = useState<"visao" | "solicitacoes">("visao");
-  const [selectedAdminSchool, setSelectedAdminSchool] = useState<string>(SCHOOLS[0].name);
+  const [selectedAdminSchool, setSelectedAdminSchool] = useState<string>("TODAS");
   const [selectedAdminTurma, setSelectedAdminTurma] = useState<TurmaCode | "TODAS">("TODAS");
   const [registeredStudents, setRegisteredStudents] = useState<PlayerProfile[]>([]);
   const [turmaRequests, setTurmaRequests] = useState<TurmaChangeRequest[]>([]);
@@ -2186,7 +2187,30 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                       <Label className="text-xs font-bold text-muted-foreground uppercase">
                         Selecione a Instituição:
                       </Label>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-4 lg:grid-cols-8 gap-2">
+                        {/* Bloco Geral: Todas as Instituições / Escolas */}
+                        {(() => {
+                          const active = selectedAdminSchool === "TODAS";
+                          return (
+                            <button
+                              key="TODAS"
+                              type="button"
+                              onClick={() => setSelectedAdminSchool("TODAS")}
+                              className={`rounded-xl border p-2.5 text-left transition-all ${
+                                active
+                                  ? "border-primary bg-primary/10 ring-2 ring-primary/30"
+                                  : "border-border bg-card hover:bg-secondary/40"
+                              }`}
+                            >
+                              <div className="font-display text-xs font-black truncate text-foreground flex items-center gap-1">
+                                <span>Todas</span>
+                              </div>
+                              <div className="text-[10px] text-muted-foreground mt-0.5 font-medium">
+                                {registeredStudents.length} aluno(s)
+                              </div>
+                            </button>
+                          );
+                        })()}
                         {SCHOOLS.map((s) => {
                           const active = selectedAdminSchool === s.name;
                           const schoolStudents = registeredStudents.filter((st) => st.school === s.name);
@@ -2216,7 +2240,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                     {/* Seletor de Turma (A - F + TODAS) */}
                     <div className="space-y-1.5">
                       <Label className="text-xs font-bold text-muted-foreground uppercase">
-                        Filtrar Turma ({selectedAdminSchool}):
+                        Filtrar Turma ({selectedAdminSchool === "TODAS" ? "Todas as Escolas" : selectedAdminSchool}):
                       </Label>
                       <div className="flex flex-wrap gap-1.5">
                         <button
@@ -2233,7 +2257,9 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                         {VALID_TURMAS.map((t: TurmaCode) => {
                           const active = selectedAdminTurma === t;
                           const countInTurma = registeredStudents.filter(
-                            (st) => st.school === selectedAdminSchool && st.turma === t,
+                            (st) =>
+                              (selectedAdminSchool === "TODAS" || st.school === selectedAdminSchool) &&
+                              st.turma === t,
                           ).length;
                           return (
                             <button
@@ -2256,7 +2282,8 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                     {/* Lista dos Alunos Encontrados */}
                     {(() => {
                       const filtered = registeredStudents.filter((st) => {
-                        const matchSchool = st.school === selectedAdminSchool;
+                        const matchSchool =
+                          selectedAdminSchool === "TODAS" || st.school === selectedAdminSchool;
                         const matchTurma =
                           selectedAdminTurma === "TODAS" || st.turma === selectedAdminTurma;
                         return matchSchool && matchTurma;
@@ -2276,7 +2303,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                         <div className="space-y-2">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="text-xs font-bold text-muted-foreground">
-                              Exibindo {filtered.length} aluno(s) de {selectedAdminSchool}
+                              Exibindo {filtered.length} aluno(s) de {selectedAdminSchool === "TODAS" ? "Todas as Escolas" : selectedAdminSchool}
                               {selectedAdminTurma !== "TODAS" ? ` • Turma ${selectedAdminTurma}` : ""}:
                             </div>
 
@@ -2299,11 +2326,22 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-80 overflow-y-auto pr-1">
                             {filtered.map((st) => {
+                              const stDistinct = getDistinctGamesPlayed(
+                                st,
+                                st.stats ?? [],
+                                undefined,
+                                auth.adminConfig.enabledGames,
+                              );
+                              const stMatches = Math.max(
+                                st.matchesPlayed ?? 0,
+                                st.totalMatches ?? 0,
+                                (st as any).totalPlays ?? 0,
+                              );
                               const stProg = levelProgress({
                                 xp: st.xp,
-                                matchesPlayed: st.totalMatches ?? 0,
+                                matchesPlayed: stMatches,
                                 wins: st.wins ?? 0,
-                                distinctGames: st.distinctGamesPlayed ?? 0,
+                                distinctGames: stDistinct,
                               });
 
                               return (
@@ -2334,15 +2372,22 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                     <div className="text-xs text-muted-foreground uppercase truncate mt-0.5">
                                       {st.full_name}
                                     </div>
-                                    {Boolean(
-                                      st.turma &&
-                                        st.grade &&
-                                        st.school &&
-                                        st.school !== "Nenhuma" &&
-                                        st.school !== "Outro"
-                                    ) && (
-                                      <div className="text-[11px] text-muted-foreground mt-0.5 font-semibold">
-                                        {st.grade} {st.turma}
+                                    {(selectedAdminSchool === "TODAS" ||
+                                      Boolean(
+                                        st.turma &&
+                                          st.grade &&
+                                          st.school &&
+                                          st.school !== "Nenhuma" &&
+                                          st.school !== "Outro"
+                                      )) && (
+                                      <div className="text-[11px] text-muted-foreground mt-0.5 font-semibold truncate">
+                                        {selectedAdminSchool === "TODAS" && (
+                                          <span className="font-bold text-primary mr-1.5">
+                                            🏫 {st.school || "Sem escola"}
+                                          </span>
+                                        )}
+                                        {st.grade ? `${st.grade} ` : ""}
+                                        {st.turma ? `Turma ${st.turma}` : ""}
                                       </div>
                                     )}
                                   </div>
@@ -3043,11 +3088,22 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                   ) : (
                     <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
                       {players.map((p) => {
+                        const pDistinct = getDistinctGamesPlayed(
+                          p,
+                          p.stats ?? [],
+                          undefined,
+                          auth.adminConfig.enabledGames,
+                        );
+                        const pMatches = Math.max(
+                          p.matchesPlayed ?? 0,
+                          p.totalMatches ?? 0,
+                          (p as any).totalPlays ?? 0,
+                        );
                         const pProg = levelProgress({
                           xp: p.xp,
-                          matchesPlayed: p.totalMatches ?? 0,
+                          matchesPlayed: pMatches,
                           wins: p.wins ?? 0,
-                          distinctGames: p.distinctGamesPlayed ?? 0,
+                          distinctGames: pDistinct,
                         });
 
                         return (

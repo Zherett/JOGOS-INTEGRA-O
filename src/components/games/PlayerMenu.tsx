@@ -26,6 +26,7 @@ import { PlayerAuthDialog } from "./PlayerAuthDialog";
 import { LeaderboardDialog } from "./LeaderboardDialog";
 import { AdminPanelDialog } from "./AdminPanelDialog";
 import { PlayerMedalsInventory } from "./PlayerMedalsInventory";
+import { getDistinctGamesPlayed } from "@/lib/medals-catalog";
 import { PresenceDot } from "./PresenceDot";
 import { usePlayerAuth } from "@/lib/player-auth";
 import {
@@ -123,15 +124,24 @@ export function PlayerMenu({ onConfigChanged }: Props) {
   const stageInfo = profile ? stageFromBirthdate(profile.birthdate, new Date(), profile.school) : null;
   const bday = profile ? birthdayInfo(profile.birthdate) : null;
   const distinctGames = profile
+    ? getDistinctGamesPlayed(
+        profile,
+        auth.stats,
+        undefined,
+        auth.adminConfig.enabledGames,
+      )
+    : 0;
+  const matchesCount = profile
     ? Math.max(
-        profile.distinctGamesPlayed ?? 0,
-        new Set(auth.stats.map((s) => s.game_id)).size,
+        profile.matchesPlayed ?? 0,
+        profile.totalMatches ?? 0,
+        (profile as any).totalPlays ?? 0,
       )
     : 0;
   const progress = profile
     ? levelProgress({
         xp: profile.xp,
-        matchesPlayed: profile.matchesPlayed ?? 0,
+        matchesPlayed: matchesCount,
         wins: profile.wins ?? 0,
         distinctGames,
       })
@@ -269,13 +279,13 @@ export function PlayerMenu({ onConfigChanged }: Props) {
           className="flex items-center gap-2 rounded-2xl border bg-card px-3 py-1.5 text-left shadow-sm transition-all hover:bg-secondary active:scale-95"
           aria-label={profile ? "Abrir meu perfil" : "Entrar na minha conta"}
         >
-          <span className="relative grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground">
+          <span className="relative grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
             <User className="h-5 w-5" />
             {profile && (
               <PresenceDot
                 playerId={profile.id}
-                size="xs"
-                className="absolute -top-1 -right-1"
+                size="sm"
+                className="absolute bottom-0 right-0 z-10"
               />
             )}
           </span>

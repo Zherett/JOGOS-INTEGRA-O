@@ -721,7 +721,10 @@ export function aggregateStatsByGame(
     if (!enabledSet.has(row.game_id)) continue;
     // Não duplica contagem de partidas se for linha sintética de entrada de torneio
     const isSyntheticTournament = row.mode === "torneio_semanal";
-    const playsToAdd = isSyntheticTournament ? 0 : Math.max(0, row.plays ?? 0);
+    const hasActivity =
+      (row.best_score ?? 0) > 0 || (row.best_level ?? 1) > 1 || (row.wins ?? 0) > 0;
+    const rawPlays = Math.max(0, row.plays ?? 0);
+    const playsToAdd = isSyntheticTournament ? 0 : Math.max(rawPlays, hasActivity ? 1 : 0);
     const winsToAdd = isSyntheticTournament ? 0 : Math.max(0, row.wins ?? 0);
     const flawlessToAdd = isSyntheticTournament ? 0 : Math.max(0, row.flawless_wins ?? 0);
 
@@ -787,6 +790,86 @@ export function getDistinctFlawlessGames(
 }
 
 /**
+ * Retorna a contagem confiável de jogos distintos habilitados jogados pelo jogador.
+ * Cruza todas as fontes de dados para garantir que nenhum progresso real do aluno seja perdido:
+ *  1. Estatísticas passadas em `stats` (com plays > 0 ou score/nível/vitória registrados)
+ *  2. Estatísticas embutidas no perfil (`profile.stats`) caso existam
+ *  3. Última partida finalizada (`lastMatch`)
+ *  4. Medalhas já desbloqueadas pelo jogador associadas a um jogo específico (`game_${gId}_...`)
+ *  5. Contagem prévia em `profile.distinctGamesPlayed` (limitada estritamente aos jogos habilitados)
+ */
+export function getDistinctGamesPlayed(
+  profile?: Partial<PlayerProfile> | null,
+  stats: GameStatRow[] = [],
+  lastMatch?: Partial<PlayerStatsContext["lastMatch"]> | null,
+  enabledGamesOverride?: Partial<Record<GameId, boolean>>,
+): number {
+  const enabledSet = getEnabledGameIdsSet(enabledGamesOverride);
+  const playedSet = new Set<GameId>();
+
+  // 1. Linhas em stats
+  if (Array.isArray(stats) && stats.length > 0) {
+    const byGame = aggregateStatsByGame(stats, enabledGamesOverride);
+    for (const [gId, row] of byGame.entries()) {
+      if (
+        row.plays > 0 ||
+        (row.best_score ?? 0) > 0 ||
+        (row.best_level ?? 1) > 1 ||
+        (row.wins ?? 0) > 0
+      ) {
+        playedSet.add(gId);
+      }
+    }
+  }
+
+  // 2. Profile.stats embutido
+  const profStats = (profile as any)?.stats;
+  if (Array.isArray(profStats) && profStats.length > 0) {
+    const profByGame = aggregateStatsByGame(profStats, enabledGamesOverride);
+    for (const [gId, row] of profByGame.entries()) {
+      if (
+        row.plays > 0 ||
+        (row.best_score ?? 0) > 0 ||
+        (row.best_level ?? 1) > 1 ||
+        (row.wins ?? 0) > 0
+      ) {
+        playedSet.add(gId);
+      }
+    }
+  }
+
+  // 3. Última partida
+  if (
+    lastMatch &&
+    lastMatch.mode !== "torneio_semanal" &&
+    lastMatch.gameId &&
+    enabledSet.has(lastMatch.gameId)
+  ) {
+    playedSet.add(lastMatch.gameId);
+  }
+
+  // 4. Medalhas desbloqueadas específicas de jogo
+  if (profile && Array.isArray(profile.unlockedMedals)) {
+    for (const m of profile.unlockedMedals) {
+      if (!m || !m.medalId) continue;
+      for (const gId of ALL_GAME_IDS) {
+        if (!enabledSet.has(gId)) continue;
+        if (m.medalId.startsWith(`game_${gId}_`)) {
+          playedSet.add(gId);
+          break;
+        }
+      }
+    }
+  }
+
+  const countFromSources = playedSet.size;
+  const countFromProfile = Math.max(0, profile?.distinctGamesPlayed ?? 0);
+  const finalCount = Math.max(countFromSources, countFromProfile);
+
+  return Math.min(enabledSet.size, finalCount);
+}
+
+/**
  * Evaluates all unlocked medals for a player and returns newly awarded medals.
  */
 export function evaluatePlayerMedals(
@@ -803,18 +886,12 @@ export function evaluatePlayerMedals(
   const aggregatedRows = Array.from(statsMap.values()).filter((s) => s.plays > 0);
 
   // Contagem estrita de jogos diferentes habilitados realmente jogados
-  const distinctPlayedSet = new Set<GameId>(aggregatedRows.map((s) => s.game_id));
-  if (
-    ctx.lastMatch &&
-    ctx.lastMatch.mode !== "torneio_semanal" &&
-    enabledSet.has(ctx.lastMatch.gameId)
-  ) {
-    distinctPlayedSet.add(ctx.lastMatch.gameId);
-  }
-  const distinctGames =
-    ctx.stats.length > 0 || ctx.lastMatch
-      ? distinctPlayedSet.size
-      : Math.min(enabledSet.size, p.distinctGamesPlayed ?? 0);
+  const distinctGames = getDistinctGamesPlayed(
+    p,
+    ctx.stats,
+    ctx.lastMatch,
+    ctx.enabledGames,
+  );
 
   // Contagem estrita de jogos diferentes finalizados com ZERO erros (wrong === 0 no fim do jogo)
   const flawlessGamesSet = getDistinctFlawlessGames(
@@ -1081,10 +1158,12 @@ export function calculateMedalProgress(
       };
     }
     case "distinct_games": {
-      const distinct =
-        effectiveStats.length > 0
-          ? aggregatedRows.length
-          : Math.min(enabledSet.size, profile.distinctGamesPlayed ?? 0);
+      const distinct = getDistinctGamesPlayed(
+        profile,
+        effectiveStats,
+        undefined,
+        enabledGamesOverride,
+      );
       const target = cond.threshold ?? 3;
       const pct = Math.min(100, Math.round((distinct / target) * 100));
       return {

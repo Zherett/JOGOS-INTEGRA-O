@@ -39,6 +39,7 @@ import {
   VALID_TURMAS,
   type TurmaCode,
 } from "@/lib/player-profile";
+import { getDistinctGamesPlayed } from "@/lib/medals-catalog";
 import { PlayerMedalsInventory } from "./PlayerMedalsInventory";
 import { PresenceDot } from "./PresenceDot";
 
@@ -97,11 +98,22 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
   if (!profile) return null;
 
   const age = ageFrom(profile.birthdate);
+  const distinctGames = getDistinctGamesPlayed(
+    profile,
+    profile.stats ?? [],
+    undefined,
+    auth.adminConfig.enabledGames,
+  );
+  const matchesCount = Math.max(
+    profile.matchesPlayed ?? 0,
+    profile.totalMatches ?? 0,
+    (profile as any).totalPlays ?? 0,
+  );
   const progress = levelProgress({
     xp: profile.xp,
-    matchesPlayed: profile.totalMatches ?? 0,
+    matchesPlayed: matchesCount,
     wins: profile.wins ?? 0,
-    distinctGames: profile.distinctGamesPlayed ?? 0,
+    distinctGames,
   });
   const isMe = auth.profile?.id === profile.id;
 

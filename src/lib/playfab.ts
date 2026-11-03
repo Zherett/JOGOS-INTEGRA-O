@@ -69,6 +69,7 @@ import {
   evaluatePlayerMedals,
   getAllAvailableMedals,
   getDistinctFlawlessGames,
+  getDistinctGamesPlayed,
   isFlawlessMatch,
   MEDAL_XP_REWARDS,
   type PlayerUnlockedMedal,
@@ -815,16 +816,27 @@ function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig)
 
   const statsMap = aggregateStatsByGame(acc.stats, cfg.enabledGames);
   const aggregatedRows = Array.from(statsMap.values()).filter((s) => s.plays > 0);
-  const distinctFromStats = aggregatedRows.length;
 
   // For students, distinctGamesPlayed is strictly the count of enabled games actually played (never inflated above available games)
-  acc.profile.distinctGamesPlayed = isAdminAcc
-    ? Math.max(acc.profile.distinctGamesPlayed ?? 0, distinctFromStats)
-    : distinctFromStats;
+  const distinctGames = getDistinctGamesPlayed(
+    acc.profile,
+    acc.stats,
+    undefined,
+    cfg.enabledGames,
+  );
+  acc.profile.distinctGamesPlayed = distinctGames;
+
+  const totalMatchesCount = Math.max(
+    acc.profile.matchesPlayed ?? 0,
+    acc.profile.totalMatches ?? 0,
+    (acc.profile as any).totalPlays ?? 0,
+  );
+  acc.profile.matchesPlayed = totalMatchesCount;
+  acc.profile.totalMatches = totalMatchesCount;
 
   acc.profile.level = calculatePlayerLevel({
     xp: acc.profile.xp,
-    matchesPlayed: acc.profile.matchesPlayed,
+    matchesPlayed: totalMatchesCount,
     wins: acc.profile.wins,
     distinctGames: acc.profile.distinctGamesPlayed,
   });
@@ -879,7 +891,7 @@ function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig)
         }
 
         case "distinct_games":
-          return distinctFromStats >= (cond.threshold ?? 3);
+          return distinctGames >= (cond.threshold ?? 3);
 
         case "distinct_flawless_games":
           return trueFlawlessCount >= (cond.threshold ?? 3);
@@ -1077,10 +1089,13 @@ function buildAccountFromPlayFabPayload(
   const slug = nickSlug(resolvedNick) || `pf_${playfabId.toLowerCase()}`;
   const statXp = pfStats.find((s) => s.StatisticName === "XP_Total")?.Value ?? 0;
   const xp = Math.max(parsedProfile.xp ?? 0, statXp);
-  const distinctFromStats = new Set(parsedStats.map((s) => s.game_id)).size;
-  const distinctGamesPlayed = Math.max(parsedProfile.distinctGamesPlayed ?? 0, distinctFromStats);
+  const distinctGamesPlayed = getDistinctGamesPlayed(parsedProfile, parsedStats);
   const wins = parsedProfile.wins ?? 0;
-  const matchesPlayed = parsedProfile.matchesPlayed ?? 0;
+  const matchesPlayed = Math.max(
+    parsedProfile.matchesPlayed ?? 0,
+    parsedProfile.totalMatches ?? 0,
+    (parsedProfile as any).totalPlays ?? 0,
+  );
 
   const mergedProfile: PlayerProfile = {
     id: playfabId ?? `pf_${slug}`,
@@ -2222,11 +2237,19 @@ export async function playfabRecordMatch(args: {
   const nextSeasonXp = (acc.profile.seasonXp ?? 0) + earnedXp;
   const nextWins = (acc.profile.wins ?? 0) + (!isSyntheticTournamentEntry && won ? 1 : 0);
   const nextMatches = (acc.profile.matchesPlayed ?? 0) + (isSyntheticTournamentEntry ? 0 : 1);
-  const statsByGame = aggregateStatsByGame(acc.stats, cfg.enabledGames);
-  const distinctInSeason = Array.from(statsByGame.values()).filter((s) => s.plays > 0).length;
-  const distinctGames = isSpecialAdminAccount(acc.profile)
-    ? Math.max(acc.profile.distinctGamesPlayed ?? 0, distinctInSeason)
-    : distinctInSeason;
+  const distinctGames = getDistinctGamesPlayed(
+    acc.profile,
+    acc.stats,
+    {
+      gameId: args.gameId,
+      score: safeScore,
+      level: safeLevel,
+      correct: args.correct,
+      wrong,
+      mode,
+    },
+    cfg.enabledGames,
+  );
 
   acc.profile.xp = nextXp;
   acc.profile.seasonXp = nextSeasonXp;

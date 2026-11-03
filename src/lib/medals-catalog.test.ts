@@ -6,6 +6,7 @@ import {
   evaluatePlayerMedals,
   getDailyPostCapMatches,
   getDistinctFlawlessGames,
+  getDistinctGamesPlayed,
   getTopShowcaseMedals,
   isFlawlessMatch,
   RARITY_INFO,
@@ -611,5 +612,66 @@ describe("Sistema Completo de Medalhas e Inventário", () => {
     assert.ok(awardedIds100.includes("post_cap_30"), "Conquista Prata (30)");
     assert.ok(awardedIds100.includes("post_cap_60"), "Conquista Ouro (60)");
     assert.ok(awardedIds100.includes("post_cap_100"), "Conquista Platina (100)");
+  });
+
+  it("avalia corretamente jogos distintos combinando estatísticas, partidas e medalhas sem perder o progresso", () => {
+    // 1. Jogador com estatísticas ativas apenas em 1 jogo em stats, mas com medalha em outro jogo e atividade em score
+    const profile: Partial<PlayerProfile> = {
+      id: "p_multi",
+      nick: "MultiGamer",
+      nickNormalized: "multigamer",
+      full_name: "MULTI GAMER",
+      school: "Raimundo Bezerra",
+      grade: "6º ano",
+      birthdate: "2013-05-10",
+      xp: 400,
+      level: 1,
+      matchesPlayed: 6,
+      wins: 3,
+      distinctGamesPlayed: 1,
+      unlockedMedals: [
+        {
+          medalId: "game_memoria_lvl_master",
+          unlockedAt: "2026-11-01T10:00:00Z",
+        },
+      ],
+    };
+
+    const stats: GameStatRow[] = [
+      {
+        game_id: "logica",
+        mode: "classico",
+        plays: 4,
+        wins: 2,
+        flawless_wins: 0,
+        best_score: 120,
+        best_level: 2,
+        last_played_at: "2026-11-02T10:00:00Z",
+      },
+      // Jogo com plays=0 mas pontuação registrada
+      {
+        game_id: "cartesiano",
+        mode: "classico",
+        plays: 0,
+        wins: 0,
+        flawless_wins: 0,
+        best_score: 50,
+        best_level: 1,
+        last_played_at: "2026-11-02T11:00:00Z",
+      },
+    ];
+
+    // logica (plays=4) + cartesiano (best_score=50) + memoria (medalha game_memoria_lvl_master) = 3 jogos distintos!
+    const distinctCount = getDistinctGamesPlayed(profile, stats);
+    assert.equal(distinctCount, 3, "Deveria ter reconhecido 3 jogos distintos");
+
+    // Limitação aos jogos habilitados
+    const limitedCount = getDistinctGamesPlayed(profile, stats, undefined, {
+      logica: true,
+      memoria: false, // desabilitado
+      cartesiano: true,
+    });
+    // logica e cartesiano habilitados = 2
+    assert.equal(limitedCount, 2, "Não deve contar jogos desabilitados");
   });
 });
