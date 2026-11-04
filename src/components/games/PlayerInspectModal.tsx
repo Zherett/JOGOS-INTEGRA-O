@@ -21,6 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import {
   getPlayerPublicProfile,
   playfabCompleteInitialSchoolSetup,
+  syncStudentRosterFromPlayFab,
   updateStudentProfileByAdmin,
   type PlayerProfile,
 } from "@/lib/playfab";
@@ -40,7 +41,11 @@ import {
   VALID_TURMAS,
   type TurmaCode,
 } from "@/lib/player-profile";
-import { aggregateStatsByGame, getDistinctGamesPlayed } from "@/lib/medals-catalog";
+import {
+  aggregateStatsByGame,
+  getDistinctGamesPlayed,
+  getEffectivePlayerProgression,
+} from "@/lib/medals-catalog";
 import { ALL_GAME_IDS, GAME_NAMES } from "@/lib/game-storage";
 import { PlayerMedalsInventory } from "./PlayerMedalsInventory";
 import { PresenceDot } from "./PresenceDot";
@@ -81,6 +86,18 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
         setSelfGrade(found.grade || RAIMUNDO_GRADES[0]);
         setSelfTurma(found.turma || "");
       }
+      let cancelled = false;
+      void syncStudentRosterFromPlayFab().then(() => {
+        if (cancelled) return;
+        const refreshed = getPlayerPublicProfile(playerId);
+        if (refreshed) {
+          setProfile(refreshed);
+          onStudentUpdated?.();
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
     } else {
       setProfile(null);
       setIsEditing(false);
@@ -100,24 +117,16 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
   if (!profile) return null;
 
   const age = ageFrom(profile.birthdate);
-  const distinctGames = getDistinctGamesPlayed(
+  const effProg = getEffectivePlayerProgression(
     profile,
     profile.stats ?? [],
-    undefined,
     auth.adminConfig.enabledGames,
   );
-  const matchesCount = Math.max(
-    profile.matchesPlayed ?? 0,
-    profile.totalMatches ?? 0,
-    (profile as any).totalPlays ?? 0,
-    (profile.stats ?? []).reduce((s, r) => s + (r.plays ?? 0), 0),
-  );
-  const totalWins = Math.max(
-    profile.wins ?? 0,
-    (profile.stats ?? []).reduce((s, r) => s + (r.wins ?? 0), 0),
-  );
+  const distinctGames = effProg.distinctGames;
+  const matchesCount = effProg.matchesPlayed;
+  const totalWins = effProg.wins;
   const progress = levelProgress({
-    xp: profile.xp,
+    xp: effProg.xp,
     matchesPlayed: matchesCount,
     wins: totalWins,
     distinctGames,
@@ -208,7 +217,13 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
                   <h3 className="truncate font-display text-xl font-black text-foreground">
                     {profile.nick}
                   </h3>
-                  <PresenceDot playerId={profile.id} size="sm" />
+                  <PresenceDot
+                    playerId={profile.id}
+                    playfabId={profile.playfabId}
+                    nick={profile.nick}
+                    nickNormalized={profile.nickNormalized}
+                    size="sm"
+                  />
                   {isMe && (
                     <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-black text-accent-foreground">
                       VOCÊ

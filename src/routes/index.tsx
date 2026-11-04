@@ -21,7 +21,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { heartbeatOnlinePlayer, type X1Room } from "@/lib/x1-challenge";
+import {
+  heartbeatOnlinePlayer,
+  syncX1WithPlayFabCloud,
+  type X1Room,
+} from "@/lib/x1-challenge";
 import { getLocalUserLastActiveAt, usePresenceTracker } from "@/lib/presence";
 import {
   getWeekInfo,
@@ -143,7 +147,14 @@ function Index() {
 
   // Track user presence and activity (Verde < 5min, Cinza 5-10min, Vermelho > 10min)
   usePresenceTracker(
-    auth.profile ? { playerId: auth.profile.id, nick: auth.profile.nick } : null,
+    auth.profile
+      ? {
+          playerId: auth.profile.id,
+          playfabId: auth.profile.playfabId,
+          nick: auth.profile.nick,
+          nickNormalized: auth.profile.nickNormalized,
+        }
+      : null,
   );
 
   // Keep logged-in student visible in the online players list across the platform
@@ -162,9 +173,10 @@ function Index() {
         inRoomCode: activeX1Room?.code ?? null,
         lastActiveAt: getLocalUserLastActiveAt(),
       });
+      void syncX1WithPlayFabCloud(activeX1Room?.code ?? null);
     };
     pulse();
-    const id = window.setInterval(pulse, 8000);
+    const id = window.setInterval(pulse, 12000);
     return () => window.clearInterval(id);
   }, [auth.profile, activeX1Room?.code]);
 

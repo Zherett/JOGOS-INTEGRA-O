@@ -87,6 +87,7 @@ import {
   AVAILABLE_MEDAL_ICONS,
   getAllAvailableMedals,
   getDistinctGamesPlayed,
+  getEffectivePlayerProgression,
   RARITY_INFO,
   formatEventRequirementLabel,
   type MedalDefinition,
@@ -104,7 +105,11 @@ import {
 import { MedalIcon } from "./MedalIcon";
 import { PlayerInspectModal } from "./PlayerInspectModal";
 import { PresenceDot } from "./PresenceDot";
-import { computePresenceSummary } from "@/lib/presence";
+import {
+  computePresenceSummary,
+  PRESENCE_UPDATED_EVENT,
+  syncPresenceFromPlayFab,
+} from "@/lib/presence";
 
 interface Props {
   open: boolean;
@@ -149,6 +154,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [draft, setDraft] = useState<PlatformAdminConfig>(auth.adminConfig);
   const [copied, setCopied] = useState(false);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [, setPresenceTick] = useState(0);
 
   // Special Events states (with 3 simultaneous lines of bonus)
   const [specialEvents, setSpecialEvents] = useState<SpecialEvent[]>([]);
@@ -320,11 +326,21 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     setTurmaRequests(loadTurmaRequests());
     setRegisteredStudents(getAllRegisteredPlayers());
 
-    // Automatically sync cloud student roster from PlayFab when opening ADM
+    // Automatically sync cloud student roster and presence from PlayFab when opening ADM
     setSyncingRoster(true);
+    void syncPresenceFromPlayFab(true);
     void syncStudentRosterFromPlayFab()
       .then((players) => setRegisteredStudents(players))
       .finally(() => setSyncingRoster(false));
+
+    const onPresenceChange = () => {
+      setPresenceTick((t) => t + 1);
+    };
+    window.addEventListener(PRESENCE_UPDATED_EVENT, onPresenceChange);
+    const presencePoll = window.setInterval(() => {
+      void syncPresenceFromPlayFab();
+      setPresenceTick((t) => t + 1);
+    }, 8000);
 
     setScheduleClearXp(auth.adminConfig.scheduledResetClearXp);
     if (auth.adminConfig.scheduledResetAt) {
@@ -341,6 +357,10 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     setNextSeasonName(`Temporada ${auth.adminConfig.seasonId + 1} • SEMED Coari`);
     setConfirmResetNow(false);
     setSavedMsg(null);
+    return () => {
+      window.removeEventListener(PRESENCE_UPDATED_EVENT, onPresenceChange);
+      window.clearInterval(presencePoll);
+    };
   }, [open, auth.adminConfig]);
 
   async function handleRefreshRoster() {
@@ -3057,7 +3077,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                         );
                       }
 
-                      const presenceSummary = computePresenceSummary(filtered.map((s) => s.id));
+                      const presenceSummary = computePresenceSummary(filtered);
 
                       return (
                         <div className="space-y-2">
@@ -3086,22 +3106,16 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-80 overflow-y-auto pr-1">
                             {filtered.map((st) => {
-                              const stDistinct = getDistinctGamesPlayed(
+                              const stEff = getEffectivePlayerProgression(
                                 st,
                                 st.stats ?? [],
-                                undefined,
                                 auth.adminConfig.enabledGames,
                               );
-                              const stMatches = Math.max(
-                                st.matchesPlayed ?? 0,
-                                st.totalMatches ?? 0,
-                                (st as any).totalPlays ?? 0,
-                              );
                               const stProg = levelProgress({
-                                xp: st.xp,
-                                matchesPlayed: stMatches,
-                                wins: st.wins ?? 0,
-                                distinctGames: stDistinct,
+                                xp: stEff.xp,
+                                matchesPlayed: stEff.matchesPlayed,
+                                wins: stEff.wins,
+                                distinctGames: stEff.distinctGames,
                               });
 
                               return (
@@ -3116,7 +3130,13 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                       <span className="font-display text-sm font-black text-foreground truncate">
                                         {st.nick}
                                       </span>
-                                      <PresenceDot playerId={st.id} size="xs" />
+                                      <PresenceDot
+                                        playerId={st.id}
+                                        playfabId={st.playfabId}
+                                        nick={st.nick}
+                                        nickNormalized={st.nickNormalized}
+                                        size="xs"
+                                      />
                                       <span className="rounded-full bg-primary/15 px-2 py-0.2 text-[10px] font-bold text-primary">
                                         Nv. {stProg.level}
                                       </span>
@@ -3952,22 +3972,16 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                   ) : (
                     <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
                       {players.map((p) => {
-                        const pDistinct = getDistinctGamesPlayed(
+                        const pEff = getEffectivePlayerProgression(
                           p,
                           p.stats ?? [],
-                          undefined,
                           auth.adminConfig.enabledGames,
                         );
-                        const pMatches = Math.max(
-                          p.matchesPlayed ?? 0,
-                          p.totalMatches ?? 0,
-                          (p as any).totalPlays ?? 0,
-                        );
                         const pProg = levelProgress({
-                          xp: p.xp,
-                          matchesPlayed: pMatches,
-                          wins: p.wins ?? 0,
-                          distinctGames: pDistinct,
+                          xp: pEff.xp,
+                          matchesPlayed: pEff.matchesPlayed,
+                          wins: pEff.wins,
+                          distinctGames: pEff.distinctGames,
                         });
 
                         return (
@@ -3980,7 +3994,13 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5 font-bold truncate flex-wrap">
                                 <span className="truncate">{p.nick}</span>
-                                <PresenceDot playerId={p.id} size="xs" />
+                                <PresenceDot
+                                  playerId={p.id}
+                                  playfabId={p.playfabId}
+                                  nick={p.nick}
+                                  nickNormalized={p.nickNormalized}
+                                  size="xs"
+                                />
                                 <span className="font-normal text-muted-foreground truncate">({p.full_name})</span>
                                 {pProg.isLockedByMissions && (
                                   <span

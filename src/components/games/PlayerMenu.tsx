@@ -27,7 +27,11 @@ import { PlayerAuthDialog } from "./PlayerAuthDialog";
 import { LeaderboardDialog } from "./LeaderboardDialog";
 import { AdminPanelDialog } from "./AdminPanelDialog";
 import { PlayerMedalsInventory } from "./PlayerMedalsInventory";
-import { aggregateStatsByGame, getDistinctGamesPlayed } from "@/lib/medals-catalog";
+import {
+  aggregateStatsByGame,
+  getDistinctGamesPlayed,
+  getEffectivePlayerProgression,
+} from "@/lib/medals-catalog";
 import { PresenceDot } from "./PresenceDot";
 import { usePlayerAuth } from "@/lib/player-auth";
 import {
@@ -125,31 +129,25 @@ export function PlayerMenu({ onConfigChanged }: Props) {
   const age = profile ? ageFrom(profile.birthdate) : null;
   const stageInfo = profile ? stageFromBirthdate(profile.birthdate, new Date(), profile.school) : null;
   const bday = profile ? birthdayInfo(profile.birthdate) : null;
-  const distinctGames = profile
-    ? getDistinctGamesPlayed(
+  const effProg = profile
+    ? getEffectivePlayerProgression(
         profile,
         auth.stats,
-        undefined,
         auth.adminConfig.enabledGames,
       )
-    : 0;
-  const matchesCount = profile
-    ? Math.max(
-        profile.matchesPlayed ?? 0,
-        profile.totalMatches ?? 0,
-        (profile as any).totalPlays ?? 0,
-      )
-    : 0;
+    : null;
+  const distinctGames = effProg ? effProg.distinctGames : 0;
+  const matchesCount = effProg ? effProg.matchesPlayed : 0;
   const statsByGameMap = useMemo(
     () => aggregateStatsByGame(auth.stats, auth.adminConfig.enabledGames),
     [auth.stats, auth.adminConfig.enabledGames],
   );
-  const progress = profile
+  const progress = effProg
     ? levelProgress({
-        xp: profile.xp,
-        matchesPlayed: matchesCount,
-        wins: profile.wins ?? 0,
-        distinctGames,
+        xp: effProg.xp,
+        matchesPlayed: effProg.matchesPlayed,
+        wins: effProg.wins,
+        distinctGames: effProg.distinctGames,
       })
     : null;
   const dailyCap = auth.adminConfig.dailyXpCap ?? DEFAULT_DAILY_XP_CAP;

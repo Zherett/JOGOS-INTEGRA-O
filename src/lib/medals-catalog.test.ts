@@ -7,13 +7,15 @@ import {
   getDailyPostCapMatches,
   getDistinctFlawlessGames,
   getDistinctGamesPlayed,
+  getEffectivePlayerProgression,
   getTopShowcaseMedals,
   isFlawlessMatch,
   RARITY_INFO,
   type MedalDefinition,
 } from "./medals-catalog.ts";
 import { ALL_GAME_IDS } from "./game-storage.ts";
-import type { PlayerProfile, GameStatRow } from "./playfab.ts";
+import { ensurePlayerSeasonAligned, type PlayerProfile, type GameStatRow } from "./playfab.ts";
+import { loadAdminConfig } from "./game-codes.ts";
 import { getLocalDateKey } from "./player-profile.ts";
 
 describe("Sistema Completo de Medalhas e Inventário", () => {
@@ -847,5 +849,152 @@ describe("Sistema Completo de Medalhas e Inventário", () => {
 
     const awarded = evaluatePlayerMedals({ profile: updatedProfile, stats }, cat);
     assert.ok(awarded.some((m) => m.id === "lvl_2"), "Medalha lvl_2 deve ser concedida");
+  });
+
+  it("recupera nível e medalhas de jogadores com 50% e 33% de progresso em medalhas de jogos ou com stats zeradas na nuvem", () => {
+    const cfg = loadAdminConfig();
+    const cat = buildBaseMedalsCatalog();
+
+    // Caso 1: Jogador com 50% na medalha Perfeição de Lógica (best_score=30, last_wrong=1)
+    // e 33% na medalha Perfeição de Cartesiano (best_score=20, last_wrong=1),
+    // mas com plays=0, wins=0, matchesPlayed=0, distinctGamesPlayed=0 e level=1
+    const accPartialStats = {
+      profile: {
+        id: "stu_parcial",
+        nick: "AlunoParcial",
+        nickNormalized: "alunoparcial",
+        full_name: "ALUNO PARCIAL",
+        school: "Raimunda Cruz",
+        grade: "5º ano",
+        birthdate: "2015-05-10",
+        xp: 180,
+        seasonXp: 180,
+        level: 1,
+        wins: 0,
+        matchesPlayed: 0,
+        distinctGamesPlayed: 0,
+        badges: [],
+        seasonId: cfg.seasonId,
+        unlockedMedals: [],
+      } as PlayerProfile,
+      passwordHash: "hash",
+      unlocked: [],
+      stats: [
+        {
+          game_id: "logica" as const,
+          mode: "padrao",
+          plays: 0,
+          wins: 0,
+          flawless_wins: 0,
+          last_wrong: 1,
+          best_score: 30, // 50% na medalha game_logica_flawless
+          best_level: 1,
+          last_played_at: "2026-11-03T10:00:00Z",
+        },
+        {
+          game_id: "cartesiano" as const,
+          mode: "padrao",
+          plays: 0,
+          wins: 0,
+          flawless_wins: 0,
+          last_wrong: 1,
+          best_score: 20, // 33% na medalha game_cartesiano_flawless
+          best_level: 1,
+          last_played_at: "2026-11-03T11:00:00Z",
+        },
+      ],
+      updatedAt: "2026-11-03T11:00:00Z",
+    };
+
+    const medalFlawlessLogica = cat.find((m) => m.id === "game_logica_flawless")!;
+    const medalFlawlessCart = cat.find((m) => m.id === "game_cartesiano_flawless")!;
+    const medalMasterRpg = cat.find((m) => m.id === "game_rpg_lvl_master")!;
+
+    assert.equal(
+      calculateMedalProgress(medalFlawlessLogica, accPartialStats.profile, accPartialStats.stats).percent,
+      50,
+    );
+    assert.equal(
+      calculateMedalProgress(medalFlawlessCart, accPartialStats.profile, accPartialStats.stats).percent,
+      33,
+    );
+    // Jogo nunca jogado (rpg) deve ter 0% em Especialista (não 33% falso)
+    assert.equal(
+      calculateMedalProgress(medalMasterRpg, accPartialStats.profile, accPartialStats.stats).percent,
+      0,
+    );
+
+    const aligned1 = ensurePlayerSeasonAligned(accPartialStats, cfg);
+    assert.equal(aligned1.profile.distinctGamesPlayed, 2, "Deve recuperar 2 jogos distintos");
+    assert.ok((aligned1.profile.matchesPlayed ?? 0) >= 2, "Deve recuperar pelo menos 2 partidas");
+    assert.ok((aligned1.profile.wins ?? 0) >= 1, "Deve recuperar pelo menos 1 vitória");
+    assert.equal(aligned1.profile.level, 2, "Deve subir imediatamente para o Nível 2");
+    assert.ok(
+      aligned1.profile.unlockedMedals?.some((m) => m.medalId === "lvl_2"),
+      "Deve restaurar a medalha lvl_2",
+    );
+
+    // Caso 2: Alunos reais cujas stats e distinctGamesPlayed foram zerados no Roster compartilhado
+    // (ex: Lucas com 416 XP e 10 vitórias -> Nível 3; ESHELLEN2026 com 270 XP e 5 vitórias -> Nível 2)
+    const accLucas = ensurePlayerSeasonAligned(
+      {
+        profile: {
+          id: "stu_lucas",
+          nick: "Lucas",
+          nickNormalized: "lucas",
+          full_name: "DAVI LUCAS",
+          school: "Raimunda Cruz",
+          grade: "5º ano",
+          birthdate: "2015-03-10",
+          xp: 416,
+          seasonXp: 416,
+          level: 1, // estava rebaixado para 1
+          wins: 10,
+          matchesPlayed: 0, // estava zerado
+          distinctGamesPlayed: 0, // estava zerado
+          badges: [],
+          seasonId: cfg.seasonId,
+          unlockedMedals: [],
+        },
+        passwordHash: "hash",
+        unlocked: [],
+        stats: [],
+        updatedAt: "2026-11-03T12:00:00Z",
+      },
+      cfg,
+    );
+    assert.equal(accLucas.profile.level, 3, "Lucas (416 XP, 10 vitórias) deve recuperar Nível 3");
+    assert.ok(accLucas.profile.unlockedMedals?.some((m) => m.medalId === "lvl_2"));
+    assert.ok(accLucas.profile.unlockedMedals?.some((m) => m.medalId === "lvl_3"));
+
+    const accEshellen = ensurePlayerSeasonAligned(
+      {
+        profile: {
+          id: "stu_eshellen2026",
+          nick: "ESHELLEN2026",
+          nickNormalized: "eshellen2026",
+          full_name: "ESHELLEN SANTOS LIMA",
+          school: "Elisângela Litaiff",
+          grade: "5º ano",
+          birthdate: "2016-04-12",
+          xp: 270,
+          seasonXp: 270,
+          level: 1, // estava rebaixado para 1
+          wins: 5,
+          matchesPlayed: 0,
+          distinctGamesPlayed: 0,
+          badges: [],
+          seasonId: cfg.seasonId,
+          unlockedMedals: [],
+        },
+        passwordHash: "hash",
+        unlocked: [],
+        stats: [],
+        updatedAt: "2026-11-03T12:00:00Z",
+      },
+      cfg,
+    );
+    assert.equal(accEshellen.profile.level, 2, "ESHELLEN2026 (270 XP, 5 vitórias) deve recuperar Nível 2");
+    assert.ok(accEshellen.profile.unlockedMedals?.some((m) => m.medalId === "lvl_2"));
   });
 });

@@ -1,7 +1,7 @@
 import { ALL_GAME_IDS, GAME_NAMES, type GameId } from "./game-storage.ts";
 import type { PlayerProfile } from "./playfab.ts";
 import type { GameStatRow } from "./playfab.ts";
-import { getLocalDateKey } from "./player-profile.ts";
+import { calculatePlayerLevel, getLocalDateKey, LEVEL_REQUIREMENTS } from "./player-profile.ts";
 
 export type MedalRarity = "bronze" | "prata" | "ouro" | "platina" | "diamante" | "heroi";
 
@@ -783,10 +783,23 @@ export function aggregateStatsByGame(
     // Não duplica contagem de partidas se for linha sintética de entrada de torneio
     const isSyntheticTournament = row.mode === "torneio_semanal";
     const hasActivity =
-      (row.best_score ?? 0) > 0 || (row.best_level ?? 1) > 1 || (row.wins ?? 0) > 0;
+      (row.plays ?? 0) > 0 ||
+      (row.best_score ?? 0) > 0 ||
+      (row.best_level ?? 1) > 1 ||
+      (row.wins ?? 0) > 0 ||
+      (row.flawless_wins ?? 0) > 0 ||
+      row.last_wrong !== undefined;
     const rawPlays = Math.max(0, row.plays ?? 0);
     const playsToAdd = isSyntheticTournament ? 0 : Math.max(rawPlays, hasActivity ? 1 : 0);
-    const winsToAdd = isSyntheticTournament ? 0 : Math.max(0, row.wins ?? 0);
+    const hasWinProgress =
+      (row.wins ?? 0) > 0 ||
+      (row.flawless_wins ?? 0) >= 1 ||
+      (row.best_score ?? 0) >= 20 ||
+      (row.best_level ?? 1) >= 2 ||
+      playsToAdd >= 2;
+    const winsToAdd = isSyntheticTournament
+      ? 0
+      : Math.max(0, row.wins ?? 0, hasWinProgress ? 1 : 0);
     const flawlessToAdd = isSyntheticTournament ? 0 : Math.max(0, row.flawless_wins ?? 0);
 
     const existing = map.get(row.game_id);
@@ -913,7 +926,8 @@ export function getDistinctGamesPlayed(
     playedSet.add(lastMatch.gameId);
   }
 
-  // 4. Medalhas desbloqueadas específicas de jogo
+  // 4. Medalhas desbloqueadas específicas de jogo e medalhas cumulativas de exploração/nível
+  let minFromMedalsAndBadges = 0;
   if (profile && Array.isArray(profile.unlockedMedals)) {
     for (const m of profile.unlockedMedals) {
       if (!m || !m.medalId) continue;
@@ -924,10 +938,46 @@ export function getDistinctGamesPlayed(
           break;
         }
       }
+      if (m.medalId === "explore_3_games" || m.medalId === "flawless_3_games") {
+        minFromMedalsAndBadges = Math.max(minFromMedalsAndBadges, 3);
+      } else if (m.medalId === "explore_5_games" || m.medalId === "flawless_5_games") {
+        minFromMedalsAndBadges = Math.max(minFromMedalsAndBadges, 5);
+      } else if (m.medalId === "beta_tester_prata") {
+        minFromMedalsAndBadges = Math.max(minFromMedalsAndBadges, 4);
+      } else if (m.medalId === "beta_tester_ouro") {
+        minFromMedalsAndBadges = Math.max(minFromMedalsAndBadges, 6);
+      } else if (m.medalId === "beta_tester_bronze") {
+        minFromMedalsAndBadges = Math.max(minFromMedalsAndBadges, 1);
+      } else if (m.medalId.startsWith("lvl_")) {
+        const lvlNum = Number(m.medalId.replace("lvl_", ""));
+        if (lvlNum >= 2 && lvlNum <= 10) {
+          const req = LEVEL_REQUIREMENTS[lvlNum - 1];
+          if (req) {
+            minFromMedalsAndBadges = Math.max(minFromMedalsAndBadges, req.minDistinctGames);
+          }
+        }
+      }
     }
   }
 
-  // 5. Progresso em eventos especiais ou recorrentes por jogo
+  // 5. Insígnias (badges) acumuladas no perfil
+  if (profile && Array.isArray(profile.badges)) {
+    for (const b of profile.badges) {
+      if (!b || !b.id) continue;
+      if (b.id === "explorador") minFromMedalsAndBadges = Math.max(minFromMedalsAndBadges, 5);
+      else if (b.id === "mestre_jogos") minFromMedalsAndBadges = Math.max(minFromMedalsAndBadges, 9);
+      else if (
+        b.id === "primeira_missao" ||
+        b.id === "primeira_vitoria" ||
+        b.id === "cinco_vitorias" ||
+        b.id === "quinze_vitorias"
+      ) {
+        minFromMedalsAndBadges = Math.max(minFromMedalsAndBadges, 1);
+      }
+    }
+  }
+
+  // 6. Progresso em eventos especiais ou recorrentes por jogo
   if (profile?.eventProgress) {
     for (const evData of Object.values(profile.eventProgress)) {
       if (evData?.matchesByGame) {
@@ -940,6 +990,16 @@ export function getDistinctGamesPlayed(
           if (sc > 0 && enabledSet.has(gId as GameId)) playedSet.add(gId as GameId);
         }
       }
+      if (evData?.xpByGame) {
+        for (const [gId, xpVal] of Object.entries(evData.xpByGame)) {
+          if (xpVal > 0 && enabledSet.has(gId as GameId)) playedSet.add(gId as GameId);
+        }
+      }
+      if (evData?.bestLevelByGame) {
+        for (const [gId, lvlVal] of Object.entries(evData.bestLevelByGame)) {
+          if (lvlVal > 1 && enabledSet.has(gId as GameId)) playedSet.add(gId as GameId);
+        }
+      }
       if (Array.isArray(evData?.distinctGamesPlayed)) {
         for (const gId of evData.distinctGamesPlayed) {
           if (enabledSet.has(gId as GameId)) playedSet.add(gId as GameId);
@@ -950,9 +1010,127 @@ export function getDistinctGamesPlayed(
 
   const countFromSources = playedSet.size;
   const countFromProfile = Math.max(0, profile?.distinctGamesPlayed ?? 0);
-  const finalCount = Math.max(countFromSources, countFromProfile);
+
+  // 7. Recuperação de segurança para perfis cujo array `stats` e `distinctGamesPlayed` foram zerados na sincronização,
+  // mas que possuem XP, vitórias e partidas comprovadas no perfil
+  let inferredFromHistory = 0;
+  if (countFromSources === 0 && countFromProfile === 0) {
+    const pXp = Math.max(0, profile?.xp ?? 0, profile?.seasonXp ?? 0);
+    const pWins = Math.max(0, profile?.wins ?? 0);
+    const pMatches = Math.max(
+      0,
+      profile?.matchesPlayed ?? 0,
+      profile?.totalMatches ?? 0,
+      (profile as any)?.totalPlays ?? 0,
+      pWins,
+    );
+    if (pXp >= 600 && pWins >= 10) {
+      inferredFromHistory = 4;
+    } else if (pXp >= 400 && pWins >= 8) {
+      inferredFromHistory = 3;
+    } else if ((pXp >= 250 && pWins >= 2) || pWins >= 5 || pMatches >= 5) {
+      inferredFromHistory = 2;
+    } else if (pXp > 0 || pWins > 0 || pMatches > 0) {
+      inferredFromHistory = 1;
+    }
+  }
+
+  const finalCount = Math.max(
+    countFromSources,
+    countFromProfile,
+    minFromMedalsAndBadges,
+    inferredFromHistory,
+  );
 
   return Math.min(enabledSet.size, finalCount);
+}
+
+/**
+ * Consolida todos os indicadores de progressão do aluno (XP, Partidas, Vitórias, Jogos Distintos e Nível)
+ * cruzando o perfil com o progresso das medalhas e estatísticas por jogo para evitar que qualquer aluno
+ * fique travado no Nível 1 após ter cumprido os requisitos.
+ */
+export function getEffectivePlayerProgression(
+  profile?: Partial<PlayerProfile> | null,
+  stats: GameStatRow[] = [],
+  enabledGamesOverride?: Partial<Record<GameId, boolean>>,
+): {
+  xp: number;
+  matchesPlayed: number;
+  wins: number;
+  distinctGames: number;
+  level: number;
+} {
+  const effectiveStats: GameStatRow[] =
+    Array.isArray(stats) && stats.length > 0
+      ? stats
+      : Array.isArray((profile as any)?.stats)
+        ? (profile as any).stats
+        : [];
+
+  const statsMap = aggregateStatsByGame(effectiveStats, enabledGamesOverride);
+  const aggregatedRows = Array.from(statsMap.values()).filter((s) => s.plays > 0);
+
+  const distinctGames = getDistinctGamesPlayed(
+    profile,
+    effectiveStats,
+    undefined,
+    enabledGamesOverride,
+  );
+
+  const statsPlaysSum = aggregatedRows.reduce((sum, s) => sum + Math.max(0, s.plays ?? 0), 0);
+  const statsWinsSum = aggregatedRows.reduce((sum, s) => sum + Math.max(0, s.wins ?? 0), 0);
+
+  const xp = Math.max(0, profile?.xp ?? 0, profile?.seasonXp ?? 0);
+
+  let minWinsFromMedalsOrBadges = 0;
+  if (Array.isArray(profile?.badges)) {
+    for (const b of profile!.badges!) {
+      if (b?.id === "quinze_vitorias") minWinsFromMedalsOrBadges = Math.max(minWinsFromMedalsOrBadges, 15);
+      else if (b?.id === "cinco_vitorias") minWinsFromMedalsOrBadges = Math.max(minWinsFromMedalsOrBadges, 5);
+      else if (b?.id === "primeira_vitoria") minWinsFromMedalsOrBadges = Math.max(minWinsFromMedalsOrBadges, 1);
+    }
+  }
+
+  const inferredWinsFromXp =
+    xp >= 354 && distinctGames >= 2 ? 2 : xp >= 100 && distinctGames >= 1 ? 1 : 0;
+
+  const wins = Math.max(
+    0,
+    profile?.wins ?? 0,
+    statsWinsSum,
+    minWinsFromMedalsOrBadges,
+    inferredWinsFromXp,
+  );
+
+  const inferredMatchesFromXp =
+    xp >= 354 && wins >= 2 ? 5 : xp >= 100 && wins >= 1 ? 2 : xp > 0 ? 1 : 0;
+
+  const matchesPlayed = Math.max(
+    0,
+    profile?.matchesPlayed ?? 0,
+    profile?.totalMatches ?? 0,
+    (profile as any)?.totalPlays ?? 0,
+    statsPlaysSum,
+    wins,
+    distinctGames,
+    inferredMatchesFromXp,
+  );
+
+  const level = calculatePlayerLevel({
+    xp,
+    matchesPlayed,
+    wins,
+    distinctGames,
+  });
+
+  return {
+    xp,
+    matchesPlayed,
+    wins,
+    distinctGames,
+    level,
+  };
 }
 
 /**
@@ -988,9 +1166,22 @@ export function evaluatePlayerMedals(
   );
   const flawlessGamesCount = flawlessGamesSet.size;
 
-  const currentLevelMedals = [2, 3, 4, 5, 6, 7, 8, 9, 10].filter((lvl) => p.level >= lvl).length;
-  const totalCompletedPlays = aggregatedRows.reduce((acc, s) => acc + s.plays, 0);
-  const gamesWith2Plays = aggregatedRows.filter((s) => s.plays >= 2).length;
+  const effProg = getEffectivePlayerProgression(
+    p,
+    ctx.stats,
+    ctx.enabledGames,
+  );
+  const effectiveLevel = Math.max(p.level ?? 1, effProg.level);
+
+  const currentLevelMedals = [2, 3, 4, 5, 6, 7, 8, 9, 10].filter((lvl) => effectiveLevel >= lvl).length;
+  const totalCompletedPlays = Math.max(
+    effProg.matchesPlayed,
+    aggregatedRows.reduce((acc, s) => acc + s.plays, 0),
+  );
+  const gamesWith2Plays = Math.max(
+    aggregatedRows.filter((s) => s.plays >= 2).length,
+    distinctGames >= 4 && totalCompletedPlays >= 8 ? Math.min(distinctGames, Math.floor(totalCompletedPlays / 2)) : 0,
+  );
   const gamesWith10Plays = aggregatedRows.filter((s) => s.plays >= 10).length;
   const isBetaActive = isBetaTesterPeriodActive(now);
   const effectiveStreakDays = Math.max(ctx.streakDays ?? 0, p.streakDays ?? 1);
@@ -1003,7 +1194,7 @@ export function evaluatePlayerMedals(
 
     switch (cond.type) {
       case "player_level":
-        if (p.level >= (cond.threshold ?? 1)) earned = true;
+        if (effectiveLevel >= (cond.threshold ?? 1)) earned = true;
         break;
 
       case "game_best_level":
@@ -1293,7 +1484,8 @@ export function calculateMedalProgress(
   switch (cond.type) {
     case "player_level": {
       const target = cond.threshold ?? 2;
-      const cur = profile.level;
+      const eff = getEffectivePlayerProgression(profile, effectiveStats, enabledGamesOverride);
+      const cur = Math.max(profile.level ?? 1, eff.level);
       const pct = Math.min(100, Math.round((cur / target) * 100));
       return {
         percent: pct,
@@ -1302,8 +1494,15 @@ export function calculateMedalProgress(
     }
     case "game_best_level": {
       const gId = cond.gameId!;
-      const cur = effectiveStatsMap.get(gId)?.best_level ?? 1;
+      const row = effectiveStatsMap.get(gId);
       const target = cond.threshold ?? 3;
+      if (!row || row.plays <= 0) {
+        return {
+          percent: 0,
+          progressText: `Nível 0 de ${target}`,
+        };
+      }
+      const cur = Math.max(1, row.best_level ?? 1);
       const pct = Math.min(100, Math.round((cur / target) * 100));
       return {
         percent: pct,

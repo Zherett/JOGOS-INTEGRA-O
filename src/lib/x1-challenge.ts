@@ -3,8 +3,14 @@
 // deterministic room codes, and 1v1 Tug-of-War / Score-Race evaluation.
 
 import { GAME_NAMES, type GameId } from "./game-storage.ts";
-import { getPlayFabTitleId, isPlayFabConfigured, loadStoredSession } from "./playfab.ts";
+import {
+  getAdminPlayFabTicket,
+  getPlayFabTitleId,
+  isPlayFabConfigured,
+  loadStoredSession,
+} from "./playfab.ts";
 import type { AgeStageId } from "./player-profile.ts";
+import { recordPlayerHeartbeat } from "./presence.ts";
 
 const X1_STORAGE_KEY = "desafios-x1-lobby-state-v1";
 const X1_CHANNEL_NAME = "desafios-x1-broadcast-v1";
@@ -392,10 +398,10 @@ function loadStore(): X1LobbyStore {
     const parsed = JSON.parse(raw) as Partial<X1LobbyStore>;
     const now = Date.now();
 
-    // Prune stale players (> 90s inactive) and old rooms (> 15 min)
+    // Retain players up to 10 minutes (matching PRESENCE_IDLE_MAX_AGE_MS) and rooms up to 15 min
     const players: Record<string, X1OnlinePlayer> = {};
     for (const [id, p] of Object.entries(parsed.players ?? {})) {
-      if (now - p.lastSeenAt < 90_000) players[id] = p;
+      if (now - p.lastSeenAt <= 10 * 60_000) players[id] = p;
     }
 
     const rooms: Record<string, X1Room> = {};
@@ -432,14 +438,15 @@ async function callPlayFabSharedGroup(
   if (!isPlayFabConfigured()) return null;
   const session = loadStoredSession();
   const titleId = getPlayFabTitleId();
-  if (!session?.sessionTicket || !titleId) return null;
+  const ticket = session?.sessionTicket ?? (await getAdminPlayFabTicket());
+  if (!ticket || !titleId) return null;
 
   try {
     const res = await fetch(`https://${titleId}.playfabapi.com/Client/${endpoint}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Authorization": session.sessionTicket,
+        "X-Authorization": ticket,
       },
       body: JSON.stringify({ TitleId: titleId, ...body }),
     });
@@ -461,7 +468,7 @@ export async function syncX1WithPlayFabCloud(activeRoomCode?: string | null): Pr
 
   const remoteLobby = (await callPlayFabSharedGroup("GetSharedGroupData", {
     SharedGroupId: LOBBY_SHARED_GROUP_ID,
-  })) as { Data?: Record<string, { Value: string }> } | null;
+  })) as { Data?: Record<string, { Value: string; LastUpdated?: string }> } | null;
 
   let changed = false;
   if (remoteLobby?.Data?.LobbySnapshot?.Value) {
@@ -469,10 +476,15 @@ export async function syncX1WithPlayFabCloud(activeRoomCode?: string | null): Pr
       const remoteStore = JSON.parse(remoteLobby.Data.LobbySnapshot.Value) as Partial<X1LobbyStore>;
       const now = Date.now();
       for (const [id, p] of Object.entries(remoteStore.players ?? {})) {
-        if (now - p.lastSeenAt < 90_000) {
+        if (now - p.lastSeenAt <= 10 * 60_000) {
           const local = store.players[id];
           if (!local || p.lastSeenAt > local.lastSeenAt) {
             store.players[id] = p;
+            recordPlayerHeartbeat(p.playerId || id, {
+              nick: p.nick,
+              lastSeenAt: p.lastSeenAt,
+              lastActiveAt: p.lastActiveAt ?? p.lastSeenAt,
+            });
             changed = true;
           }
         }
@@ -569,12 +581,18 @@ export function heartbeatOnlinePlayer(player: {
   const store = loadStore();
   const now = Date.now();
   const existing = store.players[player.playerId];
+  const lastActiveAt = player.lastActiveAt ?? existing?.lastActiveAt ?? now;
   store.players[player.playerId] = {
     ...player,
     lastSeenAt: now,
-    lastActiveAt: player.lastActiveAt ?? existing?.lastActiveAt ?? now,
+    lastActiveAt,
   };
   saveStore(store);
+  recordPlayerHeartbeat(player.playerId, {
+    nick: player.nick,
+    lastSeenAt: now,
+    lastActiveAt,
+  });
 }
 
 export function getX1LobbySnapshot(currentPlayerId?: string) {

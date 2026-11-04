@@ -3,6 +3,9 @@ import { usePlayerPresence, type PresenceStatus } from "@/lib/presence";
 
 export interface PresenceDotProps {
   playerId?: string;
+  playfabId?: string;
+  nick?: string;
+  nickNormalized?: string;
   status?: PresenceStatus;
   tooltipText?: string;
   size?: "xs" | "sm" | "md";
@@ -12,13 +15,20 @@ export interface PresenceDotProps {
 
 export const PresenceDot: React.FC<PresenceDotProps> = ({
   playerId,
+  playfabId,
+  nick,
+  nickNormalized,
   status: explicitStatus,
   tooltipText: explicitTooltip,
   size = "sm",
   className = "",
   showPingAnimation = true,
 }) => {
-  const presence = usePlayerPresence(playerId);
+  const presence = usePlayerPresence(playerId, {
+    playfabId,
+    nick,
+    nickNormalized,
+  });
 
   const status: PresenceStatus = explicitStatus ?? presence.status;
   const tooltip = explicitTooltip ?? presence.tooltip;

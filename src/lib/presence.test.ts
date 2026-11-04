@@ -82,4 +82,46 @@ describe("Player Presence System (computePresenceStatus)", () => {
     const offlineTooltip = formatPresenceTooltip("offline");
     assert.equal(offlineTooltip, "Offline");
   });
+
+  it("handles clock-skew-proof idleMs and explicit disconnect flag accurately", () => {
+    // Disconnected explicitly -> immediately offline even if lastSeenAt was recent
+    assert.equal(
+      computePresenceStatus(
+        {
+          lastSeenAt: BASE_NOW - 5_000,
+          lastActiveAt: BASE_NOW - 5_000,
+          idleMs: 0,
+          disconnected: true,
+        },
+        BASE_NOW,
+      ),
+      "offline",
+    );
+
+    // Heartbeat seen 10s ago on server, student was active 1 min ago on their own clock (idleMs = 60_000) -> online
+    assert.equal(
+      computePresenceStatus(
+        {
+          lastSeenAt: BASE_NOW - 10_000,
+          lastActiveAt: BASE_NOW - 70_000,
+          idleMs: 60_000,
+        },
+        BASE_NOW,
+      ),
+      "online",
+    );
+
+    // Heartbeat seen 10s ago on server, student was idle for 6 min on their own clock (idleMs = 360_000) -> idle
+    assert.equal(
+      computePresenceStatus(
+        {
+          lastSeenAt: BASE_NOW - 10_000,
+          lastActiveAt: BASE_NOW - 370_000,
+          idleMs: 6 * 60 * 1000,
+        },
+        BASE_NOW,
+      ),
+      "idle",
+    );
+  });
 });
