@@ -40,6 +40,7 @@ import {
   DEFAULT_MASTER_CODE,
   normalizeCode,
   type PlatformAdminConfig,
+  type PlatformNoticeSlide,
 } from "@/lib/game-codes";
 import { usePlayerAuth } from "@/lib/player-auth";
 import {
@@ -126,7 +127,7 @@ interface Props {
   onConfigSaved?: () => void;
 }
 
-type AdminTab = "jogos" | "arena_x1" | "torneio" | "eventos" | "medalhas" | "turmas" | "resets" | "sistema";
+type AdminTab = "jogos" | "arena_x1" | "torneio" | "eventos" | "avisos" | "medalhas" | "turmas" | "resets" | "sistema";
 
 function randomGameCode(prefix: string): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -250,6 +251,14 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
 
   // System states
   const [newAdminPin, setNewAdminPin] = useState("");
+
+  // Notice Slides states (Quadro de Avisos)
+  const [newNoticeTitle, setNewNoticeTitle] = useState("");
+  const [newNoticeMsg, setNewNoticeMsg] = useState("");
+  const [newNoticeBadge, setNewNoticeBadge] = useState("NOVIDADE");
+  const [newNoticeType, setNewNoticeType] = useState<"announcement" | "game_highlight" | "event_challenge">("announcement");
+  const [newNoticeGame, setNewNoticeGame] = useState<GameId>("rpg");
+  const [newNoticeMedal, setNewNoticeMedal] = useState<string>("");
 
   // Custom Medal Form states
   const [isCreatingMedal, setIsCreatingMedal] = useState(false);
@@ -868,6 +877,15 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                   {activeEventsCount > 0 && (
                     <span className="h-2 w-2 rounded-full bg-amber-500 animate-ping" />
                   )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTab("avisos")}
+                  className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition-colors ${
+                    tab === "avisos" ? "bg-card text-primary shadow-sm" : "text-muted-foreground"
+                  }`}
+                >
+                  <Sparkles className="h-4 w-4 text-primary" /> Avisos
                 </button>
                 <button
                   type="button"
@@ -3140,6 +3158,235 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* TAB: QUADRO DE AVISOS & DESTAQUES */}
+            {tab === "avisos" && (
+              <div className="space-y-4">
+                <div className="rounded-2xl border bg-secondary/30 p-4 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="flex items-center gap-2 font-display text-base font-extrabold text-foreground">
+                      <Sparkles className="h-5 w-5 text-primary" /> Quadro de Avisos & Destaques
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Gerencie os informativos e novidades que aparecem no slide da página inicial para todos os alunos.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-primary/15 px-3 py-1 text-xs font-bold text-primary">
+                      {(draft.noticeSlides || []).filter((s) => s.active).length} aviso(s) ativo(s)
+                    </span>
+                  </div>
+                </div>
+
+                {/* Formulário de Criação de Novo Aviso */}
+                <div className="rounded-2xl border bg-card p-4 space-y-3.5">
+                  <h4 className="font-display text-sm font-extrabold text-foreground flex items-center gap-2">
+                    <span>➕ Criar Novo Aviso ou Destaque</span>
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-foreground">Título do Aviso:</label>
+                      <input
+                        type="text"
+                        value={newNoticeTitle}
+                        onChange={(e) => setNewNoticeTitle(e.target.value)}
+                        placeholder="Ex: Conheça o novo jogo da plataforma!"
+                        className="w-full rounded-xl border bg-background px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-foreground">Tag / Etiqueta do Slide:</label>
+                      <input
+                        type="text"
+                        value={newNoticeBadge}
+                        onChange={(e) => setNewNoticeBadge(e.target.value)}
+                        placeholder="Ex: NOVIDADE, DESTAQUE, DESAFIO"
+                        className="w-full rounded-xl border bg-background px-3 py-2 text-xs font-medium uppercase focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-foreground">Mensagem / Descrição:</label>
+                    <textarea
+                      rows={2}
+                      value={newNoticeMsg}
+                      onChange={(e) => setNewNoticeMsg(e.target.value)}
+                      placeholder="Descreva a novidade ou as instruções do desafio para os jogadores..."
+                      className="w-full rounded-xl border bg-background px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-foreground">Tipo de Destaque:</label>
+                      <select
+                        value={newNoticeType}
+                        onChange={(e) =>
+                          setNewNoticeType(e.target.value as "announcement" | "game_highlight" | "event_challenge")
+                        }
+                        className="w-full rounded-xl border bg-background px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        <option value="announcement">📢 Comunicado / Aviso Geral</option>
+                        <option value="game_highlight">🎮 Jogo em Destaque (Botão direto de Jogar)</option>
+                        <option value="event_challenge">🏆 Desafio Especial (Com Medalha)</option>
+                      </select>
+                    </div>
+
+                    {newNoticeType === "game_highlight" && (
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-foreground">Selecione o Jogo em Destaque:</label>
+                        <select
+                          value={newNoticeGame}
+                          onChange={(e) => setNewNoticeGame(e.target.value as GameId)}
+                          className="w-full rounded-xl border bg-background px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                          {ALL_GAME_IDS.map((id) => (
+                            <option key={id} value={id}>
+                              {GAME_NAMES[id] || id}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {newNoticeType === "event_challenge" && (
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-foreground">Vincular Medalha de Recompensa (Opcional):</label>
+                        <select
+                          value={newNoticeMedal}
+                          onChange={(e) => setNewNoticeMedal(e.target.value)}
+                          className="w-full rounded-xl border bg-background px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                          <option value="">Nenhuma medalha vinculada</option>
+                          {getAllAvailableMedals(draft.customMedals).map((m) => (
+                            <option key={m.id} value={m.id}>
+                              🏅 {m.title} ({RARITY_INFO[m.rarity]?.label})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end pt-1">
+                    <Button
+                      type="button"
+                      disabled={!newNoticeTitle.trim() || !newNoticeMsg.trim()}
+                      onClick={() => {
+                        const slide: PlatformNoticeSlide = {
+                          id: `notice_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                          title: newNoticeTitle.trim(),
+                          message: newNoticeMsg.trim(),
+                          badgeLabel: newNoticeBadge.trim() || "AVISO",
+                          type: newNoticeType,
+                          featuredGameId: newNoticeType === "game_highlight" ? newNoticeGame : null,
+                          linkedMedalId: newNoticeType === "event_challenge" && newNoticeMedal ? newNoticeMedal : null,
+                          active: true,
+                          createdAt: new Date().toISOString(),
+                        };
+                        const nextSlides = [...(draft.noticeSlides || []), slide];
+                        setDraft((prev) => ({ ...prev, noticeSlides: nextSlides }));
+                        setNewNoticeTitle("");
+                        setNewNoticeMsg("");
+                        setNewNoticeBadge("NOVIDADE");
+                        setNewNoticeMedal("");
+                        flashSaved("Novo aviso adicionado ao rascunho!");
+                      }}
+                      className="rounded-xl px-4 py-2 font-display text-xs font-extrabold"
+                    >
+                      Adicionar ao Quadro de Avisos
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Lista de Avisos Cadastrados */}
+                <div className="space-y-2">
+                  <h4 className="font-display text-sm font-extrabold text-foreground">
+                    Avisos no Carrossel ({(draft.noticeSlides || []).length})
+                  </h4>
+
+                  {(!draft.noticeSlides || draft.noticeSlides.length === 0) ? (
+                    <div className="rounded-2xl border border-dashed p-6 text-center text-xs text-muted-foreground">
+                      Nenhum aviso personalizado cadastrado ainda. A plataforma está exibindo os{" "}
+                      <b>avisos informativos padrão</b> (Torneio Ranqueado, Arena X1 e Novos Jogos).
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {draft.noticeSlides.map((slide) => (
+                        <div
+                          key={slide.id}
+                          className={`flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-2xl border p-3.5 transition-all ${
+                            slide.active ? "bg-card border-primary/30" : "bg-muted/40 border-dashed opacity-60"
+                          }`}
+                        >
+                          <div className="space-y-1 min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="rounded-full bg-primary px-2 py-0.2 text-[9px] font-black uppercase text-primary-foreground">
+                                {slide.badgeLabel || "AVISO"}
+                              </span>
+                              <span className="font-display text-sm font-extrabold text-foreground truncate">
+                                {slide.title}
+                              </span>
+                              {!slide.active && (
+                                <span className="rounded-full bg-muted px-2 py-0.2 text-[9px] font-bold text-muted-foreground">
+                                  Inativo
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground line-clamp-1">{slide.message}</p>
+                            <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground font-semibold">
+                              {slide.featuredGameId && (
+                                <span className="text-primary font-bold">
+                                  🎮 Jogo: {GAME_NAMES[slide.featuredGameId] || slide.featuredGameId}
+                                </span>
+                              )}
+                              {slide.linkedMedalId && (
+                                <span className="text-amber-500 font-bold">
+                                  🏅 Medalha Vinculada ({slide.linkedMedalId})
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const next = (draft.noticeSlides || []).map((s) =>
+                                  s.id === slide.id ? { ...s, active: !s.active } : s
+                                );
+                                setDraft((prev) => ({ ...prev, noticeSlides: next }));
+                              }}
+                              className="rounded-xl text-xs h-8"
+                            >
+                              {slide.active ? "Desativar" : "Ativar"}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                const next = (draft.noticeSlides || []).filter((s) => s.id !== slide.id);
+                                setDraft((prev) => ({ ...prev, noticeSlides: next }));
+                              }}
+                              className="rounded-xl text-xs h-8 text-destructive hover:bg-destructive/10"
+                              title="Excluir aviso"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 

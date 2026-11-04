@@ -68,6 +68,19 @@ export interface ResetHistoryEntry {
   reason?: string;
 }
 
+export interface PlatformNoticeSlide {
+  id: string;
+  title: string;
+  message: string;
+  badgeLabel?: string;
+  type: "announcement" | "game_highlight" | "event_challenge";
+  featuredGameId?: GameId | null;
+  linkedEventId?: string | null;
+  linkedMedalId?: string | null;
+  active: boolean;
+  createdAt: string;
+}
+
 export interface PlatformAdminConfig {
   enabledGames: Record<GameId, boolean>;
   gameCodes: Record<GameId, string>;
@@ -112,6 +125,8 @@ export interface PlatformAdminConfig {
   specialEvents?: SpecialEvent[];
   /** Recurring automated events (weekdays/dates) synced with database */
   recurringEvents?: RecurringEvent[];
+  /** Slides/notices managed by the ADM for the prominent Notice Board */
+  noticeSlides?: PlatformNoticeSlide[];
   /** Optional PlayFab Title ID configured via Admin UI. */
   playfabTitleId?: string;
   updatedAt: string;
@@ -141,6 +156,7 @@ export const DEFAULT_ADMIN_CONFIG: PlatformAdminConfig = {
   adminMedalNotifications: [],
   specialEvents: [],
   recurringEvents: [],
+  noticeSlides: [],
   playfabTitleId: "186F63",
   updatedAt: "2026-01-01T00:00:00.000Z",
 };

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   computePresenceStatus,
   formatPresenceTooltip,
+  formatPresenceTimeAgo,
   computePresenceSummary,
   PRESENCE_ONLINE_MAX_AGE_MS,
   PRESENCE_IDLE_MAX_AGE_MS,
@@ -68,9 +69,9 @@ describe("Player Presence System (computePresenceStatus)", () => {
     assert.equal(computePresenceStatus(record, BASE_NOW), "offline");
   });
 
-  it("formats human-readable tooltips correctly for each state", () => {
+  it("formats human-readable tooltips and time-ago strings accurately", () => {
     const onlineTooltip = formatPresenceTooltip("online");
-    assert.ok(onlineTooltip.includes("Online"));
+    assert.ok(onlineTooltip.includes("Online — Ativo agora"));
 
     const idleTooltip = formatPresenceTooltip("idle", {
       lastActiveAt: BASE_NOW - 7 * 60 * 1000,
@@ -79,8 +80,32 @@ describe("Player Presence System (computePresenceStatus)", () => {
     assert.ok(idleTooltip.includes("Inativo"));
     assert.ok(idleTooltip.includes("7 min"));
 
-    const offlineTooltip = formatPresenceTooltip("offline");
-    assert.equal(offlineTooltip, "Offline");
+    // Online há 15 minutos
+    const fifteenMinAgo = formatPresenceTimeAgo({
+      lastActiveAt: BASE_NOW - 15 * 60 * 1000,
+      lastSeenAt: 0,
+      disconnected: true,
+    }, BASE_NOW);
+    assert.equal(fifteenMinAgo, "Online há 15 minutos");
+
+    // Online há 2 horas
+    const twoHoursAgo = formatPresenceTimeAgo({
+      lastActiveAt: BASE_NOW - 2 * 3600 * 1000,
+      lastSeenAt: 0,
+      disconnected: true,
+    }, BASE_NOW);
+    assert.equal(twoHoursAgo, "Online há 2 horas");
+
+    // Online há 3 dias
+    const threeDaysAgo = formatPresenceTimeAgo({
+      lastActiveAt: BASE_NOW - 3 * 86400 * 1000,
+      lastSeenAt: 0,
+      disconnected: true,
+    }, BASE_NOW);
+    assert.equal(threeDaysAgo, "Online há 3 dias");
+
+    // Nunca conectou
+    assert.equal(formatPresenceTimeAgo(null, BASE_NOW), "Nunca conectou");
   });
 
   it("handles clock-skew-proof idleMs and explicit disconnect flag accurately", () => {

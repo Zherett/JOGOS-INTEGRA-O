@@ -28,6 +28,7 @@ import { LeaderboardDialog } from "./LeaderboardDialog";
 import { AdminPanelDialog } from "./AdminPanelDialog";
 import { PlayerMedalsInventory } from "./PlayerMedalsInventory";
 import { TournamentRankBadge } from "./TournamentRankBadge";
+import { ThemeToggle } from "./ThemeToggle";
 import {
   aggregateStatsByGame,
   getDistinctGamesPlayed,
@@ -239,6 +240,9 @@ export function PlayerMenu({ onConfigChanged }: Props) {
   return (
     <>
       <div className="flex flex-wrap items-center justify-end gap-2">
+        {/* Alternador de Tema (Modo Escuro / Modo Claro) */}
+        <ThemeToggle />
+
         {/* Sound Mute Toggle */}
         <button
           type="button"

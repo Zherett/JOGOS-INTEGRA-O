@@ -85,28 +85,100 @@ export function computePresenceStatus(
 }
 
 /**
+ * Formata de maneira amigável em português o tempo decorrido desde a última atividade online
+ * Ex: "Online agora", "Inativo há 7 min", "Online há 15 min", "Online há 2 horas", "Online ontem às 15:30", "Online há 3 dias"
+ */
+export function formatPresenceTimeAgo(
+  record?: { lastActiveAt?: number; lastSeenAt?: number; disconnected?: boolean; idleMs?: number } | null,
+  now = Date.now()
+): string {
+  if (!record) return "Nunca conectou";
+
+  const status = computePresenceStatus(record, now);
+  if (status === "online") {
+    return "Online agora";
+  }
+
+  // Se estiver conectado mas inativo (5 a 10 min)
+  if (status === "idle") {
+    const lastActive = record.lastActiveAt && record.lastActiveAt > 0 ? record.lastActiveAt : record.lastSeenAt;
+    const diffMs = lastActive ? Math.max(0, now - lastActive) : 5 * 60 * 1000;
+    const mins = Math.max(5, Math.floor(diffMs / 60000));
+    return `Inativo há ${mins} min (conectado)`;
+  }
+
+  // Status offline: calcula o tempo desde a última presença
+  const refTime =
+    (record.lastActiveAt && record.lastActiveAt > 0)
+      ? record.lastActiveAt
+      : (record.lastSeenAt && record.lastSeenAt > 0)
+        ? record.lastSeenAt
+        : 0;
+
+  if (!refTime || refTime <= 0) {
+    return "Nunca conectou";
+  }
+
+  const diffMs = Math.max(0, now - refTime);
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMin < 1) {
+    return "Online há instantes";
+  }
+
+  if (diffMin < 60) {
+    return diffMin === 1 ? "Online há 1 minuto" : `Online há ${diffMin} minutos`;
+  }
+
+  // Menos de 24 horas: verifica se foi hoje ou ontem
+  const refDate = new Date(refTime);
+  const nowDate = new Date(now);
+  const isSameDay =
+    refDate.getDate() === nowDate.getDate() &&
+    refDate.getMonth() === nowDate.getMonth() &&
+    refDate.getFullYear() === nowDate.getFullYear();
+
+  if (isSameDay) {
+    return diffHours === 1 ? "Online há 1 hora" : `Online há ${diffHours} horas`;
+  }
+
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday =
+    refDate.getDate() === yesterday.getDate() &&
+    refDate.getMonth() === yesterday.getMonth() &&
+    refDate.getFullYear() === yesterday.getFullYear();
+
+  const hh = String(refDate.getHours()).padStart(2, "0");
+  const mm = String(refDate.getMinutes()).padStart(2, "0");
+
+  if (isYesterday || diffHours < 36) {
+    return `Online ontem às ${hh}:${mm}`;
+  }
+
+  if (diffDays >= 2 && diffDays < 7) {
+    return `Online há ${diffDays} dias`;
+  }
+
+  return "Ausente há mais de 1 semana";
+}
+
+/**
  * Retorna uma descricao textual legivel para acessibilidade e tooltip
  */
 export function formatPresenceTooltip(
   status: PresenceStatus,
-  record?: { lastActiveAt?: number; lastSeenAt?: number } | null,
+  record?: { lastActiveAt?: number; lastSeenAt?: number; nick?: string; disconnected?: boolean } | null,
   now = Date.now()
 ): string {
-  switch (status) {
-    case "online":
-      return "Online — Ativo agora";
-    case "idle": {
-      const last = record?.lastActiveAt || record?.lastSeenAt;
-      if (last) {
-        const mins = Math.max(5, Math.floor((now - last) / 60000));
-        return `Inativo há ${mins} min (conectado)`;
-      }
-      return "Inativo (conectado)";
-    }
-    case "offline":
-    default:
-      return "Offline";
+  const nickPrefix = record?.nick ? `${record.nick}: ` : "";
+  const timeAgo = formatPresenceTimeAgo(record, now);
+  if (status === "online") {
+    return `${nickPrefix}Online — Ativo agora`;
   }
+  return `${nickPrefix}${timeAgo}`;
 }
 
 /**
@@ -371,25 +443,21 @@ export async function syncPresenceFromPlayFab(force = false): Promise<void> {
             (remote.nick ? nickSlug(remote.nick) : key.replace(/^pres_/, ""));
           const pId = remote.playerId || `pf_${slug}`;
 
-          // Se for a mesma conta da sessão local, apenas ignora se a informação local já for mais recente
-          if (
-            localSessionId &&
-            (pId === localSessionId || slug === localSessionId)
-          ) {
-            const cur = store.players[pId] || store.players[slug];
-            if (cur && cur.lastSeenAt >= normalizedSeenAt) {
-              continue;
-            }
-          }
-
           if (remote.disconnected || !remote.lastSeenAt || remote.lastSeenAt <= 0) {
+            const preservedActiveAt =
+              remote.lastActiveAt && remote.lastActiveAt > 0
+                ? remote.lastActiveAt
+                : remote.lastSeenAt && remote.lastSeenAt > 0
+                  ? remote.lastSeenAt
+                  : (store.players[pId]?.lastActiveAt || 0);
+
             const offRec: PlayerPresenceRecord = {
               playerId: pId,
               playfabId: remote.playfabId,
               nick: remote.nick,
               nickNormalized: slug,
               lastSeenAt: 0,
-              lastActiveAt: 0,
+              lastActiveAt: preservedActiveAt,
               idleMs: 0,
               disconnected: true,
             };
@@ -436,6 +504,17 @@ export async function syncPresenceFromPlayFab(force = false): Promise<void> {
 
           const normalizedSeenAt = Math.max(1, syncNow - seenAgeMs);
           const normalizedActiveAt = Math.max(1, normalizedSeenAt - remoteIdleMs);
+
+          // Se for a mesma conta da sessão local, apenas ignora se a informação local já for mais recente
+          if (
+            localSessionId &&
+            (pId === localSessionId || slug === localSessionId)
+          ) {
+            const cur = store.players[pId] || store.players[slug];
+            if (cur && cur.lastSeenAt >= normalizedSeenAt) {
+              continue;
+            }
+          }
 
           const normalizedRec: PlayerPresenceRecord = {
             playerId: pId,
@@ -617,6 +696,7 @@ export function usePlayerPresence(
 ): {
   status: PresenceStatus;
   tooltip: string;
+  timeAgo: string;
   data: PlayerPresenceRecord | null;
 } {
   const [data, setData] = useState<PlayerPresenceRecord | null>(() =>
@@ -658,8 +738,9 @@ export function usePlayerPresence(
 
   const status = computePresenceStatus(data);
   const tooltip = formatPresenceTooltip(status, data);
+  const timeAgo = formatPresenceTimeAgo(data);
 
-  return { status, tooltip, data };
+  return { status, tooltip, timeAgo, data };
 }
 
 /**

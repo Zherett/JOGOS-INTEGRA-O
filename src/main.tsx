@@ -3,6 +3,9 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 import { getRouter } from "./router";
 import "./styles.css";
+import { applyTheme, getInitialTheme } from "./lib/theme";
+
+applyTheme(getInitialTheme());
 
 const router = getRouter();
 

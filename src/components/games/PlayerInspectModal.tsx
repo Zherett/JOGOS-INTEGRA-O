@@ -227,6 +227,7 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
                     nick={profile.nick}
                     nickNormalized={profile.nickNormalized}
                     size="sm"
+                    showTimeAgoText
                   />
                   {isMe && (
                     <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-black text-accent-foreground">

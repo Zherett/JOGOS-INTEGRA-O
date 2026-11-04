@@ -11,6 +11,7 @@ export interface PresenceDotProps {
   size?: "xs" | "sm" | "md";
   className?: string;
   showPingAnimation?: boolean;
+  showTimeAgoText?: boolean;
 }
 
 export const PresenceDot: React.FC<PresenceDotProps> = ({
@@ -23,6 +24,7 @@ export const PresenceDot: React.FC<PresenceDotProps> = ({
   size = "sm",
   className = "",
   showPingAnimation = true,
+  showTimeAgoText = false,
 }) => {
   const presence = usePlayerPresence(playerId, {
     playfabId,
@@ -49,11 +51,17 @@ export const PresenceDot: React.FC<PresenceDotProps> = ({
     offline: "bg-rose-500 ring-rose-500/30",
   }[status];
 
+  const badgeBgClasses = {
+    online: "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400",
+    idle: "bg-slate-400/10 border-slate-400/30 text-slate-600 dark:text-slate-400",
+    offline: "bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400",
+  }[status];
+
   const isAbsolute = className.includes("absolute");
 
-  return (
+  const dot = (
     <span
-      className={`${isAbsolute ? "" : "relative"} inline-flex shrink-0 items-center justify-center ${className}`}
+      className={`${isAbsolute ? "" : "relative"} inline-flex shrink-0 items-center justify-center`}
       title={tooltip}
       aria-label={tooltip}
     >
@@ -66,6 +74,28 @@ export const PresenceDot: React.FC<PresenceDotProps> = ({
       <span
         className={`relative inline-block rounded-full ring-2 ring-card transition-colors duration-300 ${sizeClasses} ${colorClasses}`}
       />
+    </span>
+  );
+
+  if (showTimeAgoText) {
+    return (
+      <span
+        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${badgeBgClasses} ${className}`}
+        title={tooltip}
+      >
+        {dot}
+        <span className="truncate">{presence.timeAgo}</span>
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={`${isAbsolute ? "" : "relative"} inline-flex shrink-0 items-center justify-center ${className}`}
+      title={tooltip}
+      aria-label={tooltip}
+    >
+      {dot}
     </span>
   );
 };

@@ -38,6 +38,8 @@ import {
   recordWeeklyTournamentAttempt,
   resolveWeeklyTournamentGame,
 } from "@/lib/weekly-tournament";
+import integracaoPreto from "@/assets/integracao-preto.jpg";
+import semed from "@/assets/semed.png";
 import {
   ageFrom,
   getLocalDateKey,
@@ -269,14 +271,30 @@ function Index() {
   };
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-6 sm:py-10">
-      <div className="mb-4 flex justify-end">
-        <PlayerMenu
-          onConfigChanged={() => {
-            refreshLocal();
-            void auth.refresh();
-          }}
-        />
+    <main className="mx-auto max-w-5xl px-3 sm:px-4 py-4 sm:py-6">
+      {/* Cabeçalho Unificado: Logos Institucionais à Esquerda (Empilhadas) e Controles à Direita */}
+      <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex flex-col gap-1 shrink-0">
+          <img
+            src={integracaoPreto}
+            alt="Logo do Projeto INTEGRAÇÃO"
+            className="h-6 sm:h-7 w-auto object-contain rounded-sm dark:brightness-110"
+          />
+          <img
+            src={semed}
+            alt="Logo da SEMED Coari"
+            className="h-6 sm:h-7 w-auto object-contain rounded-sm dark:brightness-110"
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <PlayerMenu
+            onConfigChanged={() => {
+              refreshLocal();
+              void auth.refresh();
+            }}
+          />
+        </div>
       </div>
 
       {view === "menu" && showGate && (
@@ -309,6 +327,7 @@ function Index() {
           weeklyGameName={weeklyGameName}
           playerLevel={auth.profile?.level}
           playerProfile={auth.profile}
+          noticeSlides={cfg.noticeSlides}
           onSelect={(id) => {
             setActiveRankedGameId(null);
             setView(id);
@@ -316,6 +335,7 @@ function Index() {
           onAddCode={() => setAddingCode(true)}
           onOpenX1Arena={() => setX1Open(true)}
           onOpenWeeklyTournament={() => setTournamentOpen(true)}
+          onOpenAuth={() => setAuthDialogOpen(true)}
         />
       )}
 
