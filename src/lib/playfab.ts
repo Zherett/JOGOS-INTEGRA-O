@@ -63,6 +63,11 @@ import {
   calculateEventXpMultiplier,
   getEffectiveDailyXpCap,
   getActiveEventBonuses,
+  getActiveSpecialEvents,
+  getActiveRecurringEvents,
+  getEventCycleKey,
+  loadSpecialEvents,
+  loadRecurringEvents,
 } from "./custom-events.ts";
 import {
   aggregateStatsByGame,
@@ -83,6 +88,23 @@ const ADMIN_AUTH_KEY = "desafios-playfab-admin-auth-v1";
 const ADMIN_PIN_KEY = "desafios-playfab-admin-pin-v1";
 export const ROSTER_SHARED_GROUP_ID = "SEMED_STUDENT_ROSTER_V1";
 export const ADMIN_CONFIG_SHARED_GROUP_ID = "SEMED_PLATFORM_CONFIG_V1";
+
+export interface EventProgressData {
+  cycleKey: string;
+  matchesCount?: number;
+  matchesByGame?: Record<string, number>;
+  xpEarned?: number;
+  xpByGame?: Record<string, number>;
+  bestScoreByGame?: Record<string, number>;
+  bestLevelByGame?: Record<string, number>;
+  flawlessCount?: number;
+  x1Wins?: number;
+  maxCombo?: number;
+  dailyCapDaysCount?: number;
+  lastDailyCapDate?: string;
+  teamMatchesCount?: number;
+  distinctGamesPlayed?: string[];
+}
 
 export interface PlayerProfile {
   id: string;
@@ -117,6 +139,7 @@ export interface PlayerProfile {
   lastActiveDate?: string;
   tournamentMedals?: TournamentMedal[];
   unlockedMedals?: PlayerUnlockedMedal[];
+  eventProgress?: Record<string, EventProgressData>;
   stats?: GameStatRow[];
   badges: Badge[];
   isAdmin?: boolean;
@@ -780,7 +803,7 @@ function getPreviousDateKey(dateKey: string): string {
   return getLocalDateKey(d);
 }
 
-function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig): StoredAccount {
+export function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig): StoredAccount {
   const todayKey = getLocalDateKey();
   if (acc.profile.dailyXpDate !== todayKey) {
     acc.profile.dailyXp = 0;
@@ -826,20 +849,34 @@ function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig)
   );
   acc.profile.distinctGamesPlayed = distinctGames;
 
+  const statsPlaysSum = Array.isArray(acc.stats)
+    ? acc.stats.reduce((sum, s) => sum + Math.max(0, s.plays ?? 0), 0)
+    : 0;
   const totalMatchesCount = Math.max(
     acc.profile.matchesPlayed ?? 0,
     acc.profile.totalMatches ?? 0,
     (acc.profile as any).totalPlays ?? 0,
+    statsPlaysSum,
   );
   acc.profile.matchesPlayed = totalMatchesCount;
   acc.profile.totalMatches = totalMatchesCount;
 
+  const statsWinsSum = Array.isArray(acc.stats)
+    ? acc.stats.reduce((sum, s) => sum + Math.max(0, s.wins ?? 0), 0)
+    : 0;
+  const totalWins = Math.max(
+    acc.profile.wins ?? 0,
+    statsWinsSum,
+  );
+  acc.profile.wins = totalWins;
+
   acc.profile.level = calculatePlayerLevel({
     xp: acc.profile.xp,
     matchesPlayed: totalMatchesCount,
-    wins: acc.profile.wins,
+    wins: totalWins,
     distinctGames: acc.profile.distinctGamesPlayed,
   });
+  acc.profile.stats = acc.stats;
 
   const allAvailable = getAllAvailableMedals(cfg.customMedals);
   const medalDefMap = new Map<string, MedalDefinition>(allAvailable.map((m) => [m.id, m]));
@@ -936,6 +973,28 @@ function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig)
     });
 
     acc.profile.unlockedMedals = filtered;
+  }
+
+  // Avalia e concede automaticamente medalhas legítimas que o aluno tem direito (ex: nível atualizado ou exploração)
+  if (!isAdminAcc) {
+    const legitimatelyAwarded = evaluatePlayerMedals(
+      {
+        profile: acc.profile,
+        stats: acc.stats,
+        enabledGames: cfg.enabledGames,
+      },
+      allAvailable,
+    );
+    if (legitimatelyAwarded.length > 0) {
+      const unlocked = acc.profile.unlockedMedals ?? [];
+      const nowIso = new Date().toISOString();
+      for (const m of legitimatelyAwarded) {
+        if (!unlocked.some((u) => u.medalId === m.id)) {
+          unlocked.push({ medalId: m.id, unlockedAt: nowIso });
+        }
+      }
+      acc.profile.unlockedMedals = unlocked;
+    }
   }
 
   // Sanitization: Players in Etapa 3 (15+ years old) cannot belong to elementary SEMED schools or classes.
@@ -2044,6 +2103,7 @@ export async function updateStudentProfileByAdmin(args: {
           Data: {
             [`stu_${acc.profile.nickNormalized}`]: JSON.stringify({
               ...acc.profile,
+              stats: acc.stats ?? acc.profile.stats ?? [],
               updatedAt: acc.updatedAt,
             }),
           },
@@ -2271,6 +2331,86 @@ export async function playfabRecordMatch(args: {
     distinctGamesPlayed: distinctGames,
     lastMatchScore: safeScore,
   });
+
+  // Atualiza progresso dos eventos ativos para obtenção de medalhas especiais de evento
+  const nowObj = new Date();
+  const allActiveEvents = [
+    ...getActiveSpecialEvents(cfg.specialEvents ?? loadSpecialEvents(), nowObj),
+    ...getActiveRecurringEvents(cfg.recurringEvents ?? loadRecurringEvents(), nowObj),
+  ];
+
+  if (allActiveEvents.length > 0) {
+    if (!acc.profile.eventProgress) {
+      acc.profile.eventProgress = {};
+    }
+    for (const ev of allActiveEvents) {
+      const cycleKey = getEventCycleKey(ev, nowObj);
+      let evProg = acc.profile.eventProgress[ev.id];
+      if (!evProg || evProg.cycleKey !== cycleKey) {
+        evProg = {
+          cycleKey,
+          matchesCount: 0,
+          matchesByGame: {},
+          xpEarned: 0,
+          xpByGame: {},
+          bestScoreByGame: {},
+          bestLevelByGame: {},
+          flawlessCount: 0,
+          x1Wins: 0,
+          maxCombo: 0,
+          dailyCapDaysCount: 0,
+          teamMatchesCount: 0,
+          distinctGamesPlayed: [],
+        };
+        acc.profile.eventProgress[ev.id] = evProg;
+      }
+
+      const inScope = ev.scope === "todos" || ev.scope === args.gameId;
+      if (inScope) {
+        if (!isSyntheticTournamentEntry) {
+          evProg.matchesCount = (evProg.matchesCount ?? 0) + 1;
+          evProg.matchesByGame = evProg.matchesByGame ?? {};
+          evProg.matchesByGame[args.gameId] = (evProg.matchesByGame[args.gameId] ?? 0) + 1;
+        }
+        evProg.xpEarned = (evProg.xpEarned ?? 0) + earnedXp;
+        evProg.xpByGame = evProg.xpByGame ?? {};
+        evProg.xpByGame[args.gameId] = (evProg.xpByGame[args.gameId] ?? 0) + earnedXp;
+
+        evProg.bestScoreByGame = evProg.bestScoreByGame ?? {};
+        evProg.bestScoreByGame[args.gameId] = Math.max(evProg.bestScoreByGame[args.gameId] ?? 0, safeScore);
+
+        evProg.bestLevelByGame = evProg.bestLevelByGame ?? {};
+        evProg.bestLevelByGame[args.gameId] = Math.max(evProg.bestLevelByGame[args.gameId] ?? 1, safeLevel);
+
+        if (flawless) {
+          evProg.flawlessCount = (evProg.flawlessCount ?? 0) + 1;
+        }
+        if (mode === "x1_online" && won) {
+          evProg.x1Wins = (evProg.x1Wins ?? 0) + 1;
+        }
+        if (args.correct > 0) {
+          evProg.maxCombo = Math.max(evProg.maxCombo ?? 0, args.correct);
+        }
+        if (Boolean(args.isTeam || mode === "equipes")) {
+          evProg.teamMatchesCount = (evProg.teamMatchesCount ?? 0) + 1;
+        }
+        if (!evProg.distinctGamesPlayed) {
+          evProg.distinctGamesPlayed = [];
+        }
+        if (!evProg.distinctGamesPlayed.includes(args.gameId)) {
+          evProg.distinctGamesPlayed.push(args.gameId);
+        }
+      }
+
+      // Verifica meta de bater o limite diário de XP
+      const currentDailyXp = acc.profile.dailyXp ?? 0;
+      const effectiveCap = cfg.dailyXpCap ?? 1000;
+      if (currentDailyXp >= effectiveCap && evProg.lastDailyCapDate !== todayKey) {
+        evProg.lastDailyCapDate = todayKey;
+        evProg.dailyCapDaysCount = (evProg.dailyCapDaysCount ?? 0) + 1;
+      }
+    }
+  }
 
   // Evaluate new medals at the end of the match using the exact final wrong/correct/score counts
   const allMedals = getAllAvailableMedals(cfg.customMedals);

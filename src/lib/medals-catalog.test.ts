@@ -674,4 +674,178 @@ describe("Sistema Completo de Medalhas e Inventário", () => {
     // logica e cartesiano habilitados = 2
     assert.equal(limitedCount, 2, "Não deve contar jogos desabilitados");
   });
+
+  it("avalia e concede medalhas vinculadas a eventos com requisitos especiais e respeita ciclo do evento", () => {
+    const eventMedalMatches: MedalDefinition = {
+      id: "ev_med_matches_5",
+      title: "Maratonista do Evento",
+      description: "Jogue 5 partidas durante o evento",
+      rarity: "bronze",
+      category: "evento",
+      iconName: "Flame",
+      eventId: "ev_special_marathon",
+      eventName: "Maratona SEMED",
+      condition: { type: "event_matches", threshold: 5 },
+      eventRequirement: {
+        type: "event_matches",
+        threshold: 5,
+      },
+    };
+
+    const eventMedalFlawless: MedalDefinition = {
+      id: "ev_med_flawless_1",
+      title: "Mente Brilhante do Evento",
+      description: "Finalize 1 partida com zero erros no evento",
+      rarity: "ouro",
+      category: "evento",
+      iconName: "Crown",
+      eventId: "ev_special_marathon",
+      eventName: "Maratona SEMED",
+      condition: { type: "event_flawless", threshold: 1 },
+      eventRequirement: {
+        type: "event_flawless",
+        threshold: 1,
+      },
+    };
+
+    const testCatalog = [eventMedalMatches, eventMedalFlawless];
+
+    const profileIncomplete: PlayerProfile = {
+      id: "student-ev",
+      nick: "AlunoEvento",
+      nickNormalized: "alunoevento",
+      full_name: "ALUNO EVENTO",
+      school: "Raimunda Cruz",
+      grade: "5º ano",
+      birthdate: "2015-05-10",
+      xp: 200,
+      seasonXp: 200,
+      level: 2,
+      wins: 2,
+      matchesPlayed: 3,
+      seasonId: 1,
+      badges: [],
+      eventProgress: {
+        ev_special_marathon: {
+          cycleKey: "ev_special_marathon_2026-11-03",
+          matchesCount: 3,
+          flawlessCount: 0,
+        },
+      },
+    };
+
+    // 3 de 5 partidas: ainda não ganha a medalha
+    const res1 = evaluatePlayerMedals({ profile: profileIncomplete, stats: [] }, testCatalog);
+    assert.equal(res1.length, 0);
+
+    // Verifica cálculo de progresso (3/5 = 60%)
+    const prog = calculateMedalProgress(eventMedalMatches, profileIncomplete);
+    assert.equal(prog.percent, 60);
+    assert.ok(prog.progressText.includes("3 de 5"));
+
+    // Atualiza progresso para 5 partidas e 1 sem erros
+    const profileComplete: PlayerProfile = {
+      ...profileIncomplete,
+      eventProgress: {
+        ev_special_marathon: {
+          cycleKey: "ev_special_marathon_2026-11-03",
+          matchesCount: 5,
+          flawlessCount: 1,
+        },
+      },
+    };
+
+    const res2 = evaluatePlayerMedals({ profile: profileComplete, stats: [] }, testCatalog);
+    const awardedIds = res2.map((m) => m.id);
+    assert.ok(awardedIds.includes("ev_med_matches_5"));
+    assert.ok(awardedIds.includes("ev_med_flawless_1"));
+
+    // O aluno que já conquistou a medalha mantém ela para sempre mesmo se o evento reiniciar
+    const profileAwarded: PlayerProfile = {
+      ...profileComplete,
+      unlockedMedals: [
+        { medalId: "ev_med_matches_5", unlockedAt: "2026-11-03T10:00:00Z" },
+      ],
+      eventProgress: {
+        // Novo ciclo/edição com progresso zerado
+        ev_special_marathon: {
+          cycleKey: "ev_special_marathon_2026-11-10",
+          matchesCount: 1,
+          flawlessCount: 0,
+        },
+      },
+    };
+
+    const res3 = evaluatePlayerMedals({ profile: profileAwarded, stats: [] }, testCatalog);
+    // Como ev_med_matches_5 já está desbloqueada, não a recebe novamente
+    assert.ok(!res3.some((m) => m.id === "ev_med_matches_5"));
+    assert.ok(profileAwarded.unlockedMedals!.some((u) => u.medalId === "ev_med_matches_5"));
+  });
+
+  it("garante que atividade em múltiplos jogos avança de nível e destrava medalha de nível correspondente", () => {
+    // Aluno com progresso em dois jogos (ex: Lógica e Tabuada), mas cujo profile.wins estava zerado
+    const aluno: PlayerProfile = {
+      id: "aluno_progresso",
+      nick: "AlunoMulti",
+      nickNormalized: "alunomulti",
+      full_name: "ALUNO MULTI JOGOS",
+      school: "Raimunda Cruz",
+      grade: "7º ano",
+      birthdate: "2013-05-15",
+      xp: 250,
+      seasonXp: 250,
+      level: 1, // preso incorretamente no nível 1
+      wins: 0, // wins não consolidadas no profile
+      matchesPlayed: 0,
+      badges: [],
+      seasonId: 1,
+      unlockedMedals: [],
+    };
+
+    const stats: GameStatRow[] = [
+      {
+        game_id: "logica",
+        mode: "padrao",
+        plays: 3,
+        wins: 1,
+        best_score: 50,
+        best_level: 2,
+        last_played_at: "2026-11-03T10:00:00Z",
+      },
+      {
+        game_id: "cartesiano",
+        mode: "padrao",
+        plays: 2,
+        wins: 1,
+        best_score: 40,
+        best_level: 1,
+        last_played_at: "2026-11-03T11:00:00Z",
+      },
+    ];
+
+    // 1. getDistinctGamesPlayed identifica 2 jogos distintos
+    const distinct = getDistinctGamesPlayed(aluno, stats);
+    assert.equal(distinct, 2);
+
+    // 2. Progresso de medalhas calcula as frações dos jogos
+    const cat = buildBaseMedalsCatalog();
+    const medalLogica = cat.find((m) => m.id === "game_logica_matches_10"); // 10 partidas
+    assert.ok(medalLogica, "Medalha de 10 partidas de lógica encontrada");
+    const progLogica = calculateMedalProgress(medalLogica, aluno, stats);
+    assert.equal(progLogica.percent, 30); // 3 de 10 partidas = 30%
+
+    // 3. Avaliação de medalhas concede lvl_2
+    const totalWins = stats.reduce((s, r) => s + (r.wins ?? 0), 0);
+    const totalPlays = stats.reduce((s, r) => s + (r.plays ?? 0), 0);
+    const updatedProfile: PlayerProfile = {
+      ...aluno,
+      wins: totalWins,
+      matchesPlayed: totalPlays,
+      distinctGamesPlayed: distinct,
+      level: 2,
+    };
+
+    const awarded = evaluatePlayerMedals({ profile: updatedProfile, stats }, cat);
+    assert.ok(awarded.some((m) => m.id === "lvl_2"), "Medalha lvl_2 deve ser concedida");
+  });
 });

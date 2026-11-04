@@ -59,12 +59,13 @@ export function PlayerMedalsInventory({
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
   const [selectedRarity, setSelectedRarity] = useState<string>("ALL");
-  const [activeTab, setActiveTab] = useState<"vitrine" | "catalogo">("vitrine");
+  const [activeTab, setActiveTab] = useState<"vitrine" | "catalogo" | "eventos">("vitrine");
 
   // Selected medal for detail modal
   const [selectedMedal, setSelectedMedal] = useState<MedalDefinition | null>(null);
 
   const allMedals = getAllAvailableMedals(customMedals);
+  const eventMedalsList = allMedals.filter((m) => m.category === "evento" || Boolean(m.eventId));
   const unlockedMap = new Map<string, PlayerUnlockedMedal>();
   unlockedMedals.forEach((u) => unlockedMap.set(u.medalId, u));
 
@@ -107,6 +108,7 @@ export function PlayerMedalsInventory({
   });
 
   const filtered = sortedMedals.filter(({ medal: m }) => {
+    if (activeTab === "eventos" && m.category !== "evento" && !m.eventId) return false;
     if (selectedCategory !== "ALL" && m.category !== selectedCategory) return false;
     if (selectedRarity !== "ALL" && m.rarity !== selectedRarity) return false;
     if (search.trim()) {
@@ -129,8 +131,8 @@ export function PlayerMedalsInventory({
 
   return (
     <div className="space-y-4">
-      {/* Abas: Vitrine de Honra & Catálogo de Medalhas */}
-      <div className="flex items-center gap-2 border-b pb-2">
+      {/* Abas: Vitrine de Honra, Catálogo Geral & Catálogo de Eventos */}
+      <div className="flex flex-wrap items-center gap-2 border-b pb-2">
         <button
           type="button"
           onClick={() => setActiveTab("vitrine")}
@@ -153,7 +155,19 @@ export function PlayerMedalsInventory({
           }`}
         >
           <Trophy className="h-3.5 w-3.5" />
-          Catálogo Completo ({allMedals.length} Medalhas)
+          Catálogo Geral ({allMedals.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("eventos")}
+          className={`flex items-center gap-2 rounded-xl px-3 py-1.5 font-display text-xs font-black transition-all ${
+            activeTab === "eventos"
+              ? "bg-amber-500 text-amber-950 shadow-sm"
+              : "text-muted-foreground hover:bg-secondary/70 hover:text-foreground"
+          }`}
+        >
+          <Star className="h-3.5 w-3.5" />
+          🎪 Medalhas de Eventos ({eventMedalsList.length})
         </button>
       </div>
 
@@ -231,8 +245,19 @@ export function PlayerMedalsInventory({
         </div>
       )}
 
-      {activeTab === "catalogo" && (
+      {(activeTab === "catalogo" || activeTab === "eventos") && (
         <div className="space-y-3">
+          {activeTab === "eventos" && (
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
+              <p className="font-bold flex items-center gap-1.5">
+                <Star className="h-4 w-4" /> Medalhas Exclusivas de Eventos
+              </p>
+              <p className="text-[11px] opacity-90 mt-0.5">
+                Estas medalhas possuem objetivos e missões especiais vinculadas aos eventos temporários e recorrentes da plataforma.
+              </p>
+            </div>
+          )}
+
           {/* Barra de Busca e Filtros */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative flex-1 min-w-[160px]">
@@ -344,6 +369,11 @@ export function PlayerMedalsInventory({
                       <h5 className="truncate font-display text-xs font-black text-foreground">
                         {isSecretLocked ? "Medalha Secreta" : m.title}
                       </h5>
+                      {(m.category === "evento" || m.eventName) && !isSecretLocked && (
+                        <span className="inline-flex items-center gap-1 mt-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.2 text-[9px] font-extrabold text-amber-600 dark:text-amber-400">
+                          🎪 {m.eventName ? `Evento: ${m.eventName}` : "Evento Especial"}
+                        </span>
+                      )}
                       <p className="line-clamp-2 text-[10px] text-muted-foreground leading-tight mt-0.5">
                         {isSecretLocked
                           ? "Medalha secreta. Jogue e descubra como conquistá-la!"

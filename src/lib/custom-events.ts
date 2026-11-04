@@ -20,6 +20,7 @@ export interface SpecialEvent {
   endsAt: string;
   active: boolean;
   linkedMedalId?: string | null;
+  linkedMedalIds?: string[];
   objectiveDescription?: string | null;
   createdAt: string;
 }
@@ -60,6 +61,42 @@ export function getActiveSpecialEvents(
   now = new Date(),
 ): SpecialEvent[] {
   return events.filter((e) => isEventActive(e, now));
+}
+
+/**
+ * Retorna todos os IDs de medalhas associadas a um evento (pontual ou recorrente).
+ */
+export function getEventLinkedMedalIds(ev: {
+  linkedMedalId?: string | null;
+  linkedMedalIds?: string[];
+}): string[] {
+  const ids: string[] = [];
+  if (Array.isArray(ev.linkedMedalIds)) {
+    for (const id of ev.linkedMedalIds) {
+      if (id && !ids.includes(id)) ids.push(id);
+    }
+  }
+  if (ev.linkedMedalId && !ids.includes(ev.linkedMedalId)) {
+    ids.push(ev.linkedMedalId);
+  }
+  return ids;
+}
+
+/**
+ * Retorna a chave de ciclo do evento para controle de progresso estritamente durante aquela edição.
+ * Se o evento for pontual, a chave é o startsAt. Se for recorrente, a chave é o dia YYYY-MM-DD.
+ */
+export function getEventCycleKey(
+  ev: { id: string; startsAt?: string },
+  now = new Date(),
+): string {
+  if (ev.startsAt) {
+    return `${ev.id}_${ev.startsAt}`;
+  }
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${ev.id}_${y}-${m}-${d}`;
 }
 
 export interface ActiveEventBonuses {
@@ -268,11 +305,17 @@ export function createSpecialEvent(args: {
   dailyXpCap?: number;
   durationHours: number;
   linkedMedalId?: string | null;
+  linkedMedalIds?: string[];
   objectiveDescription?: string | null;
   now?: Date;
 }): SpecialEvent {
   const now = args.now ?? new Date();
   const endsAt = new Date(now.getTime() + args.durationHours * 3600 * 1000).toISOString();
+  const finalLinkedIds = Array.isArray(args.linkedMedalIds)
+    ? [...args.linkedMedalIds]
+    : args.linkedMedalId
+      ? [args.linkedMedalId]
+      : [];
 
   const ev: SpecialEvent = {
     id: `ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -287,7 +330,8 @@ export function createSpecialEvent(args: {
     startsAt: now.toISOString(),
     endsAt,
     active: true,
-    linkedMedalId: args.linkedMedalId ?? null,
+    linkedMedalId: finalLinkedIds[0] ?? null,
+    linkedMedalIds: finalLinkedIds,
     objectiveDescription: args.objectiveDescription?.trim() ?? null,
     createdAt: now.toISOString(),
   };
@@ -317,6 +361,7 @@ export interface RecurringEvent {
   dailyXpCap?: number;
   active: boolean;
   linkedMedalId?: string | null;
+  linkedMedalIds?: string[];
   objectiveDescription?: string | null;
   createdAt: string;
 }
@@ -421,10 +466,17 @@ export function createRecurringEvent(args: {
   matchXpCap?: number;
   dailyXpCap?: number;
   linkedMedalId?: string | null;
+  linkedMedalIds?: string[];
   objectiveDescription?: string | null;
   now?: Date;
 }): RecurringEvent {
   const now = args.now ?? new Date();
+  const finalLinkedIds = Array.isArray(args.linkedMedalIds)
+    ? [...args.linkedMedalIds]
+    : args.linkedMedalId
+      ? [args.linkedMedalId]
+      : [];
+
   const ev: RecurringEvent = {
     id: `rec_ev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     title: args.title.trim(),
@@ -436,7 +488,8 @@ export function createRecurringEvent(args: {
     matchXpCap: args.matchXpCap,
     dailyXpCap: args.dailyXpCap,
     active: true,
-    linkedMedalId: args.linkedMedalId ?? null,
+    linkedMedalId: finalLinkedIds[0] ?? null,
+    linkedMedalIds: finalLinkedIds,
     objectiveDescription: args.objectiveDescription?.trim() ?? null,
     createdAt: now.toISOString(),
   };
@@ -468,6 +521,7 @@ export interface ActiveEventDisplayItem {
   bonusScopeText: string;
   activePeriodLabel?: string;
   linkedMedalId?: string | null;
+  linkedMedalIds?: string[];
   objectiveDescription?: string | null;
   isRecurring: boolean;
 }
@@ -552,6 +606,7 @@ export function getAllActiveEvents(
       bonusScopeText: ev.scope === "todos" ? "Todos os Jogos" : (GAME_NAMES[ev.scope] ?? ev.scope),
       activePeriodLabel: `Até ${formatDateTimeBR(ev.endsAt)}`,
       linkedMedalId: ev.linkedMedalId,
+      linkedMedalIds: ev.linkedMedalIds ?? (ev.linkedMedalId ? [ev.linkedMedalId] : []),
       objectiveDescription: ev.objectiveDescription,
       isRecurring: false,
     });
@@ -583,6 +638,7 @@ export function getAllActiveEvents(
       bonusScopeText: ev.scope === "todos" ? "Todos os Jogos" : (GAME_NAMES[ev.scope] ?? ev.scope),
       activePeriodLabel: `Válido hoje (${formatDateOnlyBR(todayDateStr)})`,
       linkedMedalId: ev.linkedMedalId,
+      linkedMedalIds: ev.linkedMedalIds ?? (ev.linkedMedalId ? [ev.linkedMedalId] : []),
       objectiveDescription: ev.objectiveDescription,
       isRecurring: true,
     });

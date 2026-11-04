@@ -78,6 +78,7 @@ import {
   createRecurringEvent,
   isRecurringEventActive,
   DAYS_OF_WEEK,
+  getEventLinkedMedalIds,
   type SpecialEvent,
   type RecurringEvent,
   type EventBonusType,
@@ -87,8 +88,11 @@ import {
   getAllAvailableMedals,
   getDistinctGamesPlayed,
   RARITY_INFO,
+  formatEventRequirementLabel,
   type MedalDefinition,
   type MedalRarity,
+  type EventRequirementType,
+  type EventMedalRequirement,
 } from "@/lib/medals-catalog";
 import {
   getActiveRotatedX1Game,
@@ -119,6 +123,24 @@ function randomGameCode(prefix: string): string {
   return out;
 }
 
+const EVENT_REQUIREMENT_OPTIONS: {
+  type: EventRequirementType;
+  label: string;
+  unit: string;
+  defaultVal: number;
+}[] = [
+  { type: "event_matches", label: "Partidas Jogadas no Evento", unit: "partida(s)", defaultVal: 5 },
+  { type: "event_xp", label: "XP Acumulado no Evento", unit: "XP", defaultVal: 300 },
+  { type: "event_score", label: "Pontuação Máxima em uma Partida", unit: "pontos", defaultVal: 50 },
+  { type: "event_level", label: "Nível Alcançado no Jogo", unit: "Nível", defaultVal: 3 },
+  { type: "event_flawless", label: "Vitória com Zero Erros (Partida Perfeita)", unit: "partida(s) com 0 erros", defaultVal: 1 },
+  { type: "event_x1_wins", label: "Gladiador do X1 (Vitórias no Versus Online)", unit: "vitória(s)", defaultVal: 3 },
+  { type: "event_combo", label: "Sequência de Acertos (Combo sem Erros)", unit: "acertos seguidos", defaultVal: 10 },
+  { type: "event_daily_cap", label: "Constância (Bater Limite Diário de XP)", unit: "dia(s)", defaultVal: 1 },
+  { type: "event_team_matches", label: "Espírito de Equipe (Modo Grupos)", unit: "partida(s)", defaultVal: 3 },
+  { type: "event_distinct_games", label: "Explorador Multijogos do Evento", unit: "jogos diferentes", defaultVal: 3 },
+];
+
 export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const auth = usePlayerAuth();
   const [pinInput, setPinInput] = useState("");
@@ -145,6 +167,20 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [evLinkedMedalId, setEvLinkedMedalId] = useState<string>("");
   const [evObjective, setEvObjective] = useState<string>("");
 
+  // Event Medals state for punctual events
+  const [evAttachedMedals, setEvAttachedMedals] = useState<MedalDefinition[]>([]);
+  const [isAddingMedalToEv, setIsAddingMedalToEv] = useState(false);
+  const [evMedalMode, setEvMedalMode] = useState<"novo" | "existente">("novo");
+  const [evNewMedalTitle, setEvNewMedalTitle] = useState("");
+  const [evNewMedalDesc, setEvNewMedalDesc] = useState("");
+  const [evNewMedalRarity, setEvNewMedalRarity] = useState<MedalRarity>("ouro");
+  const [evNewMedalIcon, setEvNewMedalIcon] = useState("Award");
+  const [evNewMedalReqType, setEvNewMedalReqType] = useState<EventRequirementType>("event_matches");
+  const [evNewMedalScope, setEvNewMedalScope] = useState<"todos" | GameId>("todos");
+  const [evNewMedalThreshold, setEvNewMedalThreshold] = useState<number>(5);
+  const [evNewMedalMinScore, setEvNewMedalMinScore] = useState<number>(30);
+  const [evSelectedExistingMedalId, setEvSelectedExistingMedalId] = useState("");
+
   // Eventos Sub-Abas: "criacao" e "recorrentes"
   const [eventosSubTab, setEventosSubTab] = useState<"criacao" | "recorrentes">("criacao");
   const [recurringEvents, setRecurringEvents] = useState<RecurringEvent[]>([]);
@@ -163,6 +199,20 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [recDailyExtraXp, setRecDailyExtraXp] = useState<number>(500);
   const [recLinkedMedal, setRecLinkedMedal] = useState<string>("");
   const [recObjective, setRecObjective] = useState<string>("");
+
+  // Event Medals state for recurring events
+  const [recAttachedMedals, setRecAttachedMedals] = useState<MedalDefinition[]>([]);
+  const [isAddingMedalToRec, setIsAddingMedalToRec] = useState(false);
+  const [recMedalMode, setRecMedalMode] = useState<"novo" | "existente">("novo");
+  const [recNewMedalTitle, setRecNewMedalTitle] = useState("");
+  const [recNewMedalDesc, setRecNewMedalDesc] = useState("");
+  const [recNewMedalRarity, setRecNewMedalRarity] = useState<MedalRarity>("ouro");
+  const [recNewMedalIcon, setRecNewMedalIcon] = useState("Award");
+  const [recNewMedalReqType, setRecNewMedalReqType] = useState<EventRequirementType>("event_matches");
+  const [recNewMedalScope, setRecNewMedalScope] = useState<"todos" | GameId>("todos");
+  const [recNewMedalThreshold, setRecNewMedalThreshold] = useState<number>(5);
+  const [recNewMedalMinScore, setRecNewMedalMinScore] = useState<number>(30);
+  const [recSelectedExistingMedalId, setRecSelectedExistingMedalId] = useState("");
 
   // Arena X1 Caixa de Entrada / Histórico
   const [x1History, setX1History] = useState<X1MatchLogEntry[]>([]);
@@ -190,6 +240,10 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [newMedalDesc, setNewMedalDesc] = useState("");
   const [newMedalRarity, setNewMedalRarity] = useState<MedalRarity>("ouro");
   const [newMedalIcon, setNewMedalIcon] = useState("Award");
+  const [newMedalMode, setNewMedalMode] = useState<"manual" | "evento">("evento");
+  const [newMedalReqType, setNewMedalReqType] = useState<EventRequirementType>("event_matches");
+  const [newMedalScope, setNewMedalScope] = useState<"todos" | GameId>("todos");
+  const [newMedalThreshold, setNewMedalThreshold] = useState<number>(5);
 
   // Manual Grant Modal state
   const [grantMedalTarget, setGrantMedalTarget] = useState<MedalDefinition | null>(null);
@@ -231,6 +285,31 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
 
     return counts;
   }, [registeredStudents, auth.stats, auth.profile?.id]);
+
+  // Identificação de medalhas já atreladas a eventos ativos
+  const activeLinkedMedalIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const ev of specialEvents) {
+      if (ev.active) {
+        getEventLinkedMedalIds(ev).forEach((id) => ids.add(id));
+      }
+    }
+    for (const ev of recurringEvents) {
+      if (ev.active) {
+        getEventLinkedMedalIds(ev).forEach((id) => ids.add(id));
+      }
+    }
+    return ids;
+  }, [specialEvents, recurringEvents]);
+
+  // Medalhas de eventos disponíveis que não estão atualmente em uso em eventos ativos
+  const availableExistingEventMedals = useMemo(() => {
+    return getAllAvailableMedals(draft.customMedals).filter(
+      (m) =>
+        (m.category === "evento" || Boolean(m.eventRequirement)) &&
+        !activeLinkedMedalIds.has(m.id)
+    );
+  }, [draft.customMedals, activeLinkedMedalIds]);
 
   useEffect(() => {
     if (!open) return;
@@ -469,6 +548,15 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
       flashSaved("Marque pelo menos uma das caixas de bônus para ativar no evento.");
       return;
     }
+    const newCustoms = [...(draft.customMedals ?? [])];
+    const linkedIds: string[] = [];
+    for (const m of evAttachedMedals) {
+      if (!newCustoms.some((c) => c.id === m.id)) {
+        newCustoms.push(m);
+      }
+      linkedIds.push(m.id);
+    }
+
     createSpecialEvent({
       title: evTitle,
       description: evDesc,
@@ -485,7 +573,8 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
       matchXpCap: evHasMatchCap ? Number(evMatchXpCap) : undefined,
       dailyXpCap: evHasDailyCap ? 1000 + Number(evDailyExtraXp) : undefined,
       durationHours: Number(evDurationHours),
-      linkedMedalId: evLinkedMedalId || null,
+      linkedMedalId: linkedIds[0] ?? (evLinkedMedalId || null),
+      linkedMedalIds: linkedIds,
       objectiveDescription: evObjective || null,
     });
     const updated = loadSpecialEvents();
@@ -494,7 +583,8 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     setEvTitle("");
     setEvDesc("");
     setEvObjective("");
-    const nextCfg = { ...draft, specialEvents: updated };
+    setEvAttachedMedals([]);
+    const nextCfg = { ...draft, specialEvents: updated, customMedals: newCustoms };
     setDraft(nextCfg);
     await auth.updateAdminConfig(nextCfg);
     flashSaved(
@@ -551,6 +641,15 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
       flashSaved("Marque pelo menos uma das caixas de bônus para ativar no evento.");
       return;
     }
+    const newCustoms = [...(draft.customMedals ?? [])];
+    const linkedIds: string[] = [];
+    for (const m of recAttachedMedals) {
+      if (!newCustoms.some((c) => c.id === m.id)) {
+        newCustoms.push(m);
+      }
+      linkedIds.push(m.id);
+    }
+
     createRecurringEvent({
       title: recTitle,
       description: recDesc,
@@ -560,7 +659,8 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
       xpMultiplier: recHasMultiplier ? Number(recMultiplier) : undefined,
       matchXpCap: recHasMatchCap ? Number(recMatchCap) : undefined,
       dailyXpCap: recHasDailyCap ? 1000 + Number(recDailyExtraXp) : undefined,
-      linkedMedalId: recLinkedMedal || null,
+      linkedMedalId: linkedIds[0] ?? (recLinkedMedal || null),
+      linkedMedalIds: linkedIds,
       objectiveDescription: recObjective || null,
     });
     const updated = loadRecurringEvents();
@@ -571,7 +671,8 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     setRecObjective("");
     setRecSpecificDates([]);
     setRecDaysOfWeek([6, 0]);
-    const nextCfg = { ...draft, recurringEvents: updated };
+    setRecAttachedMedals([]);
+    const nextCfg = { ...draft, recurringEvents: updated, customMedals: newCustoms };
     setDraft(nextCfg);
     await auth.updateAdminConfig(nextCfg);
     flashSaved(
@@ -1629,33 +1730,344 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                           </div>
 
                           <div className="space-y-1">
-                            <Label className="text-xs font-bold">Medalha Vinculada (Opcional)</Label>
+                            <Label className="text-xs font-bold">Duração do Evento</Label>
                             <select
-                              value={evLinkedMedalId}
-                              onChange={(e) => setEvLinkedMedalId(e.target.value)}
+                              value={evDurationHours}
+                              onChange={(e) => setEvDurationHours(Number(e.target.value))}
                               className="h-9 w-full rounded-xl border bg-background px-3 text-xs font-bold"
                             >
-                              <option value="">Nenhuma medalha vinculada</option>
-                              {getAllAvailableMedals(draft.customMedals).map((m) => (
-                                <option key={m.id} value={m.id}>
-                                  🏅 {m.title} ({RARITY_INFO[m.rarity].label})
-                                </option>
-                              ))}
+                              <option value={12}>12 Horas</option>
+                              <option value={24}>1 Dia (24 horas)</option>
+                              <option value={48}>2 Dias (Fim de Semana)</option>
+                              <option value={72}>3 Dias (72 horas)</option>
+                              <option value={168}>1 Semana Completa (7 dias)</option>
                             </select>
                           </div>
                         </div>
 
-                        {evLinkedMedalId && (
-                          <div className="space-y-1 animate-in fade-in-50">
-                            <Label className="text-xs font-bold">Objetivo / Missão da Medalha</Label>
-                            <Input
-                              value={evObjective}
-                              onChange={(e) => setEvObjective(e.target.value)}
-                              placeholder="Ex: Conclua 5 partidas durante o evento para desbloquear a medalha."
-                              className="rounded-xl h-9 text-xs"
-                            />
+                        {/* Seção de Medalhas Atribuídas ao Evento */}
+                        <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-3.5 space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <h5 className="font-display text-xs font-black uppercase text-primary flex items-center gap-1.5">
+                                <Award className="h-4 w-4 text-primary" /> Medalhas do Evento ({evAttachedMedals.length})
+                              </h5>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">
+                                Crie ou vincule medalhas exclusivas com objetivos e missões a serem cumpridos durante o evento.
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={isAddingMedalToEv ? "secondary" : "default"}
+                              onClick={() => setIsAddingMedalToEv(!isAddingMedalToEv)}
+                              className="rounded-xl font-bold text-xs h-8"
+                            >
+                              {isAddingMedalToEv ? "Fechar Seletor" : "+ Adicionar Medalha ao Evento"}
+                            </Button>
                           </div>
-                        )}
+
+                          {/* Lista das Medalhas já anexadas */}
+                          {evAttachedMedals.length > 0 ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {evAttachedMedals.map((m, idx) => {
+                                const rarity = RARITY_INFO[m.rarity];
+                                return (
+                                  <div
+                                    key={m.id || idx}
+                                    className="flex items-center justify-between gap-2 rounded-xl border bg-card p-2.5 shadow-xs"
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <div className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border ${rarity.badgeBgClass}`}>
+                                        <div className={rarity.textColor}>
+                                          <MedalIcon name={m.iconName} className="h-4 w-4" />
+                                        </div>
+                                      </div>
+                                      <div className="min-w-0">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="truncate font-display text-xs font-black text-foreground">
+                                            {m.title}
+                                          </span>
+                                          <span className={`rounded-full px-1.5 py-0.2 text-[8px] font-black uppercase ${rarity.badgeBgClass}`}>
+                                            {rarity.label}
+                                          </span>
+                                        </div>
+                                        <p className="line-clamp-1 text-[10px] text-muted-foreground">
+                                          {m.eventRequirement ? formatEventRequirementLabel(m.eventRequirement) : m.description}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEvAttachedMedals(evAttachedMedals.filter((_, i) => i !== idx))}
+                                      className="rounded-lg p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                      title="Remover medalha deste evento"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="rounded-xl border border-dashed border-primary/20 p-3 text-center text-[11px] text-muted-foreground">
+                              Nenhuma medalha vinculada ainda. Clique em <b>"+ Adicionar Medalha ao Evento"</b> para criar novas medalhas com requisitos específicos ou escolher existentes.
+                            </div>
+                          )}
+
+                          {/* Sub-painel para Adicionar Medalha */}
+                          {isAddingMedalToEv && (
+                            <div className="rounded-2xl border bg-card p-3 space-y-3 animate-in fade-in-50">
+                              <div className="flex items-center gap-2 border-b pb-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setEvMedalMode("novo")}
+                                  className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                                    evMedalMode === "novo"
+                                      ? "bg-primary text-primary-foreground shadow-xs"
+                                      : "text-muted-foreground hover:bg-secondary"
+                                  }`}
+                                >
+                                  ✨ Criar Nova Medalha
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEvMedalMode("existente")}
+                                  className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                                    evMedalMode === "existente"
+                                      ? "bg-primary text-primary-foreground shadow-xs"
+                                      : "text-muted-foreground hover:bg-secondary"
+                                  }`}
+                                >
+                                  📂 Utilizar Medalha Existente ({availableExistingEventMedals.length})
+                                </button>
+                              </div>
+
+                              {evMedalMode === "novo" ? (
+                                <div className="space-y-3">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                    <div className="space-y-1">
+                                      <Label className="text-[11px] font-bold">Título da Medalha</Label>
+                                      <Input
+                                        value={evNewMedalTitle}
+                                        onChange={(e) => setEvNewMedalTitle(e.target.value)}
+                                        placeholder="Ex: Campeão da Arena 2x"
+                                        className="h-8 rounded-lg text-xs"
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label className="text-[11px] font-bold">Raridade</Label>
+                                      <select
+                                        value={evNewMedalRarity}
+                                        onChange={(e) => setEvNewMedalRarity(e.target.value as MedalRarity)}
+                                        className="h-8 w-full rounded-lg border bg-background px-2 text-xs font-bold"
+                                      >
+                                        <option value="bronze">Bronze</option>
+                                        <option value="prata">Prata</option>
+                                        <option value="ouro">Ouro</option>
+                                        <option value="platina">Platina</option>
+                                        <option value="diamante">Diamante</option>
+                                        <option value="heroi">Herói</option>
+                                      </select>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                    <div className="space-y-1">
+                                      <Label className="text-[11px] font-bold">Requisito do Evento</Label>
+                                      <select
+                                        value={evNewMedalReqType}
+                                        onChange={(e) => {
+                                          const t = e.target.value as EventRequirementType;
+                                          setEvNewMedalReqType(t);
+                                          const opt = EVENT_REQUIREMENT_OPTIONS.find((o) => o.type === t);
+                                          if (opt) setEvNewMedalThreshold(opt.defaultVal);
+                                        }}
+                                        className="h-8 w-full rounded-lg border bg-background px-2 text-xs font-bold"
+                                      >
+                                        {EVENT_REQUIREMENT_OPTIONS.map((opt) => (
+                                          <option key={opt.type} value={opt.type}>
+                                            {opt.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                      <Label className="text-[11px] font-bold">Jogo Vinculado</Label>
+                                      <select
+                                        disabled={["event_x1_wins", "event_distinct_games", "event_daily_cap", "event_team_matches"].includes(evNewMedalReqType)}
+                                        value={evNewMedalScope}
+                                        onChange={(e) => setEvNewMedalScope(e.target.value as "todos" | GameId)}
+                                        className="h-8 w-full rounded-lg border bg-background px-2 text-xs font-bold disabled:opacity-50"
+                                      >
+                                        <option value="todos">🌟 Qualquer Jogo</option>
+                                        {ALL_GAME_IDS.map((id) => (
+                                          <option key={id} value={id}>
+                                            🎮 {GAME_NAMES[id]}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                      <Label className="text-[11px] font-bold">
+                                        Meta ({EVENT_REQUIREMENT_OPTIONS.find((o) => o.type === evNewMedalReqType)?.unit})
+                                      </Label>
+                                      <Input
+                                        type="number"
+                                        min={1}
+                                        value={evNewMedalThreshold}
+                                        onChange={(e) => setEvNewMedalThreshold(Math.max(1, Number(e.target.value)))}
+                                        className="h-8 rounded-lg text-xs font-bold bg-background"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* Ícones Selector Compact */}
+                                  <div className="space-y-1">
+                                    <Label className="text-[11px] font-bold">Ícone</Label>
+                                    <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto rounded-lg border bg-background p-1.5">
+                                      {AVAILABLE_MEDAL_ICONS.map((ic) => (
+                                        <button
+                                          key={ic}
+                                          type="button"
+                                          onClick={() => setEvNewMedalIcon(ic)}
+                                          className={`grid h-7 w-7 place-items-center rounded-md border transition-all ${
+                                            evNewMedalIcon === ic
+                                              ? "border-primary bg-primary text-primary-foreground shadow-xs scale-105"
+                                              : "hover:bg-secondary text-muted-foreground"
+                                          }`}
+                                          title={ic}
+                                        >
+                                          <MedalIcon name={ic} className="h-3.5 w-3.5" />
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+
+                                  {/* Preview do Requisito */}
+                                  <div className="rounded-xl border bg-secondary/30 p-2 text-[11px] text-muted-foreground">
+                                    <b>Descrição automática:</b> {formatEventRequirementLabel({
+                                      type: evNewMedalReqType,
+                                      threshold: evNewMedalThreshold,
+                                      gameId: evNewMedalScope === "todos" ? undefined : evNewMedalScope,
+                                    })}
+                                  </div>
+
+                                  <div className="flex justify-end gap-2">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      onClick={() => {
+                                        if (!evNewMedalTitle.trim()) {
+                                          flashSaved("Informe o título da medalha.");
+                                          return;
+                                        }
+                                        const req: EventMedalRequirement = {
+                                          type: evNewMedalReqType,
+                                          threshold: Number(evNewMedalThreshold) || 1,
+                                          gameId: evNewMedalScope === "todos" ? undefined : evNewMedalScope,
+                                        };
+                                        const medalId = `ev_medal_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                                        const newM: MedalDefinition = {
+                                          id: medalId,
+                                          title: evNewMedalTitle.trim(),
+                                          description: `${evNewMedalTitle.trim()} — Exclusiva do evento "${evTitle.trim() || "Especial"}". ${formatEventRequirementLabel(req)}`,
+                                          rarity: evNewMedalRarity,
+                                          category: "evento",
+                                          iconName: evNewMedalIcon,
+                                          condition: {
+                                            type: evNewMedalReqType,
+                                            threshold: req.threshold,
+                                            gameId: req.gameId,
+                                          },
+                                          isCustom: true,
+                                          createdByAdmin: true,
+                                          eventName: evTitle.trim() || "Evento Especial",
+                                          eventRequirement: req,
+                                        };
+                                        setEvAttachedMedals([...evAttachedMedals, newM]);
+                                        setIsAddingMedalToEv(false);
+                                        setEvNewMedalTitle("");
+                                        flashSaved(`Medalha "${newM.title}" adicionada ao evento!`);
+                                      }}
+                                      className="rounded-xl font-bold text-xs h-8 bg-primary"
+                                    >
+                                      + Adicionar Medalha ao Evento
+                                    </Button>
+                                  </div>
+                                </div>
+                              ) : (
+                                /* Modo Existente */
+                                <div className="space-y-3">
+                                  {availableExistingEventMedals.length === 0 ? (
+                                    <div className="rounded-xl border border-dashed p-3 text-center text-xs text-muted-foreground">
+                                      Nenhuma medalha de evento disponível que não esteja em uso em outro evento ativo. Crie uma nova medalha na aba acima!
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-2">
+                                      <Label className="text-[11px] font-bold">Selecione uma Medalha Existente</Label>
+                                      <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                                        {availableExistingEventMedals.map((m) => {
+                                          const rarity = RARITY_INFO[m.rarity];
+                                          const isAlreadyAttached = evAttachedMedals.some((a) => a.id === m.id);
+                                          return (
+                                            <div
+                                              key={m.id}
+                                              className={`flex items-center justify-between gap-2 rounded-xl border p-2 text-xs transition-colors ${
+                                                isAlreadyAttached ? "opacity-40 bg-muted" : "bg-card hover:border-primary"
+                                              }`}
+                                            >
+                                              <div className="flex items-center gap-2 min-w-0">
+                                                <div className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg border ${rarity.badgeBgClass}`}>
+                                                  <div className={rarity.textColor}>
+                                                    <MedalIcon name={m.iconName} className="h-3.5 w-3.5" />
+                                                  </div>
+                                                </div>
+                                                <div className="min-w-0">
+                                                  <div className="flex items-center gap-1.5">
+                                                    <span className="font-bold truncate">{m.title}</span>
+                                                    <span className={`text-[8px] font-extrabold uppercase px-1 rounded ${rarity.badgeBgClass}`}>
+                                                      {rarity.label}
+                                                    </span>
+                                                  </div>
+                                                  <p className="text-[10px] text-muted-foreground truncate">
+                                                    {m.eventRequirement ? formatEventRequirementLabel(m.eventRequirement) : m.description}
+                                                  </p>
+                                                </div>
+                                              </div>
+                                              <Button
+                                                type="button"
+                                                size="sm"
+                                                disabled={isAlreadyAttached}
+                                                onClick={() => {
+                                                  const cloned: MedalDefinition = {
+                                                    ...m,
+                                                    eventName: evTitle.trim() || m.eventName || "Evento Especial",
+                                                    description: m.description.includes("—")
+                                                      ? m.description
+                                                      : `${m.title} — Exclusiva do evento "${evTitle.trim() || "Especial"}". ${m.description}`,
+                                                  };
+                                                  setEvAttachedMedals([...evAttachedMedals, cloned]);
+                                                  setIsAddingMedalToEv(false);
+                                                  flashSaved(`Medalha "${m.title}" vinculada ao evento!`);
+                                                }}
+                                                className="rounded-lg text-[10px] font-bold h-7 px-2"
+                                              >
+                                                {isAlreadyAttached ? "Já Vinculada" : "+ Vincular"}
+                                              </Button>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
 
                         <div className="flex justify-end gap-2 pt-2">
                           <Button
@@ -2021,32 +2433,328 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div className="space-y-1">
-                            <Label className="text-xs font-bold">Medalha Vinculada (Opcional)</Label>
-                            <select
-                              value={recLinkedMedal}
-                              onChange={(e) => setRecLinkedMedal(e.target.value)}
-                              className="h-9 w-full rounded-xl border bg-background px-3 text-xs font-bold"
+                        {/* Seção de Medalhas Atribuídas ao Evento Recorrente */}
+                        <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-3.5 space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <h5 className="font-display text-xs font-black uppercase text-primary flex items-center gap-1.5">
+                                <Award className="h-4 w-4 text-primary" /> Medalhas do Evento ({recAttachedMedals.length})
+                              </h5>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">
+                                Crie ou vincule medalhas com metas a serem cumpridas a cada edição deste evento recorrente.
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={isAddingMedalToRec ? "secondary" : "default"}
+                              onClick={() => setIsAddingMedalToRec(!isAddingMedalToRec)}
+                              className="rounded-xl font-bold text-xs h-8"
                             >
-                              <option value="">Nenhuma medalha vinculada</option>
-                              {getAllAvailableMedals(draft.customMedals).map((m) => (
-                                <option key={m.id} value={m.id}>
-                                  🏅 {m.title} ({RARITY_INFO[m.rarity].label})
-                                </option>
-                              ))}
-                            </select>
+                              {isAddingMedalToRec ? "Fechar Seletor" : "+ Adicionar Medalha ao Evento"}
+                            </Button>
                           </div>
 
-                          <div className="space-y-1">
-                            <Label className="text-xs font-bold">Objetivo / Missão da Medalha (Opcional)</Label>
-                            <Input
-                              value={recObjective}
-                              onChange={(e) => setRecObjective(e.target.value)}
-                              placeholder="Ex: Jogue durante o evento para desbloquear a medalha."
-                              className="rounded-xl h-9 text-xs"
-                            />
-                          </div>
+                          {/* Lista das Medalhas já anexadas ao evento recorrente */}
+                          {recAttachedMedals.length > 0 ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {recAttachedMedals.map((m, idx) => {
+                                const rarity = RARITY_INFO[m.rarity];
+                                return (
+                                  <div
+                                    key={m.id || idx}
+                                    className="flex items-center justify-between gap-2 rounded-xl border bg-card p-2.5 shadow-xs"
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <div className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border ${rarity.badgeBgClass}`}>
+                                        <div className={rarity.textColor}>
+                                          <MedalIcon name={m.iconName} className="h-4 w-4" />
+                                        </div>
+                                      </div>
+                                      <div className="min-w-0">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="truncate font-display text-xs font-black text-foreground">
+                                            {m.title}
+                                          </span>
+                                          <span className={`rounded-full px-1.5 py-0.2 text-[8px] font-black uppercase ${rarity.badgeBgClass}`}>
+                                            {rarity.label}
+                                          </span>
+                                        </div>
+                                        <p className="line-clamp-1 text-[10px] text-muted-foreground">
+                                          {m.eventRequirement ? formatEventRequirementLabel(m.eventRequirement) : m.description}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setRecAttachedMedals(recAttachedMedals.filter((_, i) => i !== idx))}
+                                      className="rounded-lg p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                      title="Remover medalha deste evento"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="rounded-xl border border-dashed border-primary/20 p-3 text-center text-[11px] text-muted-foreground">
+                              Nenhuma medalha vinculada ainda. Clique em <b>"+ Adicionar Medalha ao Evento"</b> para criar novas medalhas com requisitos específicos ou escolher existentes.
+                            </div>
+                          )}
+
+                          {/* Sub-painel para Adicionar Medalha ao Evento Recorrente */}
+                          {isAddingMedalToRec && (
+                            <div className="rounded-2xl border bg-card p-3 space-y-3 animate-in fade-in-50">
+                              <div className="flex items-center gap-2 border-b pb-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setRecMedalMode("novo")}
+                                  className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                                    recMedalMode === "novo"
+                                      ? "bg-primary text-primary-foreground shadow-xs"
+                                      : "text-muted-foreground hover:bg-secondary"
+                                  }`}
+                                >
+                                  ✨ Criar Nova Medalha
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setRecMedalMode("existente")}
+                                  className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                                    recMedalMode === "existente"
+                                      ? "bg-primary text-primary-foreground shadow-xs"
+                                      : "text-muted-foreground hover:bg-secondary"
+                                  }`}
+                                >
+                                  📂 Utilizar Medalha Existente ({availableExistingEventMedals.length})
+                                </button>
+                              </div>
+
+                              {recMedalMode === "novo" ? (
+                                <div className="space-y-3">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                    <div className="space-y-1">
+                                      <Label className="text-[11px] font-bold">Título da Medalha</Label>
+                                      <Input
+                                        value={recNewMedalTitle}
+                                        onChange={(e) => setRecNewMedalTitle(e.target.value)}
+                                        placeholder="Ex: Guerreiro de Fim de Semana"
+                                        className="h-8 rounded-lg text-xs"
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label className="text-[11px] font-bold">Raridade</Label>
+                                      <select
+                                        value={recNewMedalRarity}
+                                        onChange={(e) => setRecNewMedalRarity(e.target.value as MedalRarity)}
+                                        className="h-8 w-full rounded-lg border bg-background px-2 text-xs font-bold"
+                                      >
+                                        <option value="bronze">Bronze</option>
+                                        <option value="prata">Prata</option>
+                                        <option value="ouro">Ouro</option>
+                                        <option value="platina">Platina</option>
+                                        <option value="diamante">Diamante</option>
+                                        <option value="heroi">Herói</option>
+                                      </select>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                                    <div className="space-y-1">
+                                      <Label className="text-[11px] font-bold">Requisito do Evento</Label>
+                                      <select
+                                        value={recNewMedalReqType}
+                                        onChange={(e) => {
+                                          const t = e.target.value as EventRequirementType;
+                                          setRecNewMedalReqType(t);
+                                          const opt = EVENT_REQUIREMENT_OPTIONS.find((o) => o.type === t);
+                                          if (opt) setRecNewMedalThreshold(opt.defaultVal);
+                                        }}
+                                        className="h-8 w-full rounded-lg border bg-background px-2 text-xs font-bold"
+                                      >
+                                        {EVENT_REQUIREMENT_OPTIONS.map((opt) => (
+                                          <option key={opt.type} value={opt.type}>
+                                            {opt.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                      <Label className="text-[11px] font-bold">Jogo Vinculado</Label>
+                                      <select
+                                        disabled={["event_x1_wins", "event_distinct_games", "event_daily_cap", "event_team_matches"].includes(recNewMedalReqType)}
+                                        value={recNewMedalScope}
+                                        onChange={(e) => setRecNewMedalScope(e.target.value as "todos" | GameId)}
+                                        className="h-8 w-full rounded-lg border bg-background px-2 text-xs font-bold disabled:opacity-50"
+                                      >
+                                        <option value="todos">🌟 Qualquer Jogo</option>
+                                        {ALL_GAME_IDS.map((id) => (
+                                          <option key={id} value={id}>
+                                            🎮 {GAME_NAMES[id]}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                      <Label className="text-[11px] font-bold">
+                                        Meta ({EVENT_REQUIREMENT_OPTIONS.find((o) => o.type === recNewMedalReqType)?.unit})
+                                      </Label>
+                                      <Input
+                                        type="number"
+                                        min={1}
+                                        value={recNewMedalThreshold}
+                                        onChange={(e) => setRecNewMedalThreshold(Math.max(1, Number(e.target.value)))}
+                                        className="h-8 rounded-lg text-xs font-bold bg-background"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* Ícones Selector Compact */}
+                                  <div className="space-y-1">
+                                    <Label className="text-[11px] font-bold">Ícone</Label>
+                                    <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto rounded-lg border bg-background p-1.5">
+                                      {AVAILABLE_MEDAL_ICONS.map((ic) => (
+                                        <button
+                                          key={ic}
+                                          type="button"
+                                          onClick={() => setRecNewMedalIcon(ic)}
+                                          className={`grid h-7 w-7 place-items-center rounded-md border transition-all ${
+                                            recNewMedalIcon === ic
+                                              ? "border-primary bg-primary text-primary-foreground shadow-xs scale-105"
+                                              : "hover:bg-secondary text-muted-foreground"
+                                          }`}
+                                          title={ic}
+                                        >
+                                          <MedalIcon name={ic} className="h-3.5 w-3.5" />
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+
+                                  {/* Preview do Requisito */}
+                                  <div className="rounded-xl border bg-secondary/30 p-2 text-[11px] text-muted-foreground">
+                                    <b>Descrição automática:</b> {formatEventRequirementLabel({
+                                      type: recNewMedalReqType,
+                                      threshold: recNewMedalThreshold,
+                                      gameId: recNewMedalScope === "todos" ? undefined : recNewMedalScope,
+                                    })}
+                                  </div>
+
+                                  <div className="flex justify-end gap-2">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      onClick={() => {
+                                        if (!recNewMedalTitle.trim()) {
+                                          flashSaved("Informe o título da medalha.");
+                                          return;
+                                        }
+                                        const req: EventMedalRequirement = {
+                                          type: recNewMedalReqType,
+                                          threshold: Number(recNewMedalThreshold) || 1,
+                                          gameId: recNewMedalScope === "todos" ? undefined : recNewMedalScope,
+                                        };
+                                        const medalId = `rec_medal_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+                                        const newM: MedalDefinition = {
+                                          id: medalId,
+                                          title: recNewMedalTitle.trim(),
+                                          description: `${recNewMedalTitle.trim()} — Exclusiva do evento "${recTitle.trim() || "Recorrente"}". ${formatEventRequirementLabel(req)}`,
+                                          rarity: recNewMedalRarity,
+                                          category: "evento",
+                                          iconName: recNewMedalIcon,
+                                          condition: {
+                                            type: recNewMedalReqType,
+                                            threshold: req.threshold,
+                                            gameId: req.gameId,
+                                          },
+                                          isCustom: true,
+                                          createdByAdmin: true,
+                                          eventName: recTitle.trim() || "Evento Recorrente",
+                                          eventRequirement: req,
+                                        };
+                                        setRecAttachedMedals([...recAttachedMedals, newM]);
+                                        setIsAddingMedalToRec(false);
+                                        setRecNewMedalTitle("");
+                                        flashSaved(`Medalha "${newM.title}" adicionada ao evento recorrente!`);
+                                      }}
+                                      className="rounded-xl font-bold text-xs h-8 bg-primary"
+                                    >
+                                      + Adicionar Medalha ao Evento
+                                    </Button>
+                                  </div>
+                                </div>
+                              ) : (
+                                /* Modo Existente para Recorrente */
+                                <div className="space-y-3">
+                                  {availableExistingEventMedals.length === 0 ? (
+                                    <div className="rounded-xl border border-dashed p-3 text-center text-xs text-muted-foreground">
+                                      Nenhuma medalha de evento disponível que não esteja em uso em outro evento ativo. Crie uma nova medalha na aba acima!
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-2">
+                                      <Label className="text-[11px] font-bold">Selecione uma Medalha Existente</Label>
+                                      <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                                        {availableExistingEventMedals.map((m) => {
+                                          const rarity = RARITY_INFO[m.rarity];
+                                          const isAlreadyAttached = recAttachedMedals.some((a) => a.id === m.id);
+                                          return (
+                                            <div
+                                              key={m.id}
+                                              className={`flex items-center justify-between gap-2 rounded-xl border p-2 text-xs transition-colors ${
+                                                isAlreadyAttached ? "opacity-40 bg-muted" : "bg-card hover:border-primary"
+                                              }`}
+                                            >
+                                              <div className="flex items-center gap-2 min-w-0">
+                                                <div className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg border ${rarity.badgeBgClass}`}>
+                                                  <div className={rarity.textColor}>
+                                                    <MedalIcon name={m.iconName} className="h-3.5 w-3.5" />
+                                                  </div>
+                                                </div>
+                                                <div className="min-w-0">
+                                                  <div className="flex items-center gap-1.5">
+                                                    <span className="font-bold truncate">{m.title}</span>
+                                                    <span className={`text-[8px] font-extrabold uppercase px-1 rounded ${rarity.badgeBgClass}`}>
+                                                      {rarity.label}
+                                                    </span>
+                                                  </div>
+                                                  <p className="text-[10px] text-muted-foreground truncate">
+                                                    {m.eventRequirement ? formatEventRequirementLabel(m.eventRequirement) : m.description}
+                                                  </p>
+                                                </div>
+                                              </div>
+                                              <Button
+                                                type="button"
+                                                size="sm"
+                                                disabled={isAlreadyAttached}
+                                                onClick={() => {
+                                                  const cloned: MedalDefinition = {
+                                                    ...m,
+                                                    eventName: recTitle.trim() || m.eventName || "Evento Recorrente",
+                                                    description: m.description.includes("—")
+                                                      ? m.description
+                                                      : `${m.title} — Exclusiva do evento "${recTitle.trim() || "Recorrente"}". ${m.description}`,
+                                                  };
+                                                  setRecAttachedMedals([...recAttachedMedals, cloned]);
+                                                  setIsAddingMedalToRec(false);
+                                                  flashSaved(`Medalha "${m.title}" vinculada ao evento recorrente!`);
+                                                }}
+                                                className="rounded-lg text-[10px] font-bold h-7 px-2"
+                                              >
+                                                {isAlreadyAttached ? "Já Vinculada" : "+ Vincular"}
+                                              </Button>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex justify-end gap-2 pt-2">
@@ -2410,7 +3118,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                       </span>
                                       <PresenceDot playerId={st.id} size="xs" />
                                       <span className="rounded-full bg-primary/15 px-2 py-0.2 text-[10px] font-bold text-primary">
-                                        Nv. {st.level}
+                                        Nv. {stProg.level}
                                       </span>
                                       {stProg.isLockedByMissions && (
                                         <span
@@ -2841,12 +3549,95 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                         </div>
                       </div>
 
+                      {/* Modo de Atribuição: Automático por Requisitos ou Manual */}
+                      <div className="rounded-xl border bg-card p-3 space-y-2.5">
+                        <Label className="text-xs font-bold">Tipo de Atribuição da Medalha</Label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setNewMedalMode("evento")}
+                            className={`rounded-lg py-1.5 px-2 text-xs font-bold transition-all ${
+                              newMedalMode === "evento"
+                                ? "bg-primary text-primary-foreground shadow-xs"
+                                : "border bg-muted/30 text-muted-foreground hover:bg-secondary"
+                            }`}
+                          >
+                            ⚡ Automática por Requisito de Evento
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewMedalMode("manual")}
+                            className={`rounded-lg py-1.5 px-2 text-xs font-bold transition-all ${
+                              newMedalMode === "manual"
+                                ? "bg-primary text-primary-foreground shadow-xs"
+                                : "border bg-muted/30 text-muted-foreground hover:bg-secondary"
+                            }`}
+                          >
+                            👤 Concessão Manual pelo ADM
+                          </button>
+                        </div>
+
+                        {newMedalMode === "evento" && (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                            <div className="space-y-1">
+                              <Label className="text-[11px] font-bold">Requisito Especial</Label>
+                              <select
+                                value={newMedalReqType}
+                                onChange={(e) => {
+                                  const t = e.target.value as EventRequirementType;
+                                  setNewMedalReqType(t);
+                                  const opt = EVENT_REQUIREMENT_OPTIONS.find((o) => o.type === t);
+                                  if (opt) setNewMedalThreshold(opt.defaultVal);
+                                }}
+                                className="h-8 w-full rounded-lg border bg-background px-2 text-xs font-bold"
+                              >
+                                {EVENT_REQUIREMENT_OPTIONS.map((opt) => (
+                                  <option key={opt.type} value={opt.type}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="space-y-1">
+                              <Label className="text-[11px] font-bold">Jogo Vinculado</Label>
+                              <select
+                                disabled={["event_x1_wins", "event_distinct_games", "event_daily_cap", "event_team_matches"].includes(newMedalReqType)}
+                                value={newMedalScope}
+                                onChange={(e) => setNewMedalScope(e.target.value as "todos" | GameId)}
+                                className="h-8 w-full rounded-lg border bg-background px-2 text-xs font-bold disabled:opacity-50"
+                              >
+                                <option value="todos">🌟 Qualquer Jogo</option>
+                                {ALL_GAME_IDS.map((id) => (
+                                  <option key={id} value={id}>
+                                    🎮 {GAME_NAMES[id]}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="space-y-1">
+                              <Label className="text-[11px] font-bold">
+                                Meta ({EVENT_REQUIREMENT_OPTIONS.find((o) => o.type === newMedalReqType)?.unit})
+                              </Label>
+                              <Input
+                                type="number"
+                                min={1}
+                                value={newMedalThreshold}
+                                onChange={(e) => setNewMedalThreshold(Math.max(1, Number(e.target.value)))}
+                                className="h-8 rounded-lg text-xs font-bold bg-background"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                       <div className="space-y-1">
-                        <Label className="text-xs font-bold">Descrição da Conquista</Label>
+                        <Label className="text-xs font-bold">Descrição da Conquista (Opcional)</Label>
                         <Input
                           value={newMedalDesc}
                           onChange={(e) => setNewMedalDesc(e.target.value)}
-                          placeholder="Ex: Concedida aos vencedores do torneio escolar da SEMED."
+                          placeholder="Ex: Concedida por cumprir os requisitos especiais do evento."
                           className="rounded-xl h-9 text-xs"
                         />
                       </div>
@@ -2880,16 +3671,37 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                             flashSaved("Informe o título da medalha.");
                             return;
                           }
+
+                          let eventReq: EventMedalRequirement | null = null;
+                          if (newMedalMode === "evento") {
+                            eventReq = {
+                              type: newMedalReqType,
+                              threshold: Number(newMedalThreshold) || 1,
+                              gameId: newMedalScope === "todos" ? undefined : newMedalScope,
+                            };
+                          }
+
                           const newMedal: MedalDefinition = {
                             id: `custom_${Date.now()}`,
                             title: newMedalTitle.trim(),
-                            description: newMedalDesc.trim() || "Medalha de evento especial.",
+                            description:
+                              newMedalDesc.trim() ||
+                              (eventReq
+                                ? `${newMedalTitle.trim()} — ${formatEventRequirementLabel(eventReq)}`
+                                : "Medalha concedida manualmente pelo administrador."),
                             rarity: newMedalRarity,
                             category: "evento",
                             iconName: newMedalIcon,
-                            condition: { type: "manual_event" },
+                            condition: eventReq
+                              ? {
+                                  type: newMedalReqType,
+                                  threshold: eventReq.threshold,
+                                  gameId: eventReq.gameId,
+                                }
+                              : { type: "manual_event" },
                             isCustom: true,
                             createdByAdmin: true,
+                            eventRequirement: eventReq,
                           };
                           const updatedCustoms = [...(draft.customMedals ?? []), newMedal];
                           const updatedConfig = { ...draft, customMedals: updatedCustoms };
@@ -3191,7 +4003,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                               </div>
                             </div>
                             <div className="text-right shrink-0 font-display font-bold text-primary">
-                              Nv. {p.level} ({p.xp} XP)
+                              Nv. {pProg.level} ({p.xp} XP)
                             </div>
                           </div>
                         );

@@ -291,7 +291,7 @@ export function PlayerMenu({ onConfigChanged }: Props) {
               <PresenceDot
                 playerId={profile.id}
                 size="sm"
-                className="absolute bottom-0 right-0 z-10"
+                className="absolute -bottom-0.5 -right-0.5 z-10"
               />
             )}
           </span>

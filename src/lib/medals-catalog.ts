@@ -20,6 +20,25 @@ export type MedalCategory =
   | "evento"
   | "secreta";
 
+export type EventRequirementType =
+  | "event_matches"
+  | "event_xp"
+  | "event_score"
+  | "event_level"
+  | "event_flawless"
+  | "event_x1_wins"
+  | "event_combo"
+  | "event_daily_cap"
+  | "event_team_matches"
+  | "event_distinct_games";
+
+export interface EventMedalRequirement {
+  type: EventRequirementType;
+  threshold: number;
+  gameId?: GameId; // se undefined, aplica a todos os jogos
+  minScore?: number; // pontuação mínima exigida (especialmente para flawless ou score)
+}
+
 export interface MedalCondition {
   type:
     | "player_level"
@@ -42,7 +61,8 @@ export interface MedalCondition {
     | "beta_tester_platina"
     | "beta_tester_heroi"
     | "daily_post_cap_matches"
-    | "manual_event";
+    | "manual_event"
+    | EventRequirementType;
   threshold?: number;
   gameId?: GameId;
   targetRank?: number; // 1, 2, 3
@@ -60,6 +80,47 @@ export interface MedalDefinition {
   createdByAdmin?: boolean;
   gameId?: GameId;
   isSecret?: boolean;
+  eventId?: string | null;
+  eventName?: string | null;
+  eventRequirement?: EventMedalRequirement | null;
+}
+
+export function formatEventRequirementLabel(req: EventMedalRequirement): string {
+  const gameName = req.gameId ? GAME_NAMES[req.gameId] : null;
+  switch (req.type) {
+    case "event_matches":
+      return gameName
+        ? `Jogar ${req.threshold} partida(s) de ${gameName} durante o evento.`
+        : `Jogar ${req.threshold} partida(s) em qualquer jogo durante o evento.`;
+    case "event_xp":
+      return gameName
+        ? `Acumular ${req.threshold} XP jogando ${gameName} durante o evento.`
+        : `Acumular ${req.threshold} XP em partidas durante o evento.`;
+    case "event_score":
+      return gameName
+        ? `Atingir ${req.threshold} pontos em uma partida de ${gameName} durante o evento.`
+        : `Atingir ${req.threshold} pontos em uma partida durante o evento.`;
+    case "event_level":
+      return gameName
+        ? `Alcançar o Nível ${req.threshold} no jogo ${gameName} durante o evento.`
+        : `Alcançar o Nível ${req.threshold} em qualquer jogo durante o evento.`;
+    case "event_flawless":
+      return gameName
+        ? `Finalizar ${req.threshold} partida(s) de ${gameName} com zero erros durante o evento.`
+        : `Finalizar ${req.threshold} partida(s) com zero erros durante o evento.`;
+    case "event_x1_wins":
+      return `Vencer ${req.threshold} partida(s) na Arena X1 durante o evento.`;
+    case "event_combo":
+      return `Acertar ${req.threshold} perguntas consecutivas sem errar durante o evento.`;
+    case "event_daily_cap":
+      return `Bater o limite diário de XP em pelo menos ${req.threshold} dia(s) durante o evento.`;
+    case "event_team_matches":
+      return `Disputar ${req.threshold} partida(s) cooperativas no modo Equipes durante o evento.`;
+    case "event_distinct_games":
+      return `Jogar pelo menos 1 partida em ${req.threshold} jogos diferentes durante o evento.`;
+    default:
+      return "Concluir os objetivos do evento.";
+  }
 }
 
 export interface PlayerUnlockedMedal {
@@ -815,7 +876,9 @@ export function getDistinctGamesPlayed(
         row.plays > 0 ||
         (row.best_score ?? 0) > 0 ||
         (row.best_level ?? 1) > 1 ||
-        (row.wins ?? 0) > 0
+        (row.wins ?? 0) > 0 ||
+        row.last_wrong !== undefined ||
+        (row.flawless_wins ?? 0) > 0
       ) {
         playedSet.add(gId);
       }
@@ -831,7 +894,9 @@ export function getDistinctGamesPlayed(
         row.plays > 0 ||
         (row.best_score ?? 0) > 0 ||
         (row.best_level ?? 1) > 1 ||
-        (row.wins ?? 0) > 0
+        (row.wins ?? 0) > 0 ||
+        row.last_wrong !== undefined ||
+        (row.flawless_wins ?? 0) > 0
       ) {
         playedSet.add(gId);
       }
@@ -857,6 +922,27 @@ export function getDistinctGamesPlayed(
         if (m.medalId.startsWith(`game_${gId}_`)) {
           playedSet.add(gId);
           break;
+        }
+      }
+    }
+  }
+
+  // 5. Progresso em eventos especiais ou recorrentes por jogo
+  if (profile?.eventProgress) {
+    for (const evData of Object.values(profile.eventProgress)) {
+      if (evData?.matchesByGame) {
+        for (const [gId, count] of Object.entries(evData.matchesByGame)) {
+          if (count > 0 && enabledSet.has(gId as GameId)) playedSet.add(gId as GameId);
+        }
+      }
+      if (evData?.bestScoreByGame) {
+        for (const [gId, sc] of Object.entries(evData.bestScoreByGame)) {
+          if (sc > 0 && enabledSet.has(gId as GameId)) playedSet.add(gId as GameId);
+        }
+      }
+      if (Array.isArray(evData?.distinctGamesPlayed)) {
+        for (const gId of evData.distinctGamesPlayed) {
+          if (enabledSet.has(gId as GameId)) playedSet.add(gId as GameId);
         }
       }
     }
@@ -1052,6 +1138,64 @@ export function evaluatePlayerMedals(
         break;
     }
 
+    // Avaliação de requisitos de medalhas de eventos especiais
+    if (!earned && medal.eventRequirement) {
+      const req = medal.eventRequirement;
+      const evProg = (p as any)?.eventProgress?.[medal.eventId ?? ""];
+      if (evProg) {
+        switch (req.type) {
+          case "event_matches": {
+            const cur = req.gameId ? (evProg.matchesByGame?.[req.gameId] ?? 0) : (evProg.matchesCount ?? 0);
+            if (cur >= req.threshold) earned = true;
+            break;
+          }
+          case "event_xp": {
+            const cur = req.gameId ? (evProg.xpByGame?.[req.gameId] ?? 0) : (evProg.xpEarned ?? 0);
+            if (cur >= req.threshold) earned = true;
+            break;
+          }
+          case "event_score": {
+            const cur = req.gameId
+              ? (evProg.bestScoreByGame?.[req.gameId] ?? 0)
+              : Math.max(...Object.values(evProg.bestScoreByGame ?? {}).map(Number), 0);
+            if (cur >= req.threshold) earned = true;
+            break;
+          }
+          case "event_level": {
+            const cur = req.gameId
+              ? (evProg.bestLevelByGame?.[req.gameId] ?? 1)
+              : Math.max(...Object.values(evProg.bestLevelByGame ?? {}).map(Number), 1);
+            if (cur >= req.threshold) earned = true;
+            break;
+          }
+          case "event_flawless": {
+            if ((evProg.flawlessCount ?? 0) >= req.threshold) earned = true;
+            break;
+          }
+          case "event_x1_wins": {
+            if ((evProg.x1Wins ?? 0) >= req.threshold) earned = true;
+            break;
+          }
+          case "event_combo": {
+            if ((evProg.maxCombo ?? 0) >= req.threshold) earned = true;
+            break;
+          }
+          case "event_daily_cap": {
+            if ((evProg.dailyCapDaysCount ?? 0) >= req.threshold) earned = true;
+            break;
+          }
+          case "event_team_matches": {
+            if ((evProg.teamMatchesCount ?? 0) >= req.threshold) earned = true;
+            break;
+          }
+          case "event_distinct_games": {
+            if ((evProg.distinctGamesPlayed?.length ?? 0) >= req.threshold) earned = true;
+            break;
+          }
+        }
+      }
+    }
+
     if (earned) {
       newlyAwarded.push(medal);
       if (medal.id.startsWith("game_") && medal.id.endsWith("_flawless") && cond.gameId) {
@@ -1079,6 +1223,63 @@ export function calculateMedalProgress(
 ): MedalProgressInfo {
   if (!profile) {
     return { percent: 0, progressText: "" };
+  }
+
+  // Progresso de medalhas exclusivas de eventos
+  if (medal.eventRequirement) {
+    const req = medal.eventRequirement;
+    const evProg = (profile as any)?.eventProgress?.[medal.eventId ?? ""];
+    if (!evProg) {
+      return {
+        percent: 0,
+        progressText: `0 de ${req.threshold} no evento`,
+      };
+    }
+    let cur = 0;
+    switch (req.type) {
+      case "event_matches":
+        cur = req.gameId ? (evProg.matchesByGame?.[req.gameId] ?? 0) : (evProg.matchesCount ?? 0);
+        break;
+      case "event_xp":
+        cur = req.gameId ? (evProg.xpByGame?.[req.gameId] ?? 0) : (evProg.xpEarned ?? 0);
+        break;
+      case "event_score":
+        cur = req.gameId
+          ? (evProg.bestScoreByGame?.[req.gameId] ?? 0)
+          : Math.max(...Object.values(evProg.bestScoreByGame ?? {}).map(Number), 0);
+        break;
+      case "event_level":
+        cur = req.gameId
+          ? (evProg.bestLevelByGame?.[req.gameId] ?? 1)
+          : Math.max(...Object.values(evProg.bestLevelByGame ?? {}).map(Number), 1);
+        break;
+      case "event_flawless":
+        cur = evProg.flawlessCount ?? 0;
+        break;
+      case "event_x1_wins":
+        cur = evProg.x1Wins ?? 0;
+        break;
+      case "event_combo":
+        cur = evProg.maxCombo ?? 0;
+        break;
+      case "event_daily_cap":
+        cur = evProg.dailyCapDaysCount ?? 0;
+        break;
+      case "event_team_matches":
+        cur = evProg.teamMatchesCount ?? 0;
+        break;
+      case "event_distinct_games":
+        cur = evProg.distinctGamesPlayed?.length ?? 0;
+        break;
+      default:
+        cur = 0;
+    }
+    const target = req.threshold || 1;
+    const pct = Math.min(100, Math.round((cur / target) * 100));
+    return {
+      percent: pct,
+      progressText: `${cur} de ${target} no evento`,
+    };
   }
 
   const cond = medal.condition;

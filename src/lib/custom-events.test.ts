@@ -10,6 +10,8 @@ import {
   formatDateTimeBR,
   isRecurringEventActive,
   getAllActiveEvents,
+  getEventLinkedMedalIds,
+  getEventCycleKey,
   DEFAULT_RECURRING_EVENTS,
   type SpecialEvent,
   type RecurringEvent,
@@ -340,5 +342,45 @@ describe("Eventos Personalizados Criados pelo Administrador", () => {
     assert.equal(bonuses.multiplier, 2.5);
     // Base 1000 + 500 (A) + 200 (B) = 1700 total
     assert.equal(bonuses.dailyXpCap, 1700);
+  });
+
+  it("extrai corretamente múltiplos IDs de medalhas vinculadas e gera chave de ciclo única", () => {
+    const punctual: SpecialEvent = {
+      id: "ev_special_1",
+      title: "Gincana 2026",
+      description: "",
+      scope: "todos",
+      bonusType: "dobro_xp",
+      startsAt: "2026-11-05T08:00:00Z",
+      endsAt: "2026-11-05T18:00:00Z",
+      active: true,
+      linkedMedalId: "medal_old",
+      linkedMedalIds: ["medal_old", "medal_new_1", "medal_new_2"],
+      createdAt: "2026-11-05T08:00:00Z",
+    };
+
+    const medalIds = getEventLinkedMedalIds(punctual);
+    assert.deepEqual(medalIds, ["medal_old", "medal_new_1", "medal_new_2"]);
+
+    // Chave de ciclo de evento pontual é indexada pelo startsAt
+    const cycleKeyPunctual = getEventCycleKey(punctual);
+    assert.equal(cycleKeyPunctual, "ev_special_1_2026-11-05T08:00:00Z");
+
+    // Chave de ciclo de evento recorrente varia por data
+    const recEv: RecurringEvent = {
+      id: "rec_weekend",
+      title: "Fim de Semana",
+      description: "",
+      scope: "todos",
+      daysOfWeek: [6, 0],
+      specificDates: [],
+      active: true,
+      createdAt: "2026-01-01T00:00:00Z",
+    };
+    const dateSat = new Date("2026-11-07T14:00:00");
+    const dateSun = new Date("2026-11-08T14:00:00");
+    assert.equal(getEventCycleKey(recEv, dateSat), "rec_weekend_2026-11-07");
+    assert.equal(getEventCycleKey(recEv, dateSun), "rec_weekend_2026-11-08");
+    assert.notEqual(getEventCycleKey(recEv, dateSat), getEventCycleKey(recEv, dateSun));
   });
 });

@@ -110,11 +110,16 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
     profile.matchesPlayed ?? 0,
     profile.totalMatches ?? 0,
     (profile as any).totalPlays ?? 0,
+    (profile.stats ?? []).reduce((s, r) => s + (r.plays ?? 0), 0),
+  );
+  const totalWins = Math.max(
+    profile.wins ?? 0,
+    (profile.stats ?? []).reduce((s, r) => s + (r.wins ?? 0), 0),
   );
   const progress = levelProgress({
     xp: profile.xp,
     matchesPlayed: matchesCount,
-    wins: profile.wins ?? 0,
+    wins: totalWins,
     distinctGames,
   });
   const isMe = auth.profile?.id === profile.id;
@@ -193,7 +198,7 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
                     NÍVEL
                   </span>
                   <span className="font-display text-2xl font-black">
-                    {profile.level}
+                    {progress.level}
                   </span>
                 </div>
               </div>
@@ -265,7 +270,7 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
               <div className="rounded-xl border bg-card px-3 py-1.5">
                 <span className="block text-[10px] font-bold text-muted-foreground">Vitórias</span>
                 <span className="font-display text-xs font-black text-accent">
-                  {profile.wins ?? 0}
+                  {totalWins}
                 </span>
               </div>
             </div>
@@ -279,7 +284,7 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
                   <Pencil className="h-3.5 w-3.5" /> Editar Cadastro do Aluno (ADM)
                 </span>
                 <span className="text-[11px] font-normal text-muted-foreground">
-                  Nível ({profile.level}), XP ({profile.xp}) e Medalhas não são alterados
+                  Nível ({progress.level}), XP ({profile.xp}) e Medalhas não são alterados
                 </span>
               </div>
 
