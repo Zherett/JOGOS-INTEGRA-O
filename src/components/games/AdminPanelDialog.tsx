@@ -3176,20 +3176,194 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                       <Sparkles className="h-5 w-5 text-primary" /> Quadro de Avisos & Destaques
                     </h3>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Gerencie os informativos e novidades que aparecem no slide da página inicial para todos os alunos.
+                      Gerencie os informativos, destaques de jogos e novidades que aparecem no slide da página inicial para todos os alunos.
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded-full bg-primary/15 px-3 py-1 text-xs font-bold text-primary">
-                      {(draft.noticeSlides || []).filter((s) => s.active).length} aviso(s) ativo(s)
+                      {(draft.noticeSlides || []).filter((s) => s.active).length} aviso(s) personalizado(s)
+                    </span>
+                    <span className="rounded-full bg-secondary px-3 py-1 text-xs font-bold text-foreground">
+                      {draft.hideAllDefaultNotices
+                        ? "Avisos padrão: Pausados"
+                        : `${
+                            SYSTEM_DEFAULT_NOTICES.filter(
+                              (n) => (draft.enabledDefaultNotices ?? DEFAULT_ENABLED_DEFAULT_NOTICES)[n.id] !== false
+                            ).length
+                          }/3 padrão ativos`}
+                    </span>
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-bold ${
+                        draft.pauseNoticeBoard
+                          ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                          : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
+                      }`}
+                    >
+                      {draft.pauseNoticeBoard ? "⏸️ Carrossel Pausado" : "▶️ Carrossel Ativo (7s)"}
                     </span>
                   </div>
                 </div>
 
-                {/* Formulário de Criação de Novo Aviso */}
+                {/* Controles Globais do Carrossel */}
+                <div className="rounded-2xl border bg-card p-4 space-y-3">
+                  <h4 className="font-display text-xs font-black uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                    <Zap className="h-4 w-4 text-primary" /> Controles Globais de Exibição
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="flex items-center justify-between gap-3 rounded-xl border bg-secondary/20 p-3">
+                      <div className="space-y-0.5 min-w-0">
+                        <span className="font-display text-xs font-bold text-foreground block">
+                          Pausar Rotação Automática
+                        </span>
+                        <span className="text-[11px] text-muted-foreground block line-clamp-1">
+                          Mantém o slide fixo sem avançar a cada 7 segundos
+                        </span>
+                      </div>
+                      <Switch
+                        checked={Boolean(draft.pauseNoticeBoard)}
+                        onCheckedChange={async (checked) => {
+                          const nextCfg = { ...draft, pauseNoticeBoard: checked };
+                          setDraft(nextCfg);
+                          await auth.updateAdminConfig(nextCfg);
+                          onConfigSaved?.();
+                          flashSaved(
+                            checked
+                              ? "⏸️ Rotação automática do quadro de avisos pausada!"
+                              : "▶️ Rotação automática reativada a cada 7 segundos!"
+                          );
+                        }}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 rounded-xl border bg-secondary/20 p-3">
+                      <div className="space-y-0.5 min-w-0">
+                        <span className="font-display text-xs font-bold text-foreground block">
+                          Ocultar Todos os Avisos Padrão
+                        </span>
+                        <span className="text-[11px] text-muted-foreground block line-clamp-1">
+                          Exibe exclusivamente os avisos personalizados que você criar
+                        </span>
+                      </div>
+                      <Switch
+                        checked={Boolean(draft.hideAllDefaultNotices)}
+                        onCheckedChange={async (checked) => {
+                          const nextCfg = { ...draft, hideAllDefaultNotices: checked };
+                          setDraft(nextCfg);
+                          await auth.updateAdminConfig(nextCfg);
+                          onConfigSaved?.();
+                          flashSaved(
+                            checked
+                              ? "🚫 Todos os avisos padrão foram ocultados da página inicial!"
+                              : "✅ Avisos padrão restabelecidos na página inicial!"
+                          );
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Avisos Padrão do Sistema (Controle Individual: Marcar / Desmarcar) */}
+                <div className="rounded-2xl border bg-card p-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h4 className="font-display text-sm font-extrabold text-foreground flex items-center gap-2">
+                        <span>📌 Avisos Padrão da Plataforma (3 Disponíveis)</span>
+                      </h4>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Marque ou desmarque individualmente quais avisos padrão deseja exibir ou ocultar no carrossel.
+                      </p>
+                    </div>
+                    {draft.hideAllDefaultNotices && (
+                      <span className="rounded-full bg-amber-500/15 border border-amber-500/30 px-2.5 py-0.5 text-[10px] font-black text-amber-600 dark:text-amber-400">
+                        Pausados Globalmente
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {SYSTEM_DEFAULT_NOTICES.map((notice) => {
+                      const currentMap = draft.enabledDefaultNotices ?? DEFAULT_ENABLED_DEFAULT_NOTICES;
+                      const isEnabled = currentMap[notice.id] !== false && !draft.hideAllDefaultNotices;
+                      const isIndividuallyActive = currentMap[notice.id] !== false;
+
+                      return (
+                        <div
+                          key={notice.id}
+                          className={`flex flex-col justify-between rounded-xl border p-3.5 transition-all ${
+                            isEnabled
+                              ? "bg-secondary/40 border-primary/40 shadow-xs"
+                              : "bg-muted/30 border-dashed opacity-60"
+                          }`}
+                        >
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="rounded-full bg-primary/20 px-2 py-0.5 text-[9px] font-black uppercase text-primary">
+                                {notice.badgeLabel}
+                              </span>
+                              <span
+                                className={`text-[10px] font-bold ${
+                                  isIndividuallyActive ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"
+                                }`}
+                              >
+                                {isIndividuallyActive ? "Marcado" : "Desmarcado"}
+                              </span>
+                            </div>
+                            <h5 className="font-display text-xs font-bold text-foreground">
+                              {notice.title}
+                            </h5>
+                            <p className="text-[11px] text-muted-foreground leading-relaxed">
+                              {notice.description}
+                            </p>
+                          </div>
+
+                          <div className="pt-3 mt-2 border-t flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-semibold text-muted-foreground">
+                              {isEnabled ? "Exibindo na Home" : "Oculto na Home"}
+                            </span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={isIndividuallyActive ? "outline" : "default"}
+                              onClick={async () => {
+                                const nextMap = {
+                                  ...DEFAULT_ENABLED_DEFAULT_NOTICES,
+                                  ...currentMap,
+                                  [notice.id]: !isIndividuallyActive,
+                                };
+                                const nextCfg = { ...draft, enabledDefaultNotices: nextMap };
+                                setDraft(nextCfg);
+                                await auth.updateAdminConfig(nextCfg);
+                                onConfigSaved?.();
+                                flashSaved(
+                                  !isIndividuallyActive
+                                    ? `✅ "${notice.title}" ativado no carrossel e salvo na nuvem!`
+                                    : `🚫 "${notice.title}" desmarcado e ocultado!`
+                                );
+                              }}
+                              className="rounded-xl text-xs h-7 px-2.5 font-bold cursor-pointer"
+                            >
+                              {isIndividuallyActive ? (
+                                <>
+                                  <EyeOff className="h-3.5 w-3.5 mr-1" /> Desmarcar
+                                </>
+                              ) : (
+                                <>
+                                  <Eye className="h-3.5 w-3.5 mr-1" /> Marcar
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Formulário de Criação de Novo Aviso com Envio Imediato para PlayFab */}
                 <div className="rounded-2xl border bg-card p-4 space-y-3.5">
                   <h4 className="font-display text-sm font-extrabold text-foreground flex items-center gap-2">
-                    <span>➕ Criar Novo Aviso ou Destaque</span>
+                    <span>➕ Criar Novo Aviso Personalizado (Salva Imediatamente na Nuvem)</span>
                   </h4>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3210,7 +3384,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                         type="text"
                         value={newNoticeBadge}
                         onChange={(e) => setNewNoticeBadge(e.target.value)}
-                        placeholder="Ex: NOVIDADE, DESTAQUE, DESAFIO"
+                        placeholder="Ex: NOVIDADE, DESTAQUE, DESAFIO, FEIRA"
                         className="w-full rounded-xl border bg-background px-3 py-2 text-xs font-medium uppercase focus:outline-none focus:ring-2 focus:ring-primary"
                       />
                     </div>
@@ -3283,7 +3457,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                     <Button
                       type="button"
                       disabled={!newNoticeTitle.trim() || !newNoticeMsg.trim()}
-                      onClick={() => {
+                      onClick={async () => {
                         const slide: PlatformNoticeSlide = {
                           id: `notice_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
                           title: newNoticeTitle.trim(),
@@ -3296,30 +3470,36 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                           createdAt: new Date().toISOString(),
                         };
                         const nextSlides = [...(draft.noticeSlides || []), slide];
-                        setDraft((prev) => ({ ...prev, noticeSlides: nextSlides }));
+                        const nextCfg: PlatformAdminConfig = { ...draft, noticeSlides: nextSlides };
+                        setDraft(nextCfg);
+                        await auth.updateAdminConfig(nextCfg);
+                        onConfigSaved?.();
                         setNewNoticeTitle("");
                         setNewNoticeMsg("");
                         setNewNoticeBadge("NOVIDADE");
                         setNewNoticeMedal("");
-                        flashSaved("Novo aviso adicionado ao rascunho!");
+                        flashSaved(
+                          isPlayFabConfigured()
+                            ? "✅ Novo aviso publicado no Quadro de Avisos e sincronizado com o PlayFab!"
+                            : "💾 Novo aviso salvo no Quadro de Avisos localmente!"
+                        );
                       }}
-                      className="rounded-xl px-4 py-2 font-display text-xs font-extrabold"
+                      className="rounded-xl px-4 py-2 font-display text-xs font-extrabold cursor-pointer"
                     >
-                      Adicionar ao Quadro de Avisos
+                      <Plus className="h-4 w-4 mr-1.5" /> Publicar no Quadro de Avisos
                     </Button>
                   </div>
                 </div>
 
-                {/* Lista de Avisos Cadastrados */}
+                {/* Lista de Avisos Personalizados Cadastrados */}
                 <div className="space-y-2">
                   <h4 className="font-display text-sm font-extrabold text-foreground">
-                    Avisos no Carrossel ({(draft.noticeSlides || []).length})
+                    Avisos Personalizados Cadastrados ({(draft.noticeSlides || []).length})
                   </h4>
 
                   {(!draft.noticeSlides || draft.noticeSlides.length === 0) ? (
                     <div className="rounded-2xl border border-dashed p-6 text-center text-xs text-muted-foreground">
-                      Nenhum aviso personalizado cadastrado ainda. A plataforma está exibindo os{" "}
-                      <b>avisos informativos padrão</b> (Torneio Ranqueado, Arena X1 e Novos Jogos).
+                      Nenhum aviso personalizado cadastrado ainda. Use o formulário acima para criar comunicados, jogos em destaque ou desafios de medalhas.
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -3364,13 +3544,21 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                               type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() => {
+                              onClick={async () => {
                                 const next = (draft.noticeSlides || []).map((s) =>
                                   s.id === slide.id ? { ...s, active: !s.active } : s
                                 );
-                                setDraft((prev) => ({ ...prev, noticeSlides: next }));
+                                const nextCfg: PlatformAdminConfig = { ...draft, noticeSlides: next };
+                                setDraft(nextCfg);
+                                await auth.updateAdminConfig(nextCfg);
+                                onConfigSaved?.();
+                                flashSaved(
+                                  slide.active
+                                    ? "🚫 Aviso desativado e sincronizado!"
+                                    : "✅ Aviso ativado e sincronizado!"
+                                );
                               }}
-                              className="rounded-xl text-xs h-8"
+                              className="rounded-xl text-xs h-8 cursor-pointer"
                             >
                               {slide.active ? "Desativar" : "Ativar"}
                             </Button>
@@ -3378,11 +3566,15 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                               type="button"
                               variant="ghost"
                               size="sm"
-                              onClick={() => {
+                              onClick={async () => {
                                 const next = (draft.noticeSlides || []).filter((s) => s.id !== slide.id);
-                                setDraft((prev) => ({ ...prev, noticeSlides: next }));
+                                const nextCfg: PlatformAdminConfig = { ...draft, noticeSlides: next };
+                                setDraft(nextCfg);
+                                await auth.updateAdminConfig(nextCfg);
+                                onConfigSaved?.();
+                                flashSaved("🗑️ Aviso excluído e sincronizado com o PlayFab!");
                               }}
-                              className="rounded-xl text-xs h-8 text-destructive hover:bg-destructive/10"
+                              className="rounded-xl text-xs h-8 text-destructive hover:bg-destructive/10 cursor-pointer"
                               title="Excluir aviso"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -3392,6 +3584,25 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                       ))}
                     </div>
                   )}
+                </div>
+
+                {/* Botão de Garantia de Sincronização Geral */}
+                <div className="flex justify-end pt-2">
+                  <Button
+                    type="button"
+                    onClick={async () => {
+                      await auth.updateAdminConfig(draft);
+                      onConfigSaved?.();
+                      flashSaved(
+                        isPlayFabConfigured()
+                          ? "✅ Configuração completa do Quadro de Avisos sincronizada no PlayFab!"
+                          : "💾 Configuração salva localmente!"
+                      );
+                    }}
+                    className="rounded-xl text-xs font-bold gap-1.5 cursor-pointer"
+                  >
+                    <Save className="h-4 w-4" /> Salvar Configurações do Quadro de Avisos na Nuvem
+                  </Button>
                 </div>
               </div>
             )}
