@@ -7,6 +7,7 @@ import { ALL_GAME_IDS, GAME_NAMES, type GameId } from "./game-storage.ts";
 import { loadAdminConfig } from "./game-codes.ts";
 import {
   grantPlayerTournamentMedal,
+  getAdminPlayFabTicket,
   getPlayFabTitleId,
   isPlayFabConfigured,
   loadStoredSession,
@@ -756,7 +757,8 @@ export async function syncWeeklyTournamentWithPlayFab(): Promise<void> {
   if (!isPlayFabConfigured()) return;
   const session = loadStoredSession();
   const titleId = getPlayFabTitleId();
-  if (!session?.sessionTicket || !titleId) return;
+  const ticket = (await getAdminPlayFabTicket()) ?? session?.sessionTicket;
+  if (!ticket || !titleId) return;
 
   const store = loadTournamentStore();
   const groupId = `TOURNAMENT_${store.weekKey.replace(/[^A-Z0-9_]/gi, "_")}`;
@@ -766,7 +768,7 @@ export async function syncWeeklyTournamentWithPlayFab(): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Authorization": session.sessionTicket,
+        "X-Authorization": ticket,
       },
       body: JSON.stringify({ TitleId: titleId, SharedGroupId: groupId }),
     });
@@ -775,7 +777,7 @@ export async function syncWeeklyTournamentWithPlayFab(): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Authorization": session.sessionTicket,
+        "X-Authorization": ticket,
       },
       body: JSON.stringify({ TitleId: titleId, SharedGroupId: groupId }),
     });
@@ -809,7 +811,7 @@ export async function syncWeeklyTournamentWithPlayFab(): Promise<void> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Authorization": session.sessionTicket,
+        "X-Authorization": ticket,
       },
       body: JSON.stringify({
         TitleId: titleId,

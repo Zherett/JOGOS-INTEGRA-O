@@ -1,6 +1,11 @@
 import type { GameId } from "./game-storage";
 import { stageFromBirthdate, type AgeStageId } from "./player-profile";
-import { getPlayFabTitleId, loadRegistry, loadStoredSession } from "./playfab";
+import {
+  getAdminPlayFabTicket,
+  getPlayFabTitleId,
+  loadRegistry,
+  loadStoredSession,
+} from "./playfab";
 
 export const GAME_RECORDS_STORAGE_KEY = "desafios-game-records-v1";
 
@@ -247,7 +252,8 @@ export async function syncGameRecordsWithPlayFab(
   const session = loadStoredSession();
   const titleId = getPlayFabTitleId();
   const store = localStore ?? loadGameRecords();
-  if (!session || !session.sessionTicket || !titleId) return store;
+  const ticket = (await getAdminPlayFabTicket()) ?? session?.sessionTicket;
+  if (!ticket || !titleId) return store;
 
   const groupId = "GameStageRecords_v1";
 
@@ -257,7 +263,7 @@ export async function syncGameRecordsWithPlayFab(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Authorization": session.sessionTicket,
+        "X-Authorization": ticket,
       },
       body: JSON.stringify({ TitleId: titleId, SharedGroupId: groupId }),
     });
@@ -267,7 +273,7 @@ export async function syncGameRecordsWithPlayFab(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Authorization": session.sessionTicket,
+        "X-Authorization": ticket,
       },
       body: JSON.stringify({ TitleId: titleId, SharedGroupId: groupId }),
     });
@@ -319,7 +325,7 @@ export async function syncGameRecordsWithPlayFab(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Authorization": session.sessionTicket,
+        "X-Authorization": ticket,
       },
       body: JSON.stringify({
         TitleId: titleId,

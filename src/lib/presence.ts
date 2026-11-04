@@ -35,7 +35,7 @@ export const PRESENCE_DISCONNECT_MAX_AGE_MS = 2 * 60 * 1000; // 2 minutos sem he
 
 const PRESENCE_STORAGE_KEY = "desafios-presence-store-v1";
 const LOCAL_LAST_ACTIVE_KEY = "desafios-local-last-active-v1";
-export const PRESENCE_SHARED_GROUP_ID = "SEMED_PRESENCE_V1";
+export const PRESENCE_SHARED_GROUP_ID = "SEMED_PRESENCE_V2";
 export const PRESENCE_UPDATED_EVENT = "desafios:presence-updated";
 
 /**
@@ -241,12 +241,12 @@ const observedRemotePulses = new Map<
 async function callPresencePlayFab(
   endpoint: string,
   body: Record<string, unknown>,
-): Promise<Record<string, unknown> | null> {
+): Promise<{ data?: Record<string, unknown>; serverDate?: string | null } | null> {
   if (typeof window === "undefined" || !isPlayFabConfigured()) return null;
   const titleId = getPlayFabTitleId();
   if (!titleId) return null;
   const session = loadStoredSession();
-  const ticket = session?.sessionTicket ?? (await getAdminPlayFabTicket());
+  const ticket = (await getAdminPlayFabTicket()) ?? session?.sessionTicket;
   if (!ticket) return null;
 
   try {
@@ -258,8 +258,10 @@ async function callPresencePlayFab(
       },
       body: JSON.stringify({ TitleId: titleId, ...body }),
     });
-    const json = (await res.json()) as { data?: Record<string, unknown> };
-    return json.data ?? null;
+    const serverDate = res.headers.get("date");
+    const json = (await res.json()) as { data?: Record<string, unknown>; error?: string };
+    if (json.error) return null;
+    return { data: json.data, serverDate };
   } catch {
     return null;
   }
@@ -325,20 +327,23 @@ export async function syncPresenceFromPlayFab(force = false): Promise<void> {
         presenceGroupCreated = true;
       }
 
-      const res = (await callPresencePlayFab("GetSharedGroupData", {
+      const res = await callPresencePlayFab("GetSharedGroupData", {
         SharedGroupId: PRESENCE_SHARED_GROUP_ID,
-      })) as {
-        Data?: Record<string, { Value: string; LastUpdated?: string }>;
-      } | null;
+      });
 
-      if (!res?.Data) return;
+      const serverNow = res?.serverDate ? Date.parse(res.serverDate) : null;
+      const resData = res?.data as {
+        Data?: Record<string, { Value: string; LastUpdated?: string }>;
+      } | undefined;
+
+      if (!resData?.Data) return;
 
       const store = loadPresenceStore();
       const localSessionId = loadStoredSession()?.playerId;
       const syncNow = Date.now();
       let changed = false;
 
-      for (const [key, entry] of Object.entries(res.Data)) {
+      for (const [key, entry] of Object.entries(resData.Data)) {
         if (!entry?.Value) continue;
         try {
           const remote = JSON.parse(entry.Value) as Partial<PlayerPresenceRecord>;
@@ -381,8 +386,8 @@ export async function syncPresenceFromPlayFab(force = false): Promise<void> {
           }
 
           // Calcula há quanto tempo o pulso foi enviado sem depender do fuso/relógio local do dispositivo do aluno:
-          // 1. Prioriza o timestamp oficial do servidor PlayFab (`LastUpdated`)
-          // 2. Caso ausente, rastreia quando `remote.lastSeenAt` mudou localmente ou usa a diferença direta se relógios próximos
+          // 1. Usa a diferença entre o timestamp do servidor PlayFab (Date header) e LastUpdated do registro
+          // 2. Caso ausente, rastreia quando o pulso foi observado localmente neste dispositivo
           const obsKey = slug || pId;
           const prevObs = observedRemotePulses.get(obsKey);
           if (!prevObs || prevObs.remoteSeenAt !== remote.lastSeenAt) {
@@ -393,14 +398,14 @@ export async function syncPresenceFromPlayFab(force = false): Promise<void> {
           }
 
           let seenAgeMs = Math.max(0, syncNow - remote.lastSeenAt);
-          if (entry.LastUpdated) {
-            const serverMs = Date.parse(entry.LastUpdated);
-            if (!Number.isNaN(serverMs)) {
-              seenAgeMs = Math.max(0, syncNow - serverMs);
+          if (entry.LastUpdated && serverNow && !Number.isNaN(serverNow)) {
+            const entryMs = Date.parse(entry.LastUpdated);
+            if (!Number.isNaN(entryMs)) {
+              seenAgeMs = Math.max(0, serverNow - entryMs);
             }
           } else if (prevObs && prevObs.remoteSeenAt !== remote.lastSeenAt) {
             seenAgeMs = 0;
-          } else if (prevObs && Math.abs(syncNow - remote.lastSeenAt) > 10 * 60 * 1000) {
+          } else if (prevObs) {
             seenAgeMs = Math.max(0, syncNow - prevObs.observedLocalAt);
           }
 

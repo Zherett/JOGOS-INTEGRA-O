@@ -438,7 +438,7 @@ async function callPlayFabSharedGroup(
   if (!isPlayFabConfigured()) return null;
   const session = loadStoredSession();
   const titleId = getPlayFabTitleId();
-  const ticket = session?.sessionTicket ?? (await getAdminPlayFabTicket());
+  const ticket = (await getAdminPlayFabTicket()) ?? session?.sessionTicket;
   if (!ticket || !titleId) return null;
 
   try {
