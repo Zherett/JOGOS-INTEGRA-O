@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { nickSlug } from "./player-profile.ts";
 import {
+  clearCachedAdminPlayFabTicket,
   getAdminPlayFabTicket,
   getPlayFabTitleId,
   isPlayFabConfigured,
@@ -241,12 +242,13 @@ const observedRemotePulses = new Map<
 async function callPresencePlayFab(
   endpoint: string,
   body: Record<string, unknown>,
+  canRetry = true,
 ): Promise<{ data?: Record<string, unknown>; serverDate?: string | null } | null> {
   if (typeof window === "undefined" || !isPlayFabConfigured()) return null;
   const titleId = getPlayFabTitleId();
   if (!titleId) return null;
   const session = loadStoredSession();
-  const ticket = (await getAdminPlayFabTicket()) ?? session?.sessionTicket;
+  let ticket = (await getAdminPlayFabTicket()) ?? session?.sessionTicket;
   if (!ticket) return null;
 
   try {
@@ -259,7 +261,22 @@ async function callPresencePlayFab(
       body: JSON.stringify({ TitleId: titleId, ...body }),
     });
     const serverDate = res.headers.get("date");
-    const json = (await res.json()) as { data?: Record<string, unknown>; error?: string };
+    const json = (await res.json()) as {
+      data?: Record<string, unknown>;
+      error?: string;
+      errorCode?: number;
+      errorMessage?: string;
+    };
+
+    // Renovação automática caso o ticket em cache tenha expirado ou sido invalidado no PlayFab
+    if (res.status === 401 || json.errorCode === 1089 || json.error === "NotAuthorized") {
+      clearCachedAdminPlayFabTicket();
+      if (canRetry) {
+        return callPresencePlayFab(endpoint, body, false);
+      }
+      return null;
+    }
+
     if (json.error) return null;
     return { data: json.data, serverDate };
   } catch {
@@ -354,12 +371,15 @@ export async function syncPresenceFromPlayFab(force = false): Promise<void> {
             (remote.nick ? nickSlug(remote.nick) : key.replace(/^pres_/, ""));
           const pId = remote.playerId || `pf_${slug}`;
 
-          // Não sobrescreve o pulso local da própria sessão ativa neste navegador
+          // Se for a mesma conta da sessão local, apenas ignora se a informação local já for mais recente
           if (
             localSessionId &&
             (pId === localSessionId || slug === localSessionId)
           ) {
-            continue;
+            const cur = store.players[pId] || store.players[slug];
+            if (cur && cur.lastSeenAt >= normalizedSeenAt) {
+              continue;
+            }
           }
 
           if (remote.disconnected || !remote.lastSeenAt || remote.lastSeenAt <= 0) {

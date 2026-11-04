@@ -377,8 +377,10 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   async function handleRefreshRoster() {
     setSyncingRoster(true);
     try {
+      await syncPresenceFromPlayFab(true);
       const players = await syncStudentRosterFromPlayFab();
       setRegisteredStudents(players);
+      setPresenceTick((t) => t + 1);
       flashSaved(`${players.length} alunos sincronizados com a nuvem!`);
     } finally {
       setSyncingRoster(false);

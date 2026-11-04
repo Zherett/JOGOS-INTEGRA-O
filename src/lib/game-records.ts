@@ -1,11 +1,11 @@
-import type { GameId } from "./game-storage";
-import { stageFromBirthdate, type AgeStageId } from "./player-profile";
+import type { GameId } from "./game-storage.ts";
+import { stageFromBirthdate, type AgeStageId } from "./player-profile.ts";
 import {
   getAdminPlayFabTicket,
   getPlayFabTitleId,
   loadRegistry,
   loadStoredSession,
-} from "./playfab";
+} from "./playfab.ts";
 
 export const GAME_RECORDS_STORAGE_KEY = "desafios-game-records-v1";
 
