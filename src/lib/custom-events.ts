@@ -532,6 +532,8 @@ function buildEventBonusBadges(ev: {
   bonusValue?: number;
   matchXpCap?: number;
   dailyXpCap?: number;
+  linkedMedalId?: string | null;
+  linkedMedalIds?: string[];
 }): ActiveEventBonusBadge[] {
   const badges: ActiveEventBonusBadge[] = [];
 
@@ -567,11 +569,19 @@ function buildEventBonusBadges(ev: {
   }
 
   if (badges.length === 0) {
-    badges.push({
-      type: "multiplier",
-      label: "⚡ Bônus Especial Ativo",
-      icon: "⚡",
-    });
+    if ((ev.linkedMedalIds && ev.linkedMedalIds.length > 0) || ev.linkedMedalId) {
+      badges.push({
+        type: "multiplier",
+        label: "🏅 Medalha Especial de Evento",
+        icon: "🏅",
+      });
+    } else {
+      badges.push({
+        type: "multiplier",
+        label: "⚡ Bônus Especial Ativo",
+        icon: "⚡",
+      });
+    }
   }
 
   return badges;

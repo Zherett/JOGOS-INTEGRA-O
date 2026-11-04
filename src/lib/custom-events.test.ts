@@ -302,6 +302,28 @@ describe("Eventos Personalizados Criados pelo Administrador", () => {
     assert.equal(itemsMatch.length, 1);
     assert.equal(itemsMatch[0].bonusBadges.length, 1);
     assert.equal(itemsMatch[0].bonusBadges[0].label, "+30 XP/partida (50 máx)");
+
+    // Evento com APENAS medalha vinculada (sem multiplicador, sem teto e sem limite diário)
+    const medalOnlyEv: SpecialEvent = {
+      id: "sp_medal_only",
+      title: "Desafio da Medalha Especial",
+      description: "Evento focado em missão de medalha",
+      scope: "todos",
+      bonusType: "personalizado",
+      xpMultiplier: undefined,
+      matchXpCap: undefined,
+      dailyXpCap: undefined,
+      linkedMedalIds: ["medal_campeao"],
+      startsAt: "2026-10-31T00:00:00Z",
+      endsAt: "2026-10-31T23:59:59Z",
+      active: true,
+      createdAt: "2026-10-31T00:00:00Z",
+    };
+
+    const itemsMedal = getAllActiveEvents([medalOnlyEv], [], saturday);
+    assert.equal(itemsMedal.length, 1);
+    assert.equal(itemsMedal[0].bonusBadges.length, 1);
+    assert.equal(itemsMedal[0].bonusBadges[0].label, "🏅 Medalha Especial de Evento");
   });
 
   it("soma os bônus adicionais de múltiplos eventos ativos simultâneos (XP e Limites)", () => {

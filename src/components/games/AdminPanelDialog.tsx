@@ -533,6 +533,8 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     dailyXpCap?: number;
     bonusType?: string;
     bonusValue?: number;
+    linkedMedalIds?: string[];
+    linkedMedalId?: string | null;
   }): string {
     const parts: string[] = [];
     if (ev.xpMultiplier && ev.xpMultiplier > 1) {
@@ -553,7 +555,11 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     if (parts.length === 0) {
       if (ev.bonusType === "dobro_xp") parts.push("2x XP (Dobro)");
       else if (ev.bonusType === "xp_1_5x") parts.push("1.5x XP (+50%)");
-      else parts.push("Bônus Ativo");
+      else if ((ev.linkedMedalIds && ev.linkedMedalIds.length > 0) || ev.linkedMedalId) {
+        parts.push("Medalha de Evento");
+      } else {
+        parts.push("Bônus Ativo");
+      }
     }
     return parts.join(" • ");
   }
@@ -564,8 +570,10 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
       flashSaved("Informe o título do evento.");
       return;
     }
-    if (!evHasMultiplier && !evHasMatchCap && !evHasDailyCap) {
-      flashSaved("Marque pelo menos uma das caixas de bônus para ativar no evento.");
+    const hasAnyBonus = evHasMultiplier || evHasMatchCap || evHasDailyCap;
+    const hasAnyMedal = evAttachedMedals.length > 0 || Boolean(evLinkedMedalId);
+    if (!hasAnyBonus && !hasAnyMedal) {
+      flashSaved("Marque pelo menos uma caixa de bônus ou vincule uma medalha ao evento.");
       return;
     }
     const newCustoms = [...(draft.customMedals ?? [])];
@@ -657,8 +665,10 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
       flashSaved("Selecione pelo menos um dia da semana ou uma data específica.");
       return;
     }
-    if (!recHasMultiplier && !recHasMatchCap && !recHasDailyCap) {
-      flashSaved("Marque pelo menos uma das caixas de bônus para ativar no evento.");
+    const hasAnyBonus = recHasMultiplier || recHasMatchCap || recHasDailyCap;
+    const hasAnyMedal = recAttachedMedals.length > 0 || Boolean(recLinkedMedal);
+    if (!hasAnyBonus && !hasAnyMedal) {
+      flashSaved("Marque pelo menos uma caixa de bônus ou vincule uma medalha ao evento.");
       return;
     }
     const newCustoms = [...(draft.customMedals ?? [])];
@@ -1634,7 +1644,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                               <Zap className="h-4 w-4" /> Bônus do Evento (Marque as caixinhas que deseja ativar)
                             </div>
                             <span className="text-[10px] text-muted-foreground font-semibold">
-                              Escolha 1, 2 ou os 3 bônus
+                              Escolha 1, 2 ou os 3 bônus (opcional se vincular medalha)
                             </span>
                           </div>
 
@@ -1733,36 +1743,19 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div className="space-y-1">
-                            <Label className="text-xs font-bold">Duração do Evento</Label>
-                            <select
-                              value={evDurationHours}
-                              onChange={(e) => setEvDurationHours(Number(e.target.value))}
-                              className="h-9 w-full rounded-xl border bg-background px-3 text-xs font-bold"
-                            >
-                              <option value={12}>12 Horas</option>
-                              <option value={24}>1 Dia (24 horas)</option>
-                              <option value={48}>2 Dias (Fim de Semana)</option>
-                              <option value={72}>3 Dias (72 horas)</option>
-                              <option value={168}>1 Semana Completa (7 dias)</option>
-                            </select>
-                          </div>
-
-                          <div className="space-y-1">
-                            <Label className="text-xs font-bold">Duração do Evento</Label>
-                            <select
-                              value={evDurationHours}
-                              onChange={(e) => setEvDurationHours(Number(e.target.value))}
-                              className="h-9 w-full rounded-xl border bg-background px-3 text-xs font-bold"
-                            >
-                              <option value={12}>12 Horas</option>
-                              <option value={24}>1 Dia (24 horas)</option>
-                              <option value={48}>2 Dias (Fim de Semana)</option>
-                              <option value={72}>3 Dias (72 horas)</option>
-                              <option value={168}>1 Semana Completa (7 dias)</option>
-                            </select>
-                          </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs font-bold">Duração do Evento</Label>
+                          <select
+                            value={evDurationHours}
+                            onChange={(e) => setEvDurationHours(Number(e.target.value))}
+                            className="h-9 w-full max-w-sm rounded-xl border bg-background px-3 text-xs font-bold"
+                          >
+                            <option value={12}>12 Horas</option>
+                            <option value={24}>1 Dia (24 horas)</option>
+                            <option value={48}>2 Dias (Fim de Semana)</option>
+                            <option value={72}>3 Dias (72 horas)</option>
+                            <option value={168}>1 Semana Completa (7 dias)</option>
+                          </select>
                         </div>
 
                         {/* Seção de Medalhas Atribuídas ao Evento */}
@@ -2354,7 +2347,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                               <Zap className="h-4 w-4" /> Bônus Recorrentes (Marque as caixinhas que deseja ativar)
                             </div>
                             <span className="text-[10px] text-muted-foreground font-semibold">
-                              Escolha 1, 2 ou os 3 bônus
+                              Escolha 1, 2 ou os 3 bônus (opcional se vincular medalha)
                             </span>
                           </div>
 
