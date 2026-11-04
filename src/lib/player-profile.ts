@@ -1230,6 +1230,15 @@ export function getLocalDateKey(now = new Date()): string {
   return `${y}-${m}-${d}`;
 }
 
+/** Returns the previous day's date string in `YYYY-MM-DD` format. */
+export function getPreviousDateKey(dateKey: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!match) return "";
+  const d = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  d.setDate(d.getDate() - 1);
+  return getLocalDateKey(d);
+}
+
 export interface DailyXpCapResult {
   /** XP actually granted after applying the daily cap */
   grantedXp: number;

@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildBaseMedalsCatalog,
+  calculateMaxConsecutiveDays,
   calculateMaxConsecutiveWeeks,
   calculateMedalProgress,
   evaluatePlayerMedals,
@@ -10,6 +11,7 @@ import {
   getDistinctFlawlessGames,
   getDistinctGamesPlayed,
   getEffectivePlayerProgression,
+  getPlayerStreakDays,
   getTopShowcaseMedals,
   isFlawlessMatch,
   RARITY_INFO,
@@ -1171,5 +1173,94 @@ describe("Sistema Completo de Medalhas e Inventário", () => {
     assert.ok(awardedC4.some((m) => m.id === "secret_top1_consecutive_2"));
     assert.ok(awardedC4.some((m) => m.id === "secret_top1_consecutive_3"));
     assert.ok(awardedC4.some((m) => m.id === "secret_top1_consecutive_4"));
+  });
+
+  it("calcula streak diário de atividade legítimo e impede medalhas fraudulentas ou prematuras de 7 dias", () => {
+    // 1. calculateMaxConsecutiveDays
+    assert.equal(calculateMaxConsecutiveDays([]), 0);
+    assert.equal(calculateMaxConsecutiveDays(["2026-11-03"]), 1);
+    assert.equal(calculateMaxConsecutiveDays(["2026-11-01", "2026-11-03"]), 1); // dia 02 pulado
+    assert.equal(calculateMaxConsecutiveDays(["2026-11-02", "2026-11-03", "2026-11-04"]), 3);
+    assert.equal(
+      calculateMaxConsecutiveDays([
+        "2026-11-01",
+        "2026-11-02",
+        "2026-11-03",
+        "2026-11-04",
+        "2026-11-05",
+        "2026-11-06",
+        "2026-11-07",
+      ]),
+      7,
+    );
+
+    // 2. getPlayerStreakDays
+    // Aluno sem partidas: streak 0
+    assert.equal(getPlayerStreakDays({ matchesPlayed: 0, streakDays: 7 }), 0);
+
+    // Aluno que colocou a plataforma ontem e jogou hoje:
+    // Mesmo se streakDays estiver adulterado como 7, ele tem apenas 2 datas ativas e 4 partidas -> estritamente travado em 2!
+    const fakeStudent = {
+      matchesPlayed: 4,
+      streakDays: 7,
+      activeDates: ["2026-11-03", "2026-11-04"],
+      lastActiveDate: "2026-11-04",
+    };
+    assert.equal(getPlayerStreakDays(fakeStudent as any), 2);
+
+    // Avaliação de medalhas para o fakeStudent:
+    // Não pode ganhar streak_3_days nem streak_7_days!
+    const awardedFake = evaluatePlayerMedals({
+      profile: fakeStudent as any,
+      stats: [],
+      streakDays: 7,
+    });
+    assert.ok(!awardedFake.some((m) => m.id === "streak_3_days"));
+    assert.ok(!awardedFake.some((m) => m.id === "streak_5_days"));
+    assert.ok(!awardedFake.some((m) => m.id === "streak_7_days"));
+
+    // Progresso visual no catálogo para o aluno fake: mostra 2 de 7 dias (29%), não 100%!
+    const all = getAllAvailableMedals();
+    const streak7Def = all.find((m) => m.id === "streak_7_days")!;
+    const prog = calculateMedalProgress(streak7Def, fakeStudent as any);
+    assert.equal(prog.percent, 29); // 2 / 7 = 28.57% -> 29%
+    assert.equal(prog.progressText, "2 de 7 dias consecutivos ativos");
+
+    // 3. Reconciliação no ensurePlayerSeasonAligned:
+    // Se o aluno de alguma forma recebeu a medalha streak_7_days indevidamente, o sanitizador revoga e ajusta o streak para 2!
+    const cfg = loadAdminConfig();
+    const accWithIllegitimateMedal = {
+      profile: {
+        id: "p_cheat",
+        nick: "AlunoFake",
+        nickNormalized: "alunofake",
+        full_name: "ALUNO FAKE",
+        school: "Raimundo Bezerra",
+        grade: "6º ano",
+        birthdate: "2014-01-20",
+        xp: 150,
+        seasonXp: 150,
+        level: 1,
+        wins: 1,
+        matchesPlayed: 3,
+        streakDays: 7,
+        activeDates: ["2026-11-03", "2026-11-04"],
+        lastActiveDate: "2026-11-04",
+        unlockedMedals: [
+          { medalId: "streak_7_days", unlockedAt: "2026-11-04T00:00:00.000Z" },
+        ],
+        badges: [],
+        seasonId: 1,
+      },
+      passwordHash: "hash",
+      unlocked: [],
+      stats: [],
+      updatedAt: "2026-11-04",
+    };
+
+    const sanitizedAcc = ensurePlayerSeasonAligned(accWithIllegitimateMedal as any, cfg);
+    assert.equal(sanitizedAcc.profile.streakDays, 2);
+    // A medalha indevida de 7 dias foi revogada!
+    assert.ok(!sanitizedAcc.profile.unlockedMedals?.some((m) => m.medalId === "streak_7_days"));
   });
 });

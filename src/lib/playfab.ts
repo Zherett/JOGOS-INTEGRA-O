@@ -61,6 +61,7 @@ import {
   type TurmaCode,
   createTurmaChangeRequest,
   resolveTurmaChangeRequest,
+  getPreviousDateKey,
 } from "./player-profile.ts";
 import {
   calculateEventXpMultiplier,
@@ -80,6 +81,9 @@ import {
   getDistinctGamesPlayed,
   getEffectivePlayerProgression,
   getEnabledGameIdsSet,
+  getPlayerStreakDays,
+  getTop5TotalWeeks,
+  getTop1ConsecutiveWeeks,
   isFlawlessMatch,
   MEDAL_XP_REWARDS,
   type PlayerUnlockedMedal,
@@ -147,6 +151,7 @@ export interface PlayerProfile {
   dailyPostCapDate?: string;
   streakDays?: number;
   lastActiveDate?: string;
+  activeDates?: string[];
   tournamentMedals?: TournamentMedal[];
   unlockedMedals?: PlayerUnlockedMedal[];
   eventProgress?: Record<string, EventProgressData>;
@@ -805,14 +810,6 @@ function getCurrentWeekKey(now = new Date()): string {
   return `${now.getFullYear()}-W${String(weekNum).padStart(2, "0")}`;
 }
 
-function getPreviousDateKey(dateKey: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
-  if (!match) return "";
-  const d = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  d.setDate(d.getDate() - 1);
-  return getLocalDateKey(d);
-}
-
 export function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig): StoredAccount {
   const todayKey = getLocalDateKey();
   if (acc.profile.dailyXpDate !== todayKey) {
@@ -914,6 +911,9 @@ export function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdmin
   );
   const gamesWith10Plays = aggregatedRows.filter((s) => s.plays >= 10).length;
 
+  // Always verify and clamp streakDays to legitimate verified daily activity
+  acc.profile.streakDays = getPlayerStreakDays(acc.profile);
+
   // Reconcile all unlocked medals so any improperly awarded medal returns to its proper progress
   if (acc.profile.unlockedMedals && acc.profile.unlockedMedals.length > 0 && !isAdminAcc) {
     let filtered = acc.profile.unlockedMedals.filter((m) => {
@@ -931,6 +931,35 @@ export function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdmin
 
         case "all_level_medals":
           return acc.profile.level >= 10;
+
+        case "streak_days":
+          return getPlayerStreakDays(acc.profile) >= (cond.threshold ?? 3);
+
+        case "max_daily_xp":
+          return acc.profile.xp >= (cond.threshold ?? 1000);
+
+        case "total_matches_played":
+          return totalMatchesCount >= (cond.threshold ?? 50);
+
+        case "top5_weeks_count":
+          return getTop5TotalWeeks(acc.profile) >= (cond.threshold ?? 2);
+
+        case "top1_consecutive_weeks":
+          return getTop1ConsecutiveWeeks(acc.profile) >= (cond.threshold ?? 2);
+
+        case "tournament_rank":
+          return Boolean(
+            Array.isArray(acc.profile.tournamentMedals) &&
+              acc.profile.tournamentMedals.some((tm) => tm.rank === cond.targetRank),
+          );
+
+        case "tournament_rank_mastery": {
+          const pts = Math.max(
+            acc.profile.tournamentPoints ?? 0,
+            acc.profile.bestTournamentPoints ?? 0,
+          );
+          return pts >= (cond.threshold ?? 61);
+        }
 
         case "game_best_level": {
           if (!cond.gameId || cfg.enabledGames[cond.gameId] === false) return false;
@@ -1217,8 +1246,9 @@ function buildAccountFromPlayFabPayload(
     distinctGamesPlayed,
     dailyXp: parsedProfile.dailyXp ?? 0,
     dailyXpDate: parsedProfile.dailyXpDate ?? getLocalDateKey(),
-    streakDays: parsedProfile.streakDays ?? 1,
+    streakDays: getPlayerStreakDays(parsedProfile),
     lastActiveDate: parsedProfile.lastActiveDate,
+    activeDates: Array.isArray(parsedProfile.activeDates) ? parsedProfile.activeDates : [],
     tournamentMedals: Array.isArray(parsedProfile.tournamentMedals)
       ? parsedProfile.tournamentMedals
       : [],
@@ -1372,6 +1402,8 @@ export async function playfabSignUp(data: SignUpData): Promise<{
     distinctGamesPlayed: 0,
     dailyXp: 0,
     dailyXpDate: getLocalDateKey(),
+    streakDays: 0,
+    activeDates: [],
     badges: [],
     isAdmin: slug === "admin" || slug === "semed_admin",
     seasonId: cfg.seasonId,
@@ -1788,8 +1820,9 @@ async function pushProfileToPlayFab(account: StoredAccount, sessionTicket?: stri
           dailyXpDate: p.dailyXpDate ?? getLocalDateKey(),
           dailyPostCapMatches: p.dailyPostCapMatches ?? 0,
           dailyPostCapDate: p.dailyPostCapDate ?? getLocalDateKey(),
-          streakDays: p.streakDays ?? 1,
+          streakDays: getPlayerStreakDays(p),
           lastActiveDate: p.lastActiveDate,
+          activeDates: p.activeDates ?? [],
           tournamentMedals: p.tournamentMedals ?? [],
           unlockedMedals: p.unlockedMedals ?? [],
           badges: p.badges,
@@ -1838,8 +1871,9 @@ async function pushProfileToPlayFab(account: StoredAccount, sessionTicket?: stri
               tournamentWeekKey: p.tournamentWeekKey,
               matchesPlayed: p.matchesPlayed,
               distinctGamesPlayed: p.distinctGamesPlayed ?? 0,
-              streakDays: p.streakDays ?? 1,
+              streakDays: getPlayerStreakDays(p),
               lastActiveDate: p.lastActiveDate,
+              activeDates: p.activeDates ?? [],
               tournamentMedals: p.tournamentMedals ?? [],
               unlockedMedals: p.unlockedMedals ?? [],
               badges: p.badges ?? [],
@@ -2131,13 +2165,42 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
               parsed.dailyPostCapDate ??
               existing?.profile.dailyPostCapDate ??
               udProf?.dailyPostCapDate,
-            streakDays: Math.max(
-              parsed.streakDays ?? 1,
-              existing?.profile.streakDays ?? 1,
-              udProf?.streakDays ?? 1,
-            ),
+            streakDays: getPlayerStreakDays({
+              matchesPlayed: Math.max(
+                parsed.matchesPlayed ?? 0,
+                existing?.profile.matchesPlayed ?? 0,
+                udProf?.matchesPlayed ?? 0,
+              ),
+              streakDays: Math.max(
+                parsed.streakDays ?? 1,
+                existing?.profile.streakDays ?? 1,
+                udProf?.streakDays ?? 1,
+              ),
+              lastActiveDate:
+                parsed.lastActiveDate ?? existing?.profile.lastActiveDate ?? udProf?.lastActiveDate,
+              activeDates: Array.from(
+                new Set([
+                  ...(Array.isArray(parsed.activeDates) ? parsed.activeDates : []),
+                  ...(Array.isArray(existing?.profile.activeDates) ? existing.profile.activeDates : []),
+                  ...(Array.isArray(udProf?.activeDates) ? udProf.activeDates : []),
+                  ...(parsed.lastActiveDate ? [parsed.lastActiveDate] : []),
+                  ...(existing?.profile.lastActiveDate ? [existing.profile.lastActiveDate] : []),
+                  ...(udProf?.lastActiveDate ? [udProf.lastActiveDate] : []),
+                ]),
+              ),
+            }),
             lastActiveDate:
               parsed.lastActiveDate ?? existing?.profile.lastActiveDate ?? udProf?.lastActiveDate,
+            activeDates: Array.from(
+              new Set([
+                ...(Array.isArray(parsed.activeDates) ? parsed.activeDates : []),
+                ...(Array.isArray(existing?.profile.activeDates) ? existing.profile.activeDates : []),
+                ...(Array.isArray(udProf?.activeDates) ? udProf.activeDates : []),
+                ...(parsed.lastActiveDate ? [parsed.lastActiveDate] : []),
+                ...(existing?.profile.lastActiveDate ? [existing.profile.lastActiveDate] : []),
+                ...(udProf?.lastActiveDate ? [udProf.lastActiveDate] : []),
+              ]),
+            ).sort(),
             tournamentMedals:
               parsed.tournamentMedals ??
               existing?.profile.tournamentMedals ??
@@ -2280,8 +2343,9 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
           weeklyX1WeekKey: acc.profile.weeklyX1WeekKey,
           matchesPlayed: acc.profile.matchesPlayed,
           distinctGamesPlayed: acc.profile.distinctGamesPlayed ?? 0,
-          streakDays: acc.profile.streakDays ?? 1,
+          streakDays: getPlayerStreakDays(acc.profile),
           lastActiveDate: acc.profile.lastActiveDate,
+          activeDates: acc.profile.activeDates ?? [],
           tournamentMedals: acc.profile.tournamentMedals ?? [],
           unlockedMedals: acc.profile.unlockedMedals ?? [],
           badges: acc.profile.badges ?? [],
@@ -2475,18 +2539,33 @@ export async function playfabRecordMatch(args: {
   const todayKey = getLocalDateKey();
   const currentWeekKey = getCurrentWeekKey();
 
-  // Update consecutive daily activity streak
+  // Update consecutive daily activity streak and activeDates
+  const activeDatesSet = new Set<string>(
+    Array.isArray(acc.profile.activeDates) ? acc.profile.activeDates : [],
+  );
+  if (acc.profile.lastActiveDate) {
+    activeDatesSet.add(acc.profile.lastActiveDate);
+  }
+  activeDatesSet.add(todayKey);
+  acc.profile.activeDates = Array.from(activeDatesSet).sort();
+
   if (acc.profile.lastActiveDate !== todayKey) {
     const yesterdayKey = getPreviousDateKey(todayKey);
     if (acc.profile.lastActiveDate === yesterdayKey) {
-      acc.profile.streakDays = (acc.profile.streakDays ?? 1) + 1;
+      acc.profile.streakDays = (acc.profile.streakDays ?? 0) + 1;
     } else {
       acc.profile.streakDays = 1;
     }
     acc.profile.lastActiveDate = todayKey;
-  } else if (!acc.profile.streakDays) {
+  } else if (!acc.profile.streakDays || acc.profile.streakDays < 1) {
     acc.profile.streakDays = 1;
   }
+
+  // Ensure streakDays is strictly bounded by verified active dates and matches played
+  acc.profile.streakDays = getPlayerStreakDays({
+    ...acc.profile,
+    matchesPlayed: Math.max((acc.profile.matchesPlayed ?? 0) + 1, 1),
+  });
 
   let earnedXp = 0;
   if (mode === "x1_online") {

@@ -4,6 +4,7 @@ import type { GameStatRow } from "./playfab.ts";
 import {
   calculatePlayerLevel,
   getLocalDateKey,
+  getPreviousDateKey,
   LEVEL_REQUIREMENTS,
   syncLevelStageProgress,
   type LevelStageProgress,
@@ -816,6 +817,80 @@ export function getDailyPostCapMatches(
   return profile.dailyPostCapMatches ?? 0;
 }
 
+/**
+ * Calculates the maximum streak of consecutive calendar days from date strings like 'YYYY-MM-DD'.
+ */
+export function calculateMaxConsecutiveDays(dateStrings: string[]): number {
+  if (!Array.isArray(dateStrings) || dateStrings.length === 0) return 0;
+  const timestamps = Array.from(new Set(dateStrings))
+    .map((dStr) => {
+      const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dStr).trim());
+      if (!match) return null;
+      return Date.UTC(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10));
+    })
+    .filter((t): t is number => t !== null)
+    .sort((a, b) => a - b);
+
+  if (timestamps.length === 0) return 0;
+  let maxStreak = 1;
+  let currentStreak = 1;
+  const ONE_DAY_MS = 86_400_000;
+
+  for (let i = 1; i < timestamps.length; i++) {
+    const diffDays = Math.round((timestamps[i] - timestamps[i - 1]) / ONE_DAY_MS);
+    if (diffDays === 1) {
+      currentStreak++;
+      if (currentStreak > maxStreak) {
+        maxStreak = currentStreak;
+      }
+    } else if (diffDays > 1) {
+      currentStreak = 1;
+    }
+  }
+
+  return maxStreak;
+}
+
+/**
+ * Returns the legitimately verified consecutive streak of daily activity for a player.
+ * Strictly bounded by:
+ * 1. matchesPlayed (a player cannot have played on 7 different days if they have fewer than 7 matches!)
+ * 2. Distinct active dates recorded in `activeDates` and `lastActiveDate`.
+ * 3. Actual consecutive day intervals between those dates.
+ */
+export function getPlayerStreakDays(profile?: Partial<PlayerProfile> | null): number {
+  if (!profile) return 0;
+  const matches = Math.max(
+    0,
+    profile.matchesPlayed ?? 0,
+    profile.totalMatches ?? 0,
+    (profile as any)?.totalPlays ?? 0,
+  );
+  if (matches === 0) return 0;
+
+  const dates: string[] = [];
+  if (Array.isArray(profile.activeDates)) {
+    for (const d of profile.activeDates) {
+      if (typeof d === "string" && d.trim() && !dates.includes(d.trim())) {
+        dates.push(d.trim());
+      }
+    }
+  }
+  if (profile.lastActiveDate && !dates.includes(profile.lastActiveDate.trim())) {
+    dates.push(profile.lastActiveDate.trim());
+  }
+
+  if (dates.length > 0) {
+    const maxStreakFromDates = calculateMaxConsecutiveDays(dates);
+    const rawStreak = Math.max(profile.streakDays ?? 1, maxStreakFromDates);
+    return Math.max(1, Math.min(rawStreak, maxStreakFromDates, dates.length, matches));
+  }
+
+  // Fallback for accounts with matches played but no dates recorded yet:
+  // Cannot exceed 1 day of streak until multiple distinct active days are recorded.
+  return Math.min(profile.streakDays ?? 1, matches, 1);
+}
+
 /** Returns epoch ms for Monday 00:00:00 UTC of an ISO week */
 export function getMondayOfIsoWeek(year: number, week: number): number {
   const jan4 = new Date(Date.UTC(year, 0, 4));
@@ -1433,7 +1508,11 @@ export function evaluatePlayerMedals(
   );
   const gamesWith10Plays = aggregatedRows.filter((s) => s.plays >= 10).length;
   const isBetaActive = isBetaTesterPeriodActive(now);
-  const effectiveStreakDays = Math.max(ctx.streakDays ?? 0, p.streakDays ?? 1);
+  const effectiveStreakDays = getPlayerStreakDays({
+    ...p,
+    matchesPlayed: totalCompletedPlays,
+    streakDays: Math.max(ctx.streakDays ?? 0, p.streakDays ?? 0),
+  });
   const effectiveWeeklyX1Wins = Math.max(ctx.weeklyX1Wins ?? 0, p.weeklyX1Wins ?? 0);
 
   for (const medal of allMedals) {
@@ -1880,7 +1959,7 @@ export function calculateMedalProgress(
       };
     }
     case "streak_days": {
-      const cur = profile.streakDays ?? 1;
+      const cur = getPlayerStreakDays(profile);
       const target = cond.threshold ?? 3;
       const pct = Math.min(100, Math.round((cur / target) * 100));
       return {
