@@ -261,7 +261,7 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
                   <span className="font-semibold text-foreground">
                     {age} anos
                   </span>
-                  {profile.birthdate && (
+                  {Boolean(auth.profile?.isAdmin || isMe) && profile.birthdate && (
                     <span className="text-muted-foreground font-medium text-[11px]">
                       (Nasc: {formatBirthdateBR(profile.birthdate)})
                     </span>
