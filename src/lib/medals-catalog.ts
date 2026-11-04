@@ -1,7 +1,13 @@
 import { ALL_GAME_IDS, GAME_NAMES, type GameId } from "./game-storage.ts";
 import type { PlayerProfile } from "./playfab.ts";
 import type { GameStatRow } from "./playfab.ts";
-import { calculatePlayerLevel, getLocalDateKey, LEVEL_REQUIREMENTS } from "./player-profile.ts";
+import {
+  calculatePlayerLevel,
+  getLocalDateKey,
+  LEVEL_REQUIREMENTS,
+  syncLevelStageProgress,
+  type LevelStageProgress,
+} from "./player-profile.ts";
 
 export type MedalRarity = "bronze" | "prata" | "ouro" | "platina" | "diamante" | "heroi";
 
@@ -1060,7 +1066,11 @@ export function getEffectivePlayerProgression(
   wins: number;
   distinctGames: number;
   level: number;
+  stageProgress: LevelStageProgress;
+  maxAvailableGames: number;
 } {
+  const enabledSet = getEnabledGameIdsSet(enabledGamesOverride);
+  const maxAvailableGames = Math.max(1, enabledSet.size);
   const effectiveStats: GameStatRow[] =
     Array.isArray(stats) && stats.length > 0
       ? stats
@@ -1117,11 +1127,15 @@ export function getEffectivePlayerProgression(
     inferredMatchesFromXp,
   );
 
-  const level = calculatePlayerLevel({
+  const syncedStage = syncLevelStageProgress({
     xp,
-    matchesPlayed,
-    wins,
-    distinctGames,
+    lifetimeMatches: matchesPlayed,
+    lifetimeWins: wins,
+    lifetimeDistinctGames: distinctGames,
+    playedGameIds: aggregatedRows.map((r) => r.game_id),
+    currentLevel: profile?.level,
+    existingStage: (profile as any)?.levelStageProgress ?? null,
+    maxAvailableGames,
   });
 
   return {
@@ -1129,7 +1143,9 @@ export function getEffectivePlayerProgression(
     matchesPlayed,
     wins,
     distinctGames,
-    level,
+    level: syncedStage.level,
+    stageProgress: syncedStage.stageProgress,
+    maxAvailableGames,
   };
 }
 

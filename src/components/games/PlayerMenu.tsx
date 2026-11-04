@@ -148,6 +148,9 @@ export function PlayerMenu({ onConfigChanged }: Props) {
         matchesPlayed: effProg.matchesPlayed,
         wins: effProg.wins,
         distinctGames: effProg.distinctGames,
+        currentLevel: effProg.level,
+        stageProgress: effProg.stageProgress,
+        maxAvailableGames: effProg.maxAvailableGames,
       })
     : null;
   const dailyCap = auth.adminConfig.dailyXpCap ?? DEFAULT_DAILY_XP_CAP;

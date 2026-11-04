@@ -130,6 +130,9 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
     matchesPlayed: matchesCount,
     wins: totalWins,
     distinctGames,
+    currentLevel: effProg.level,
+    stageProgress: effProg.stageProgress,
+    maxAvailableGames: effProg.maxAvailableGames,
   });
   const isMe = auth.profile?.id === profile.id;
 

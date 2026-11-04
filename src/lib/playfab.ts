@@ -20,6 +20,7 @@ import {
 } from "./game-codes.ts";
 import {
   adjustXpForGameMode,
+  advanceLevelStageOnMatch,
   ageFrom,
   applyDailyXpCap,
   calculatePlayerLevel,
@@ -44,6 +45,7 @@ import {
   schoolSlug,
   stageFromBirthdate,
   studentCustomId,
+  syncLevelStageProgress,
   TOURNAMENT_DAILY_ENTRIES_LIMIT,
   TOURNAMENT_DAILY_EXTRA_XP_CAP,
   TOURNAMENT_XP_PER_ENTRY,
@@ -51,6 +53,7 @@ import {
   xpFromMatch,
   type AgeStageId,
   type Badge,
+  type LevelStageProgress,
   type RankingFilterCategory,
   type RankHistoryState,
   type RankTrendDirection,
@@ -76,6 +79,7 @@ import {
   getDistinctFlawlessGames,
   getDistinctGamesPlayed,
   getEffectivePlayerProgression,
+  getEnabledGameIdsSet,
   isFlawlessMatch,
   MEDAL_XP_REWARDS,
   type PlayerUnlockedMedal,
@@ -121,6 +125,7 @@ export interface PlayerProfile {
   xp: number;
   seasonXp: number;
   level: number;
+  levelStageProgress?: LevelStageProgress;
   wins: number;
   x1Wins?: number;
   weeklyX1Wins?: number;
@@ -871,6 +876,7 @@ export function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdmin
   acc.profile.totalMatches = totalMatchesCount;
   acc.profile.wins = totalWins;
   acc.profile.level = effProg.level;
+  acc.profile.levelStageProgress = effProg.stageProgress;
   acc.profile.badges = computeBadges({
     existing: acc.profile.badges ?? [],
     xp: acc.profile.xp,
@@ -1050,6 +1056,12 @@ export function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdmin
     if (cfg.resetHistory[0]?.resetXp) {
       acc.profile.xp = 0;
       acc.profile.level = 1;
+      acc.profile.levelStageProgress = {
+        forLevel: 1,
+        matches: 0,
+        wins: 0,
+        distinctGames: [],
+      };
       acc.profile.wins = 0;
       acc.profile.matchesPlayed = 0;
       acc.profile.distinctGamesPlayed = 0;
@@ -1181,7 +1193,10 @@ function buildAccountFromPlayFabPayload(
       matchesPlayed,
       wins,
       distinctGames: distinctGamesPlayed,
+      currentLevel: parsedProfile.level,
+      stageProgress: parsedProfile.levelStageProgress,
     }),
+    levelStageProgress: parsedProfile.levelStageProgress,
     wins,
     x1Wins: parsedProfile.x1Wins ?? 0,
     weeklyX1Wins: parsedProfile.weeklyX1Wins ?? 0,
@@ -1743,6 +1758,7 @@ async function pushProfileToPlayFab(account: StoredAccount, sessionTicket?: stri
           xp: p.xp,
           seasonXp: p.seasonXp,
           level: p.level,
+          levelStageProgress: p.levelStageProgress,
           wins: p.wins,
           x1Wins: p.x1Wins ?? 0,
           weeklyX1Wins: p.weeklyX1Wins ?? 0,
@@ -1795,6 +1811,7 @@ async function pushProfileToPlayFab(account: StoredAccount, sessionTicket?: stri
               xp: p.xp,
               seasonXp: p.seasonXp,
               level: p.level,
+              levelStageProgress: p.levelStageProgress,
               wins: p.wins,
               x1Wins: p.x1Wins ?? 0,
               weeklyX1Wins: p.weeklyX1Wins ?? 0,
@@ -2058,6 +2075,10 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
               lbXp,
             ),
             level: Math.max(parsed.level ?? 1, existing?.profile.level ?? 1, udProf?.level ?? 1),
+            levelStageProgress:
+              parsed.levelStageProgress ??
+              existing?.profile.levelStageProgress ??
+              udProf?.levelStageProgress,
             wins: Math.max(parsed.wins ?? 0, existing?.profile.wins ?? 0, udProf?.wins ?? 0),
             x1Wins: Math.max(parsed.x1Wins ?? 0, existing?.profile.x1Wins ?? 0, udProf?.x1Wins ?? 0),
             weeklyX1Wins: Math.max(
@@ -2232,6 +2253,7 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
           xp: acc.profile.xp,
           seasonXp: acc.profile.seasonXp,
           level: acc.profile.level,
+          levelStageProgress: acc.profile.levelStageProgress,
           wins: acc.profile.wins,
           x1Wins: acc.profile.x1Wins ?? 0,
           weeklyX1Wins: acc.profile.weeklyX1Wins ?? 0,
@@ -2581,12 +2603,34 @@ export async function playfabRecordMatch(args: {
   acc.profile.matchesPlayed = nextMatches;
   acc.profile.totalMatches = nextMatches;
   acc.profile.distinctGamesPlayed = distinctGames;
-  acc.profile.level = calculatePlayerLevel({
-    xp: nextXp,
-    matchesPlayed: nextMatches,
-    wins: nextWins,
-    distinctGames,
-  });
+
+  const maxAvailableGames = Math.max(1, getEnabledGameIdsSet(cfg.enabledGames).size);
+  if (!isSyntheticTournamentEntry) {
+    const stageRes = advanceLevelStageOnMatch({
+      currentLevel: acc.profile.level,
+      stageProgress: acc.profile.levelStageProgress,
+      newXp: nextXp,
+      gameId: args.gameId,
+      won,
+      isGameEnabled: cfg.enabledGames[args.gameId] !== false,
+      maxAvailableGames,
+    });
+    acc.profile.level = stageRes.level;
+    acc.profile.levelStageProgress = stageRes.stageProgress;
+  } else {
+    const synced = syncLevelStageProgress({
+      xp: nextXp,
+      lifetimeMatches: nextMatches,
+      lifetimeWins: nextWins,
+      lifetimeDistinctGames: distinctGames,
+      currentLevel: acc.profile.level,
+      existingStage: acc.profile.levelStageProgress,
+      maxAvailableGames,
+    });
+    acc.profile.level = synced.level;
+    acc.profile.levelStageProgress = synced.stageProgress;
+  }
+
   acc.profile.badges = computeBadges({
     existing: acc.profile.badges,
     xp: nextXp,
@@ -2711,12 +2755,17 @@ export async function playfabRecordMatch(args: {
     if (medalsBonusXp > 0) {
       acc.profile.xp += medalsBonusXp;
       acc.profile.seasonXp = (acc.profile.seasonXp ?? 0) + medalsBonusXp;
-      acc.profile.level = calculatePlayerLevel({
+      const syncedAfterBonus = syncLevelStageProgress({
         xp: acc.profile.xp,
-        matchesPlayed: acc.profile.matchesPlayed,
-        wins: acc.profile.wins,
-        distinctGames: acc.profile.distinctGamesPlayed ?? 1,
+        lifetimeMatches: acc.profile.matchesPlayed,
+        lifetimeWins: acc.profile.wins,
+        lifetimeDistinctGames: acc.profile.distinctGamesPlayed ?? 1,
+        currentLevel: acc.profile.level,
+        existingStage: acc.profile.levelStageProgress,
+        maxAvailableGames,
       });
+      acc.profile.level = syncedAfterBonus.level;
+      acc.profile.levelStageProgress = syncedAfterBonus.stageProgress;
 
       // Re-evaluate in case the bonus XP or newly added medals unlocked a level/meta medal
       const secondaryAwarded = evaluatePlayerMedals(

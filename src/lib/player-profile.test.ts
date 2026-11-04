@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   adjustXpForGameMode,
+  advanceLevelStageOnMatch,
   applyDailyXpCap,
   calculatePlayerLevel,
   computeBadges,
@@ -26,6 +27,7 @@ import {
   stageFromAge,
   stageFromBirthdate,
   studentCustomId,
+  syncLevelStageProgress,
   TEAM_MODE_XP_DIVISOR,
   xpForLevel,
   xpFromMatch,
@@ -410,5 +412,113 @@ describe("Perfil do Jogador, Escolas, Trava de Níveis (1..10) e Limite Diário 
     assert.equal(matchesRankingCategory(aluno6Ano, "etapa_2", refDate), true);
     assert.equal(matchesRankingCategory(aluno7Ano, "etapa_2", refDate), true);
     assert.equal(matchesRankingCategory(alunoEtapa3, "etapa_3", refDate), true);
+  });
+
+  it("trava cada atributo de requisito no teto máximo do nível (ex: 4/4 e 3/3, nunca 15/4 ou 7/3) e reseta os requisitos em 0 ao subir de nível mantendo o histórico", () => {
+    // Caso 1: Jogador no Nível 3 (faltando XP para os 795 XP do Nível 4), mas com 15 vitórias e 7 jogos no histórico
+    const synced = syncLevelStageProgress({
+      xp: 500,
+      lifetimeMatches: 20,
+      lifetimeWins: 15,
+      lifetimeDistinctGames: 7,
+      playedGameIds: ["logica", "fracoes", "labirinto", "memoria", "sequencias", "soma", "velha"],
+    });
+    assert.equal(synced.level, 3);
+    assert.equal(synced.stageProgress.forLevel, 3);
+    // Para o Nível 4, os tetos são: 8 partidas, 4 vitórias e 3 jogos diferentes
+    assert.equal(synced.stageProgress.matches, 8);
+    assert.equal(synced.stageProgress.wins, 4);
+    assert.equal(synced.stageProgress.distinctGames.length, 3);
+
+    const progLvl3 = levelProgress({
+      xp: 500,
+      matchesPlayed: 20,
+      wins: 15,
+      distinctGames: 7,
+      currentLevel: synced.level,
+      stageProgress: synced.stageProgress,
+    });
+    const winsItem = progLvl3.checklist.find((c) => c.key === "wins")!;
+    const gamesItem = progLvl3.checklist.find((c) => c.key === "distinctGames")!;
+    const matchesItem = progLvl3.checklist.find((c) => c.key === "matches")!;
+
+    assert.equal(winsItem.current, 4);
+    assert.equal(winsItem.required, 4);
+    assert.equal(winsItem.met, true);
+
+    assert.equal(gamesItem.current, 3);
+    assert.equal(gamesItem.required, 3);
+    assert.equal(gamesItem.met, true);
+
+    assert.equal(matchesItem.current, 8);
+    assert.equal(matchesItem.required, 8);
+    assert.equal(matchesItem.met, true);
+
+    // Caso 2: O jogador faz mais 10 vitórias seguidas antes de atingir 795 XP -> histórico sobe +10, requisito continua 4/4
+    let currentLvl = synced.level;
+    let stage = synced.stageProgress;
+    let lifetimeWins = 15;
+    let lifetimeMatches = 20;
+    let currentXp = 500;
+
+    for (let i = 0; i < 10; i++) {
+      lifetimeWins += 1;
+      lifetimeMatches += 1;
+      currentXp += 20; // chega a 700 XP (ainda abaixo de 795 XP)
+      const step = advanceLevelStageOnMatch({
+        currentLevel: currentLvl,
+        stageProgress: stage,
+        newXp: currentXp,
+        gameId: "logica",
+        won: true,
+      });
+      currentLvl = step.level;
+      stage = step.stageProgress;
+      assert.equal(step.leveledUp, false);
+      assert.equal(stage.wins, 4); // Cravado em 4/4
+      assert.equal(stage.matches, 8); // Cravado em 8/8
+    }
+
+    assert.equal(lifetimeWins, 25); // Histórico geral salvou as +10 vitórias normalmente
+
+    // Caso 3: Agora atinge 800 XP (>= 795 XP) -> Sobe para o Nível 4 e os requisitos do Nível 5 começam em 0!
+    const levelUpStep = advanceLevelStageOnMatch({
+      currentLevel: currentLvl,
+      stageProgress: stage,
+      newXp: 800,
+      gameId: "logica",
+      won: true,
+    });
+    assert.equal(levelUpStep.leveledUp, true);
+    assert.equal(levelUpStep.level, 4);
+    assert.equal(levelUpStep.stageProgress.forLevel, 4);
+    assert.equal(levelUpStep.stageProgress.matches, 0);
+    assert.equal(levelUpStep.stageProgress.wins, 0);
+    assert.equal(levelUpStep.stageProgress.distinctGames.length, 0);
+
+    const progLvl4 = levelProgress({
+      xp: 800,
+      matchesPlayed: lifetimeMatches + 1,
+      wins: lifetimeWins + 1,
+      distinctGames: 7,
+      currentLevel: levelUpStep.level,
+      stageProgress: levelUpStep.stageProgress,
+    });
+    assert.equal(progLvl4.level, 4);
+    const nextWinsItem = progLvl4.checklist.find((c) => c.key === "wins")!;
+    const nextMatchesItem = progLvl4.checklist.find((c) => c.key === "matches")!;
+    const nextGamesItem = progLvl4.checklist.find((c) => c.key === "distinctGames")!;
+
+    assert.equal(nextWinsItem.current, 0);
+    assert.equal(nextWinsItem.required, 6);
+    assert.equal(nextWinsItem.met, false);
+
+    assert.equal(nextMatchesItem.current, 0);
+    assert.equal(nextMatchesItem.required, 12);
+    assert.equal(nextMatchesItem.met, false);
+
+    assert.equal(nextGamesItem.current, 0);
+    assert.equal(nextGamesItem.required, 4);
+    assert.equal(nextGamesItem.met, false);
   });
 });

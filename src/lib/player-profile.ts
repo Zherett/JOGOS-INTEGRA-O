@@ -774,19 +774,71 @@ export function levelFromXp(xp: number): number {
   return Math.min(MAX_LEVEL, lvl);
 }
 
+export interface LevelStageProgress {
+  /** Nível em que os requisitos para o próximo nível estão sendo contabilizados (1..10) */
+  forLevel: number;
+  /** Partidas concluídas contabilizadas nesta etapa de nível (travadas no valor máximo do requisito) */
+  matches: number;
+  /** Vitórias conquistadas contabilizadas nesta etapa de nível (travadas no valor máximo do requisito) */
+  wins: number;
+  /** Jogos diferentes explorados contabilizados nesta etapa de nível (travados no valor máximo do requisito) */
+  distinctGames: string[];
+}
+
 export interface PlayerProgressionInput {
   xp: number;
   matchesPlayed?: number;
   wins?: number;
   distinctGames?: number;
+  /** Nível atual e progresso por etapa (onde cada requisito inicia em 0 ao subir de nível e trava no teto do requisito) */
+  currentLevel?: number;
+  stageProgress?: LevelStageProgress | null;
+  maxAvailableGames?: number;
 }
 
 /**
  * Calculates the player's actual unlocked level (1..10) enforcing ALL level gates:
  * XP + Matches Played + Wins + Distinct Games Explored.
+ * When `stageProgress` is provided, level advancement evaluates the current stage's capped progress
+ * (so excess history from a previous level does not auto-complete future levels before reaching them).
  */
 export function calculatePlayerLevel(input: PlayerProgressionInput): number {
   const safeXp = Math.max(0, Math.floor(input.xp));
+
+  if (input.stageProgress && input.stageProgress.forLevel >= 1) {
+    const xpCapLvl = levelFromXp(safeXp);
+    const baseLevel = Math.max(
+      1,
+      Math.min(MAX_LEVEL, xpCapLvl, Math.floor(input.currentLevel ?? input.stageProgress.forLevel)),
+    );
+    if (baseLevel >= MAX_LEVEL) return MAX_LEVEL;
+
+    const nextReq = getLevelRequirement(baseLevel + 1);
+    const reqDistinct = input.maxAvailableGames
+      ? Math.min(nextReq.minDistinctGames, Math.max(1, input.maxAvailableGames))
+      : nextReq.minDistinctGames;
+    const stageMatches =
+      input.stageProgress.forLevel === baseLevel
+        ? Math.max(0, Math.floor(input.stageProgress.matches ?? 0))
+        : 0;
+    const stageWins =
+      input.stageProgress.forLevel === baseLevel
+        ? Math.max(0, Math.floor(input.stageProgress.wins ?? 0))
+        : 0;
+    const stageDistinct =
+      input.stageProgress.forLevel === baseLevel && Array.isArray(input.stageProgress.distinctGames)
+        ? input.stageProgress.distinctGames.length
+        : 0;
+
+    const meetsNext =
+      safeXp >= nextReq.minXp &&
+      stageMatches >= nextReq.minMatches &&
+      stageWins >= nextReq.minWins &&
+      stageDistinct >= reqDistinct;
+
+    return meetsNext ? Math.min(MAX_LEVEL, baseLevel + 1) : baseLevel;
+  }
+
   const matches = Math.max(0, Math.floor(input.matchesPlayed ?? 0));
   const wins = Math.max(0, Math.floor(input.wins ?? 0));
   const distinct = Math.max(0, Math.floor(input.distinctGames ?? 0));
@@ -794,11 +846,14 @@ export function calculatePlayerLevel(input: PlayerProgressionInput): number {
   let unlockedLevel = 1;
   for (const req of LEVEL_REQUIREMENTS) {
     if (req.level === 1) continue;
+    const reqDistinct = input.maxAvailableGames
+      ? Math.min(req.minDistinctGames, Math.max(1, input.maxAvailableGames))
+      : req.minDistinctGames;
     const meetsAll =
       safeXp >= req.minXp &&
       matches >= req.minMatches &&
       wins >= req.minWins &&
-      distinct >= req.minDistinctGames;
+      distinct >= reqDistinct;
     if (meetsAll) {
       unlockedLevel = req.level;
     } else {
@@ -806,6 +861,228 @@ export function calculatePlayerLevel(input: PlayerProgressionInput): number {
     }
   }
   return Math.min(MAX_LEVEL, unlockedLevel);
+}
+
+/**
+ * Inicializa ou sincroniza o progresso de requisitos do nível atual (`LevelStageProgress`).
+ * - Garante que nenhum contador de requisito ultrapasse o teto (`required`) do próximo nível.
+ * - Qualquer excedente feito antes de subir de nível permanece apenas no histórico geral.
+ * - Ao cumprir todos os requisitos do nível atual e subir de nível, o progresso para o novo nível inicia em 0.
+ */
+export function syncLevelStageProgress(args: {
+  xp: number;
+  lifetimeMatches: number;
+  lifetimeWins: number;
+  lifetimeDistinctGames: number;
+  playedGameIds?: string[];
+  currentLevel?: number;
+  existingStage?: LevelStageProgress | null;
+  maxAvailableGames?: number;
+}): { level: number; stageProgress: LevelStageProgress } {
+  const safeXp = Math.max(0, Math.floor(args.xp));
+  const xpCapLvl = levelFromXp(safeXp);
+  const lifetimeLevel = calculatePlayerLevel({
+    xp: safeXp,
+    matchesPlayed: args.lifetimeMatches,
+    wins: args.lifetimeWins,
+    distinctGames: args.lifetimeDistinctGames,
+    maxAvailableGames: args.maxAvailableGames,
+  });
+
+  if (args.existingStage && args.existingStage.forLevel >= 1) {
+    // Se o jogador estava com nível 1 defasado mas já tinha histórico de nível maior antes da migração,
+    // respeita o maior entre o nível salvo e o forLevel (limitado pelo teto de XP).
+    const baseLevel = Math.max(
+      1,
+      Math.min(
+        MAX_LEVEL,
+        xpCapLvl,
+        Math.max(Math.floor(args.currentLevel ?? 1), Math.floor(args.existingStage.forLevel)),
+      ),
+    );
+
+    if (baseLevel >= MAX_LEVEL) {
+      return {
+        level: MAX_LEVEL,
+        stageProgress: { forLevel: MAX_LEVEL, matches: 0, wins: 0, distinctGames: [] },
+      };
+    }
+
+    const nextReq = getLevelRequirement(baseLevel + 1);
+    const reqDistinct = args.maxAvailableGames
+      ? Math.min(nextReq.minDistinctGames, Math.max(1, args.maxAvailableGames))
+      : nextReq.minDistinctGames;
+
+    const isSameStage = args.existingStage.forLevel === baseLevel;
+    const rawMatches = isSameStage ? Math.max(0, Math.floor(args.existingStage.matches ?? 0)) : 0;
+    const rawWins = isSameStage ? Math.max(0, Math.floor(args.existingStage.wins ?? 0)) : 0;
+    const rawDistinct =
+      isSameStage && Array.isArray(args.existingStage.distinctGames)
+        ? Array.from(new Set(args.existingStage.distinctGames))
+        : [];
+
+    const cappedMatches = Math.min(nextReq.minMatches, rawMatches);
+    const cappedWins = Math.min(nextReq.minWins, rawWins);
+    const cappedDistinct = rawDistinct.slice(0, reqDistinct);
+
+    const meetsAll =
+      safeXp >= nextReq.minXp &&
+      cappedMatches >= nextReq.minMatches &&
+      cappedWins >= nextReq.minWins &&
+      cappedDistinct.length >= reqDistinct;
+
+    if (meetsAll) {
+      const nextLvl = Math.min(MAX_LEVEL, baseLevel + 1);
+      return {
+        level: nextLvl,
+        stageProgress: {
+          forLevel: nextLvl,
+          matches: 0,
+          wins: 0,
+          distinctGames: [],
+        },
+      };
+    }
+
+    return {
+      level: baseLevel,
+      stageProgress: {
+        forLevel: baseLevel,
+        matches: cappedMatches,
+        wins: cappedWins,
+        distinctGames: cappedDistinct,
+      },
+    };
+  }
+
+  // Primeira inicialização para perfis existentes (sem existingStage salvo):
+  const initialLevel = Math.max(
+    1,
+    Math.min(MAX_LEVEL, xpCapLvl, Math.max(Math.floor(args.currentLevel ?? 1), lifetimeLevel)),
+  );
+  if (initialLevel >= MAX_LEVEL) {
+    return {
+      level: MAX_LEVEL,
+      stageProgress: { forLevel: MAX_LEVEL, matches: 0, wins: 0, distinctGames: [] },
+    };
+  }
+
+  const nextReq = getLevelRequirement(initialLevel + 1);
+  const reqDistinct = args.maxAvailableGames
+    ? Math.min(nextReq.minDistinctGames, Math.max(1, args.maxAvailableGames))
+    : nextReq.minDistinctGames;
+
+  const cappedMatches = Math.min(nextReq.minMatches, Math.max(0, Math.floor(args.lifetimeMatches)));
+  const cappedWins = Math.min(nextReq.minWins, Math.max(0, Math.floor(args.lifetimeWins)));
+  const distinctCount = Math.min(
+    reqDistinct,
+    Math.max(0, Math.floor(args.lifetimeDistinctGames)),
+  );
+  const sourceIds = Array.isArray(args.playedGameIds)
+    ? Array.from(new Set(args.playedGameIds))
+    : [];
+  while (sourceIds.length < distinctCount) {
+    sourceIds.push(`game_${sourceIds.length + 1}`);
+  }
+  const cappedDistinct = sourceIds.slice(0, distinctCount);
+
+  return {
+    level: initialLevel,
+    stageProgress: {
+      forLevel: initialLevel,
+      matches: cappedMatches,
+      wins: cappedWins,
+      distinctGames: cappedDistinct,
+    },
+  };
+}
+
+/**
+ * Registra uma partida concluída na etapa de requisitos do nível atual:
+ * - Cada atributo (`matches`, `wins`, `distinctGames`) soma até o limite máximo do requisito atual (`Math.min(..., required)`).
+ * - Se um atributo já atingiu o teto (ex: 4/4 vitórias) e o jogador fizer mais 10 vitórias antes de subir de nível,
+ *   o requisito permanece em 4/4 (não acumula excedente para o próximo nível), enquanto o histórico geral salva normalmente.
+ * - Quando todos os requisitos do nível atual são cumpridos, o jogador sobe 1 nível e os contadores de missão
+ *   do novo nível começam em 0 (`0 / Nova Meta`).
+ */
+export function advanceLevelStageOnMatch(args: {
+  currentLevel: number;
+  stageProgress?: LevelStageProgress | null;
+  newXp: number;
+  gameId: string;
+  won: boolean;
+  isGameEnabled?: boolean;
+  maxAvailableGames?: number;
+}): { level: number; stageProgress: LevelStageProgress; leveledUp: boolean } {
+  const safeXp = Math.max(0, Math.floor(args.newXp));
+  const lvl = Math.max(1, Math.min(MAX_LEVEL, Math.floor(args.currentLevel || 1)));
+
+  if (lvl >= MAX_LEVEL) {
+    return {
+      level: MAX_LEVEL,
+      stageProgress: { forLevel: MAX_LEVEL, matches: 0, wins: 0, distinctGames: [] },
+      leveledUp: false,
+    };
+  }
+
+  const nextReq = getLevelRequirement(lvl + 1);
+  const reqDistinct = args.maxAvailableGames
+    ? Math.min(nextReq.minDistinctGames, Math.max(1, args.maxAvailableGames))
+    : nextReq.minDistinctGames;
+
+  const baseStage: LevelStageProgress =
+    args.stageProgress && args.stageProgress.forLevel === lvl
+      ? args.stageProgress
+      : { forLevel: lvl, matches: 0, wins: 0, distinctGames: [] };
+
+  const nextMatches = Math.min(nextReq.minMatches, Math.max(0, Math.floor(baseStage.matches)) + 1);
+  const nextWins = Math.min(
+    nextReq.minWins,
+    Math.max(0, Math.floor(baseStage.wins)) + (args.won ? 1 : 0),
+  );
+  const distinctList = Array.isArray(baseStage.distinctGames)
+    ? Array.from(new Set(baseStage.distinctGames))
+    : [];
+  if (
+    args.isGameEnabled !== false &&
+    args.gameId &&
+    !distinctList.includes(args.gameId) &&
+    distinctList.length < reqDistinct
+  ) {
+    distinctList.push(args.gameId);
+  }
+  const cappedDistinct = distinctList.slice(0, reqDistinct);
+
+  const meetsAll =
+    safeXp >= nextReq.minXp &&
+    nextMatches >= nextReq.minMatches &&
+    nextWins >= nextReq.minWins &&
+    cappedDistinct.length >= reqDistinct;
+
+  if (meetsAll) {
+    const newLevel = Math.min(MAX_LEVEL, lvl + 1);
+    return {
+      level: newLevel,
+      stageProgress: {
+        forLevel: newLevel,
+        matches: 0,
+        wins: 0,
+        distinctGames: [],
+      },
+      leveledUp: true,
+    };
+  }
+
+  return {
+    level: lvl,
+    stageProgress: {
+      forLevel: lvl,
+      matches: nextMatches,
+      wins: nextWins,
+      distinctGames: cappedDistinct,
+    },
+    leveledUp: false,
+  };
 }
 
 export interface LevelMissionCheckItem {
@@ -819,6 +1096,7 @@ export interface LevelMissionCheckItem {
 /**
  * Full progression status for UI display (PlayerMenu, Profile Dialog, etc.).
  * Accepts either a raw `xp` number (backwards compatible) or a `PlayerProgressionInput` object.
+ * All requirement `current` values in `checklist` are strictly capped at `required` so they never exceed the target.
  */
 export function levelProgress(input: number | PlayerProgressionInput) {
   const stats: PlayerProgressionInput =
@@ -841,6 +1119,9 @@ export function levelProgress(input: number | PlayerProgressionInput) {
     matchesPlayed: matches,
     wins,
     distinctGames: distinct,
+    currentLevel: stats.currentLevel,
+    stageProgress: stats.stageProgress,
+    maxAvailableGames: stats.maxAvailableGames,
   });
   const xpOnlyLevel = levelFromXp(safeXp);
   const isMaxLevel = level >= MAX_LEVEL;
@@ -850,40 +1131,70 @@ export function levelProgress(input: number | PlayerProgressionInput) {
   const start = currentReq.minXp;
   const end = nextReq ? nextReq.minXp : currentReq.minXp;
   const needed = Math.max(1, end - start);
-  const currentInBracket = Math.max(0, safeXp - start);
+  const currentInBracket = Math.min(needed, Math.max(0, safeXp - start));
   const percent = isMaxLevel
     ? 100
     : Math.min(100, Math.round((currentInBracket / needed) * 100));
+
+  const reqDistinct = nextReq
+    ? stats.maxAvailableGames
+      ? Math.min(nextReq.minDistinctGames, Math.max(1, stats.maxAvailableGames))
+      : nextReq.minDistinctGames
+    : 0;
+
+  const hasStage = Boolean(stats.stageProgress && stats.stageProgress.forLevel >= 1);
+  const isStageForCurrentLevel = hasStage && stats.stageProgress!.forLevel === level;
+
+  const rawMatchesForReq = hasStage
+    ? isStageForCurrentLevel
+      ? Math.max(0, Math.floor(stats.stageProgress!.matches ?? 0))
+      : 0
+    : matches;
+  const rawWinsForReq = hasStage
+    ? isStageForCurrentLevel
+      ? Math.max(0, Math.floor(stats.stageProgress!.wins ?? 0))
+      : 0
+    : wins;
+  const rawDistinctForReq = hasStage
+    ? isStageForCurrentLevel && Array.isArray(stats.stageProgress!.distinctGames)
+      ? stats.stageProgress!.distinctGames.length
+      : 0
+    : distinct;
+
+  const cappedXpForReq = nextReq ? Math.min(safeXp, nextReq.minXp) : safeXp;
+  const cappedMatchesForReq = nextReq ? Math.min(rawMatchesForReq, nextReq.minMatches) : 0;
+  const cappedWinsForReq = nextReq ? Math.min(rawWinsForReq, nextReq.minWins) : 0;
+  const cappedDistinctForReq = nextReq ? Math.min(rawDistinctForReq, reqDistinct) : 0;
 
   const checklist: LevelMissionCheckItem[] = nextReq
     ? [
         {
           key: "xp",
           label: "XP acumulado",
-          current: safeXp,
+          current: cappedXpForReq,
           required: nextReq.minXp,
           met: safeXp >= nextReq.minXp,
         },
         {
           key: "matches",
           label: "Partidas concluídas",
-          current: matches,
+          current: cappedMatchesForReq,
           required: nextReq.minMatches,
-          met: matches >= nextReq.minMatches,
+          met: cappedMatchesForReq >= nextReq.minMatches,
         },
         {
           key: "wins",
           label: "Vitórias conquistadas",
-          current: wins,
+          current: cappedWinsForReq,
           required: nextReq.minWins,
-          met: wins >= nextReq.minWins,
+          met: cappedWinsForReq >= nextReq.minWins,
         },
         {
           key: "distinctGames",
           label: "Jogos diferentes explorados",
-          current: distinct,
-          required: nextReq.minDistinctGames,
-          met: distinct >= nextReq.minDistinctGames,
+          current: cappedDistinctForReq,
+          required: reqDistinct,
+          met: cappedDistinctForReq >= reqDistinct,
         },
       ]
     : [];
@@ -902,7 +1213,7 @@ export function levelProgress(input: number | PlayerProgressionInput) {
     needed: isMaxLevel ? 0 : needed,
     nextLevelXp: end,
     percent,
-    nextRequirement: nextReq,
+    nextRequirement: nextReq ? { ...nextReq, minDistinctGames: reqDistinct } : null,
     checklist,
   };
 }
