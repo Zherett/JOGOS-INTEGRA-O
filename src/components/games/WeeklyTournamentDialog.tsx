@@ -9,6 +9,9 @@ import {
   Zap,
   Sparkles,
   Calendar,
+  Layers,
+  ChevronRight,
+  Shield,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -16,6 +19,7 @@ import type { GameId } from "@/lib/game-storage";
 import { usePlayerAuth } from "@/lib/player-auth";
 import {
   AGE_STAGES,
+  getTournamentRank,
   getWeeklyTournamentSnapshot,
   syncWeeklyTournamentWithPlayFab,
   TOURNAMENT_DAILY_ENTRIES_LIMIT,
@@ -24,6 +28,7 @@ import {
   TOURNAMENT_XP_PER_ENTRY,
 } from "@/lib/weekly-tournament";
 import { stageFromBirthdate, type AgeStageId } from "@/lib/player-profile";
+import { TournamentRankBadge } from "./TournamentRankBadge";
 
 interface Props {
   open: boolean;
@@ -41,12 +46,19 @@ export function WeeklyTournamentDialog({
   const auth = usePlayerAuth();
   const profile = auth.profile;
   const [, setTick] = useState(0);
-  const myStageId = profile ? stageFromBirthdate(profile.birthdate, new Date(), profile.school).id : "etapa_1";
+  const [activeTab, setActiveTab] = useState<"desafio" | "ranking">("desafio");
+
+  const myStageId = profile
+    ? stageFromBirthdate(profile.birthdate, new Date(), profile.school).id
+    : "etapa_1";
   const [selectedStage, setSelectedStage] = useState<AgeStageId | "TODAS">(myStageId);
 
   useEffect(() => {
     if (open && profile) {
-      setSelectedStage(stageFromBirthdate(profile.birthdate, new Date(), profile.school).id);
+      const sId = stageFromBirthdate(profile.birthdate, new Date(), profile.school).id;
+      // Normal students are locked to their own stage; ADM can switch
+      setSelectedStage(sId);
+      setActiveTab("desafio");
     }
   }, [open, profile]);
 
@@ -70,8 +82,8 @@ export function WeeklyTournamentDialog({
           </DialogHeader>
           <div className="space-y-4 py-2 text-center">
             <p className="text-sm text-muted-foreground">
-              Entre no seu perfil de jogador para disputar o Top 5 do Torneio Semanal, ganhar até
-              +100 XP extras por dia e conquistar medalhas!
+              Entre no seu perfil de jogador para disputar o Torneio Semanal Ranqueado da sua etapa,
+              subir de divisão e conquistar medalhas!
             </p>
             <Button
               size="lg"
@@ -89,7 +101,9 @@ export function WeeklyTournamentDialog({
     );
   }
 
-  const snap = getWeeklyTournamentSnapshot(profile, selectedStage);
+  // Non-admin students are strictly restricted to their stage
+  const effectiveStage = auth.isAdmin ? selectedStage : myStageId;
+  const snap = getWeeklyTournamentSnapshot(profile, effectiveStage);
 
   if (!snap.canEnterLevel) {
     return (
@@ -97,14 +111,13 @@ export function WeeklyTournamentDialog({
         <DialogContent className="rounded-3xl sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 font-display text-2xl font-extrabold">
-              <Lock className="h-6 w-6 text-accent" /> Torneio Semanal (Nível {TOURNAMENT_MIN_LEVEL}
-              +)
+              <Lock className="h-6 w-6 text-accent" /> Torneio Semanal (Nível {TOURNAMENT_MIN_LEVEL}+)
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2 text-center">
             <div className="rounded-2xl border bg-secondary/40 p-5 space-y-2">
               <p className="font-display text-lg font-extrabold text-foreground">
-                Alcance o Nível {TOURNAMENT_MIN_LEVEL} (🧩 Desbravador de Padrões) para participar!
+                Alcance o Nível {TOURNAMENT_MIN_LEVEL} para participar!
               </p>
               <p className="text-xs text-muted-foreground">
                 Você está no <b>Nível {profile.level}</b> ({profile.xp} XP). O Torneio Semanal
@@ -124,6 +137,9 @@ export function WeeklyTournamentDialog({
     );
   }
 
+  const currentPoints = profile.tournamentPoints ?? 0;
+  const rankInfo = getTournamentRank(currentPoints);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] overflow-y-auto rounded-3xl sm:max-w-xl">
@@ -133,250 +149,358 @@ export function WeeklyTournamentDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {/* Card do Jogo Oficial da Semana */}
-          <div className="rounded-3xl border-2 border-primary/40 bg-gradient-to-br from-primary/15 via-card to-accent/15 p-5 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-0.5 text-[11px] font-extrabold uppercase text-primary">
-                <Calendar className="h-3.5 w-3.5" /> Semana {snap.weekKey} • Até {snap.endsAtLabel}
+        {/* Abas Superiores: Desafio da Semana vs Ranking do Torneio */}
+        <div className="grid grid-cols-2 gap-1 rounded-2xl bg-secondary/80 p-1 border">
+          <button
+            type="button"
+            onClick={() => setActiveTab("desafio")}
+            className={`flex items-center justify-center gap-2 rounded-xl py-2.5 font-display text-xs sm:text-sm font-black transition-all ${
+              activeTab === "desafio"
+                ? "bg-card text-primary shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Play className="h-4 w-4 text-primary" /> Desafio da Semana
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("ranking")}
+            className={`flex items-center justify-center gap-2 rounded-xl py-2.5 font-display text-xs sm:text-sm font-black transition-all ${
+              activeTab === "ranking"
+                ? "bg-card text-primary shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Medal className="h-4 w-4 text-accent" /> Ranking do Torneio
+          </button>
+        </div>
+
+        {/* Conteúdo da Aba: DESAFIO DA SEMANA */}
+        {activeTab === "desafio" && (
+          <div className="space-y-4">
+            {/* Medidores Discretos na parte Superior */}
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-secondary/40 border px-3 py-2 text-xs">
+              <span className="inline-flex items-center gap-1 font-bold text-muted-foreground">
+                <Calendar className="h-3.5 w-3.5 text-primary" /> {snap.weekKey} • Até {snap.endsAtLabel}
               </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-3 py-0.5 text-[11px] font-extrabold text-foreground">
-                {snap.playerStage.emoji} Sua Etapa: {snap.playerStage.label}
-              </span>
-              {snap.myStanding && (
-                <span className="rounded-full bg-accent/20 px-3 py-0.5 text-xs font-extrabold text-accent">
-                  Sua colocação na {snap.playerStage.shortLabel}: #{snap.myStanding.rank} (
-                  {snap.myStanding.totalRankedPoints} pts)
+              <div className="flex items-center gap-3">
+                <span className="inline-flex items-center gap-1 font-bold text-foreground">
+                  <Flame className="h-3.5 w-3.5 text-accent" /> Entradas:{" "}
+                  <b className="font-mono text-primary">
+                    {snap.entriesUsedToday}/{TOURNAMENT_DAILY_ENTRIES_LIMIT}
+                  </b>
                 </span>
-              )}
-            </div>
-
-            <div>
-              <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                Desafio Oficial Desta Semana
+                <span className="inline-flex items-center gap-1 font-bold text-foreground">
+                  <Zap className="h-3.5 w-3.5 text-success" /> XP Extra:{" "}
+                  <b className="font-mono text-success">
+                    +{snap.extraXpEarnedToday}/{TOURNAMENT_DAILY_EXTRA_XP_CAP} XP
+                  </b>
+                </span>
               </div>
-              <h3 className="font-display text-2xl sm:text-3xl font-extrabold text-foreground">
-                {snap.gameName}
-              </h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Quem se mantém no <b>Top 5</b> por mais tempo acumula{" "}
-                <b>Pontos de Permanência (+2 pts a cada 10 min na colocação)</b> e garante Medalhas
-                Semanais + Bônus de XP!
-              </p>
             </div>
 
-            {/* Medidores das 10 Entradas Diárias e +100 XP Extra */}
-            <div className="grid sm:grid-cols-2 gap-2.5 pt-1">
-              <div className="rounded-2xl border bg-card/90 p-3 space-y-1">
-                <div className="flex items-center justify-between text-xs font-bold">
-                  <span className="flex items-center gap-1 text-muted-foreground">
-                    <Flame className="h-3.5 w-3.5 text-accent" /> Entradas de Hoje
+            {/* Card Principal do Desafio da Semana */}
+            <div className="rounded-3xl border-2 border-primary/30 bg-gradient-to-br from-primary/10 via-card to-accent/10 p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 border border-primary/20 px-3 py-0.5 text-xs font-black text-primary">
+                  {snap.playerStage.emoji} {snap.playerStage.label} ({snap.playerStage.shortLabel})
+                </span>
+                {snap.myStanding && (
+                  <span className="rounded-full bg-accent/20 px-3 py-0.5 text-xs font-extrabold text-accent">
+                    Sua colocação: #{snap.myStanding.rank} ({snap.myStanding.tournamentPoints ?? snap.myStanding.totalRankedPoints} pts)
                   </span>
-                  <span className="font-mono font-extrabold">
-                    {snap.entriesUsedToday} / {TOURNAMENT_DAILY_ENTRIES_LIMIT}
-                  </span>
+                )}
+              </div>
+
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Jogo Oficial Desta Semana
                 </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary transition-all"
-                    style={{
-                      width: `${(snap.entriesUsedToday / TOURNAMENT_DAILY_ENTRIES_LIMIT) * 100}%`,
-                    }}
-                  />
-                </div>
-                <p className="text-[11px] text-muted-foreground">
-                  {snap.entriesRemainingToday > 0
-                    ? `Você ainda tem ${snap.entriesRemainingToday} tentativas hoje.`
-                    : "Você completou todas as 10 tentativas de hoje!"}
+                <h3 className="font-display text-2xl sm:text-3xl font-black text-foreground">
+                  {snap.gameName}
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Dispute partidas ranqueadas exclusivas para a sua etapa ({snap.playerStage.shortLabel}).
+                  Vença partidas para subir de divisão, desbloquear medalhas de maestria e figurar no Top 5!
                 </p>
               </div>
 
-              <div className="rounded-2xl border bg-card/90 p-3 space-y-1">
-                <div className="flex items-center justify-between text-xs font-bold">
-                  <span className="flex items-center gap-1 text-muted-foreground">
-                    <Zap className="h-3.5 w-3.5 text-success" /> XP Extra Ranqueado Hoje
+              {/* PROGRESSO DO RANK DO TORNEIO (Diretamente acima do botão de jogar) */}
+              <div className="rounded-2xl border bg-card/95 p-4 space-y-3 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground">
+                    Seu Rank Ranqueado
                   </span>
-                  <span className="font-mono font-extrabold text-success">
-                    +{snap.extraXpEarnedToday} / {TOURNAMENT_DAILY_EXTRA_XP_CAP} XP
+                  <span className="font-mono text-xs font-black text-primary">
+                    {currentPoints} pts
                   </span>
                 </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-success transition-all"
-                    style={{
-                      width: `${(snap.extraXpEarnedToday / TOURNAMENT_DAILY_EXTRA_XP_CAP) * 100}%`,
-                    }}
-                  />
-                </div>
-                <p className="text-[11px] text-muted-foreground">
-                  +{TOURNAMENT_XP_PER_ENTRY} XP garantidos por entrada (10 entradas = 100 XP extra).
-                </p>
-              </div>
-            </div>
 
-            <Button
-              size="lg"
-              disabled={snap.entriesRemainingToday <= 0}
-              onClick={() => {
-                onOpenChange(false);
-                onStartRankedEntry(snap.gameId);
-              }}
-              className="h-13 w-full rounded-2xl font-display text-base font-extrabold shadow-md"
-            >
-              {snap.entriesRemainingToday > 0 ? (
-                <>
-                  <Play className="mr-2 h-5 w-5" /> Jogar Entrada Ranqueada Agora (
-                  {snap.entriesRemainingToday}/{TOURNAMENT_DAILY_ENTRIES_LIMIT} restantes)
-                </>
-              ) : (
-                "Limite de 10 entradas diárias concluído hoje! Volte amanhã"
-              )}
-            </Button>
-          </div>
+                <div className="flex items-center gap-3">
+                  {/* Rank Atual */}
+                  <div className="flex flex-col items-center shrink-0 w-20 text-center">
+                    <TournamentRankBadge rankId={rankInfo.currentRank.id} points={currentPoints} size="md" />
+                    <span className="mt-1 font-display text-xs font-black truncate max-w-full text-foreground">
+                      {rankInfo.currentRank.name}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground font-mono">
+                      {rankInfo.currentRank.minPoints} pts
+                    </span>
+                  </div>
 
-          {/* Ranking Top 5 do Torneio Semanal (Por Etapa + Opção Geral Secundária) */}
-          <div className="rounded-2xl border bg-card p-4 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-display text-sm font-extrabold flex items-center gap-1.5">
-                <Medal className="h-4 w-4 text-accent" /> Top 5 do Torneio por Etapa (Faixa Etária)
-              </span>
-              <button
-                type="button"
-                onClick={() => setSelectedStage("TODAS")}
-                className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-all ${
-                  selectedStage === "TODAS"
-                    ? "border-accent bg-accent text-accent-foreground"
-                    : "bg-background text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                🌐 Ver Geral (Todas as idades)
-              </button>
-            </div>
-
-            <div className="grid grid-cols-3 gap-1.5">
-              {AGE_STAGES.map((st) => {
-                const isSelected = selectedStage === st.id;
-                const isMine = snap.playerStage.id === st.id;
-                return (
-                  <button
-                    key={st.id}
-                    type="button"
-                    onClick={() => setSelectedStage(st.id)}
-                    className={`rounded-xl border px-2.5 py-2 text-left transition-all ${
-                      isSelected
-                        ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                        : "bg-background hover:bg-secondary/60"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-1 font-display text-xs font-extrabold">
-                      <span>
-                        {st.emoji} {st.shortLabel}
+                  {/* Barra de Progresso Central */}
+                  <div className="flex-1 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] font-bold">
+                      <span className="text-muted-foreground">
+                        {rankInfo.nextRank ? `Rumo a ${rankInfo.nextRank.name}` : "Divisão Máxima"}
                       </span>
-                      {isMine && (
-                        <span
-                          className={`rounded px-1 text-[9px] uppercase ${
-                            isSelected
-                              ? "bg-primary-foreground/20 text-primary-foreground"
-                              : "bg-primary/15 text-primary"
-                          }`}
-                        >
-                          Sua
+                      <span className="font-mono text-primary font-extrabold">
+                        {Math.round(rankInfo.progressPercent)}%
+                      </span>
+                    </div>
+                    <div className="h-3 w-full overflow-hidden rounded-full bg-muted border border-border/60">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-primary to-accent transition-all duration-500"
+                        style={{ width: `${Math.min(100, Math.max(6, rankInfo.progressPercent))}%` }}
+                      />
+                    </div>
+                    <div className="text-center text-[10px] text-muted-foreground font-medium">
+                      {rankInfo.pointsToNext > 0 ? (
+                        <span>
+                          Faltam <b>{rankInfo.pointsToNext} pts</b> para {rankInfo.nextRank?.name}
                         </span>
+                      ) : (
+                        <span className="text-rose-500 font-extrabold">👑 Divisão Mestre Alcançada!</span>
                       )}
                     </div>
-                    <div
-                      className={`text-[10px] ${
-                        isSelected ? "text-primary-foreground/90" : "text-muted-foreground"
-                      }`}
-                    >
-                      {st.ageRangeLabel}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+                  </div>
 
-            {snap.top5.length === 0 ? (
-              <div className="rounded-xl bg-secondary/40 p-5 text-center text-xs text-muted-foreground">
-                Ninguém pontuou no torneio desta semana ainda. Jogue sua 1ª entrada agora para
-                assumir o <b>1º lugar</b> e começar a acumular tempo na liderança!
+                  {/* Próximo Rank */}
+                  <div className="flex flex-col items-center shrink-0 w-20 text-center">
+                    {rankInfo.nextRank ? (
+                      <>
+                        <TournamentRankBadge rankId={rankInfo.nextRank.id} size="md" />
+                        <span className="mt-1 font-display text-xs font-black truncate max-w-full text-muted-foreground">
+                          {rankInfo.nextRank.name}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          {rankInfo.nextRank.minPoints} pts
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <TournamentRankBadge rankId="mestre" size="md" />
+                        <span className="mt-1 font-display text-xs font-black truncate max-w-full text-rose-500">
+                          Mestre
+                        </span>
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          850+ pts
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
-            ) : (
-              <div className="space-y-2">
-                {snap.top5.map((row) => {
-                  const isMe = row.playerId === profile.id;
-                  return (
-                    <div
-                      key={row.playerId}
-                      className={`flex items-center justify-between gap-3 rounded-2xl border p-3 transition-colors ${
-                        isMe ? "border-primary bg-primary/10" : "bg-background"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span
-                          className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl font-display text-sm font-extrabold border shadow-xs ${
-                            row.rank === 1
-                              ? "bg-yellow-400 text-yellow-950 border-yellow-500"
-                              : row.rank === 2
-                                ? "bg-slate-300 text-slate-800 border-slate-400"
-                                : row.rank === 3
-                                  ? "bg-amber-700 text-amber-50 border-amber-800"
-                                  : "bg-secondary text-foreground border-border"
+
+              {/* Botão de Jogar */}
+              <Button
+                size="lg"
+                disabled={snap.entriesRemainingToday <= 0}
+                onClick={() => {
+                  onOpenChange(false);
+                  onStartRankedEntry(snap.gameId);
+                }}
+                className="h-13 w-full rounded-2xl font-display text-base font-extrabold shadow-md"
+              >
+                {snap.entriesRemainingToday > 0 ? (
+                  <>
+                    <Play className="mr-2 h-5 w-5" /> Jogar Entrada Ranqueada Agora (
+                    {snap.entriesRemainingToday}/{TOURNAMENT_DAILY_ENTRIES_LIMIT} restantes)
+                  </>
+                ) : (
+                  "Limite de 10 entradas diárias concluído hoje! Volte amanhã"
+                )}
+              </Button>
+
+              {/* Regras de Pontos Ranqueados */}
+              <div className="rounded-xl border bg-secondary/30 p-2.5 text-[11px] text-muted-foreground text-center">
+                🎯 <b>Pontuação Ranqueada:</b> Vitória (+10 pts) • Derrota (-5 pts) • Erro de questão (-1 pt) • Bônus por 10 vitórias diárias (+25 pts). Ao reiniciar a semana todo domingo, todos descem para Bronze I.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Conteúdo da Aba: RANKING DO TORNEIO */}
+        {activeTab === "ranking" && (
+          <div className="space-y-4">
+            {/* Visualização de Etapas: Apenas ADM pode alternar; Aluno comum vê exclusivamente sua etapa */}
+            {auth.isAdmin ? (
+              <div className="space-y-2 rounded-2xl border bg-secondary/30 p-3">
+                <div className="flex items-center justify-between text-xs font-bold text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Shield className="h-3.5 w-3.5 text-primary" /> Visualização do Administrador (Todas as Etapas)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStage("TODAS")}
+                    className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                      selectedStage === "TODAS"
+                        ? "border-accent bg-accent text-accent-foreground"
+                        : "bg-background text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    🌐 Visão Geral
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-3 gap-1.5">
+                  {AGE_STAGES.map((st) => {
+                    const isSelected = selectedStage === st.id;
+                    return (
+                      <button
+                        key={st.id}
+                        type="button"
+                        onClick={() => setSelectedStage(st.id)}
+                        className={`rounded-xl border px-2.5 py-2 text-left transition-all ${
+                          isSelected
+                            ? "border-primary bg-primary text-primary-foreground shadow-xs"
+                            : "bg-background hover:bg-secondary/60"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1 font-display text-xs font-black">
+                          <span>
+                            {st.emoji} {st.shortLabel}
+                          </span>
+                        </div>
+                        <div
+                          className={`text-[10px] ${
+                            isSelected ? "text-primary-foreground/90" : "text-muted-foreground"
                           }`}
                         >
-                          {row.rank <= 3 ? <Medal className="h-5 w-5" /> : `${row.rank}º`}
-                        </span>
-                        <div className="min-w-0 space-y-0.5">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="font-display text-sm font-black truncate text-foreground">
-                              {row.nick}
-                            </span>
-                            {isMe && (
-                              <span className="rounded-md bg-primary px-1.5 py-0.2 text-[10px] font-bold text-primary-foreground">
-                                VOCÊ
-                              </span>
-                            )}
-                          </div>
-                          {row.fullName && row.fullName.toLowerCase() !== row.nick.toLowerCase() && (
-                            <div className="truncate text-[10px] font-semibold uppercase text-muted-foreground/90">
-                              {row.fullName}
-                            </div>
-                          )}
-                          <div className="text-[11px] text-muted-foreground truncate">
-                            {row.school} • Nv. {row.level} • {row.stageLabel} ({row.age} anos) •{" "}
-                            <span className="inline-flex items-center gap-0.5 font-semibold text-accent">
-                              <Clock className="h-3 w-3" /> {row.holdMinutes} min no Top 5 (+
-                              {row.holdBonusPoints} pts)
-                            </span>
-                          </div>
+                          {st.ageRangeLabel}
                         </div>
-                      </div>
-
-                      <div className="text-right shrink-0">
-                        <div className="font-display text-base font-extrabold text-primary">
-                          {row.totalRankedPoints} pts
-                        </div>
-                        <div className="text-[10px] text-muted-foreground">
-                          Recorde: {row.bestScore} ({row.totalEntries}x)
-                        </div>
-                      </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-2xl border bg-secondary/30 p-3 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">{snap.playerStage.emoji}</span>
+                  <div>
+                    <div className="font-display text-sm font-black text-foreground">
+                      Ranking da {snap.playerStage.label}
                     </div>
-                  );
-                })}
+                    <div className="text-[11px] text-muted-foreground">
+                      Disputa oficial ranqueada entre alunos da sua faixa escolar ({snap.playerStage.shortLabel})
+                    </div>
+                  </div>
+                </div>
+                {snap.myStanding && (
+                  <div className="text-right shrink-0">
+                    <div className="text-[10px] font-bold uppercase text-muted-foreground">Sua Posição</div>
+                    <div className="font-display text-base font-black text-accent">
+                      #{snap.myStanding.rank} ({snap.myStanding.tournamentPoints ?? snap.myStanding.totalRankedPoints} pts)
+                    </div>
+                  </div>
+                )}
               </div>
             )}
-          </div>
 
-          {/* Informações sobre o Sistema de Medalhas */}
-          <div className="rounded-2xl border bg-secondary/30 p-3.5 text-xs text-muted-foreground flex items-start gap-2.5">
-            <Sparkles className="h-4 w-4 text-accent shrink-0 mt-0.5" />
-            <div>
-              <b className="text-foreground">Sistema de Medalhas Semanais Ativo:</b> Entrar no Top 5
-              registra sua medalha da semana (🥇 Ouro, 🥈 Prata, 🥉 Bronze ou 🏅 Elite Top 5) direto
-              no seu perfil de jogador!
+            {/* Lista do Top Ranking */}
+            <div className="rounded-2xl border bg-card p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-display text-sm font-extrabold flex items-center gap-1.5">
+                  <Medal className="h-4 w-4 text-accent" /> Top Jogadores da Semana
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  Semana {snap.weekKey}
+                </span>
+              </div>
+
+              {snap.top5.length === 0 ? (
+                <div className="rounded-xl bg-secondary/40 p-6 text-center text-xs text-muted-foreground space-y-1">
+                  <p className="font-bold text-foreground">Ninguém pontuou no torneio desta semana ainda.</p>
+                  <p>Jogue sua 1ª entrada ranqueada para assumir o <b>1º lugar</b> da sua etapa!</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {snap.top5.map((row) => {
+                    const isMe = row.playerId === profile.id;
+                    const rowPoints = row.tournamentPoints ?? row.totalRankedPoints;
+                    const rowRankDef = getTournamentRank(rowPoints).currentRank;
+
+                    return (
+                      <div
+                        key={row.playerId}
+                        className={`flex items-center justify-between gap-3 rounded-2xl border p-3 transition-colors ${
+                          isMe ? "border-primary bg-primary/10 shadow-xs" : "bg-background"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {/* Posição no Torneio */}
+                          <span
+                            className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl font-display text-xs font-black border shadow-xs ${
+                              row.rank === 1
+                                ? "bg-yellow-400 text-yellow-950 border-yellow-500"
+                                : row.rank === 2
+                                  ? "bg-slate-300 text-slate-800 border-slate-400"
+                                  : row.rank === 3
+                                    ? "bg-amber-700 text-amber-50 border-amber-800"
+                                    : "bg-secondary text-foreground border-border"
+                            }`}
+                          >
+                            {row.rank <= 3 ? <Medal className="h-4 w-4" /> : `${row.rank}º`}
+                          </span>
+
+                          {/* Badge do Rank do Jogador */}
+                          <TournamentRankBadge rankId={rowRankDef.id} points={rowPoints} size="xs" />
+
+                          <div className="min-w-0 space-y-0.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="font-display text-sm font-black truncate text-foreground">
+                                {row.nick}
+                              </span>
+                              {isMe && (
+                                <span className="rounded-md bg-primary px-1.5 py-0.2 text-[10px] font-bold text-primary-foreground">
+                                  VOCÊ
+                                </span>
+                              )}
+                              <span className={`text-[10px] font-bold ${rowRankDef.textColor}`}>
+                                {rowRankDef.name}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-muted-foreground truncate">
+                              {row.school} • Nv. {row.level} • {row.stageLabel}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <div className="font-display text-base font-black text-primary">
+                            {rowPoints} pts
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">
+                            Recorde: {row.bestScore} • {row.totalEntries}x
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Informações sobre Medalhas */}
+            <div className="rounded-2xl border bg-secondary/30 p-3.5 text-xs text-muted-foreground flex items-start gap-2.5">
+              <Sparkles className="h-4 w-4 text-accent shrink-0 mt-0.5" />
+              <div>
+                <b className="text-foreground">Medalhas de Superação e Top 5:</b> Ao alcançar a divisão mais alta de cada liga (Bronze III, Prata III, Ouro III, Platina IV, Diamante V e Mestre) você recebe a medalha permanente de maestria. E terminar a semana no Top 5 acumula medalhas semanais no seu perfil!
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </DialogContent>
     </Dialog>
   );

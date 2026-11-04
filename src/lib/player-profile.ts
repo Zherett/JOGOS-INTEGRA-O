@@ -691,6 +691,8 @@ export interface TournamentMedal {
   heldMinutes: number;
   bonusXpAwarded: number;
   earnedAt: string;
+  count?: number; // Multiplicador acumulativo (ex: x2, x3 no mesmo selo)
+  historyWeeks?: string[]; // Semanas em que esta medalha foi conquistada (ex: ["2026-W43", "2026-W44"])
 }
 
 export interface LevelRankTitle {

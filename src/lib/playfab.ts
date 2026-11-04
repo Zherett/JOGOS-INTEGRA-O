@@ -138,6 +138,10 @@ export interface PlayerProfile {
   dailyX1Xp?: number;
   dailyTournamentXp?: number;
   dailyTournamentEntries?: number;
+  tournamentPoints?: number;
+  bestTournamentPoints?: number;
+  tournamentRankId?: string;
+  tournamentWeekKey?: string;
   dailyXpDate?: string;
   dailyPostCapMatches?: number;
   dailyPostCapDate?: string;
@@ -357,7 +361,7 @@ export function setAdminUnlockedSession(unlocked: boolean) {
 
 /* --------------------- Local Registry / Offline Mirror --------------------- */
 
-function loadRegistry(): Record<string, StoredAccount> {
+export function loadRegistry(): Record<string, StoredAccount> {
   if (typeof window === "undefined") return {};
   try {
     const raw = window.localStorage.getItem(REGISTRY_KEY);
@@ -826,6 +830,14 @@ export function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdmin
   if (acc.profile.weeklyX1WeekKey && acc.profile.weeklyX1WeekKey !== currentWeekKey) {
     acc.profile.weeklyX1Wins = 0;
     acc.profile.weeklyX1WeekKey = currentWeekKey;
+  }
+  // Ao reiniciar a semana (domingo 23:59 -> segunda 00:00), todos os alunos retornam ao Bronze I (0 pts)
+  if (acc.profile.tournamentWeekKey && acc.profile.tournamentWeekKey !== currentWeekKey) {
+    acc.profile.tournamentPoints = 0;
+    acc.profile.tournamentRankId = "bronze_1";
+    acc.profile.tournamentWeekKey = currentWeekKey;
+  } else if (!acc.profile.tournamentWeekKey) {
+    acc.profile.tournamentWeekKey = currentWeekKey;
   }
 
   const isAdminAcc = isSpecialAdminAccount(acc.profile);
@@ -1769,6 +1781,10 @@ async function pushProfileToPlayFab(account: StoredAccount, sessionTicket?: stri
           dailyX1Xp: p.dailyX1Xp ?? 0,
           dailyTournamentXp: p.dailyTournamentXp ?? 0,
           dailyTournamentEntries: p.dailyTournamentEntries ?? 0,
+          tournamentPoints: p.tournamentPoints ?? 0,
+          bestTournamentPoints: p.bestTournamentPoints ?? 0,
+          tournamentRankId: p.tournamentRankId ?? "bronze_1",
+          tournamentWeekKey: p.tournamentWeekKey,
           dailyXpDate: p.dailyXpDate ?? getLocalDateKey(),
           dailyPostCapMatches: p.dailyPostCapMatches ?? 0,
           dailyPostCapDate: p.dailyPostCapDate ?? getLocalDateKey(),
@@ -1816,6 +1832,10 @@ async function pushProfileToPlayFab(account: StoredAccount, sessionTicket?: stri
               x1Wins: p.x1Wins ?? 0,
               weeklyX1Wins: p.weeklyX1Wins ?? 0,
               weeklyX1WeekKey: p.weeklyX1WeekKey,
+              tournamentPoints: p.tournamentPoints ?? 0,
+              bestTournamentPoints: p.bestTournamentPoints ?? 0,
+              tournamentRankId: p.tournamentRankId ?? "bronze_1",
+              tournamentWeekKey: p.tournamentWeekKey,
               matchesPlayed: p.matchesPlayed,
               distinctGamesPlayed: p.distinctGamesPlayed ?? 0,
               streakDays: p.streakDays ?? 1,
@@ -3162,6 +3182,47 @@ export function getAllRegisteredPlayers(): PlayerProfile[] {
 /**
  * Grants a Weekly Ranked Tournament medal (and optional holding bonus XP) to a player profile.
  */
+export function accumulateTournamentMedal(
+  existing: TournamentMedal[],
+  medal: TournamentMedal,
+): TournamentMedal[] {
+  const copy = [...existing];
+  const sameWeekIndex = copy.findIndex((m) => m.id === medal.id || m.weekKey === medal.weekKey);
+
+  if (sameWeekIndex >= 0) {
+    const cur = copy[sameWeekIndex];
+    const prevWeeks = cur.historyWeeks ?? [cur.weekKey];
+    copy[sameWeekIndex] = {
+      ...cur,
+      rank: Math.min(cur.rank, medal.rank),
+      tier: medal.rank < cur.rank ? medal.tier : cur.tier,
+      label: medal.rank <= cur.rank ? medal.label : cur.label,
+      heldMinutes: Math.max(cur.heldMinutes, medal.heldMinutes),
+      count: cur.count ?? 1,
+      historyWeeks: Array.from(new Set([...prevWeeks, medal.weekKey])),
+    };
+    return copy;
+  }
+
+  // Acumula número no mesmo selo se o aluno já conquistou medalha dessa mesma colocação Top 5
+  const sameRankIndex = copy.findIndex((m) => m.rank === medal.rank);
+  if (sameRankIndex >= 0) {
+    const cur = copy[sameRankIndex];
+    const prevWeeks = cur.historyWeeks ?? [cur.weekKey];
+    copy[sameRankIndex] = {
+      ...cur,
+      count: (cur.count ?? 1) + 1,
+      heldMinutes: Math.max(cur.heldMinutes, medal.heldMinutes),
+      earnedAt: medal.earnedAt,
+      weekKey: medal.weekKey,
+      historyWeeks: Array.from(new Set([...prevWeeks, medal.weekKey])),
+    };
+    return copy;
+  }
+
+  return [{ ...medal, count: 1, historyWeeks: [medal.weekKey] }, ...copy];
+}
+
 export async function grantPlayerTournamentMedal(
   medal: TournamentMedal,
 ): Promise<PlayerProfile | null> {
@@ -3171,12 +3232,10 @@ export async function grantPlayerTournamentMedal(
   const acc = reg[session.playerId];
   if (!acc) return null;
 
-  const existing = acc.profile.tournamentMedals ?? [];
-  if (existing.some((m) => m.id === medal.id)) {
-    return acc.profile;
-  }
-
-  acc.profile.tournamentMedals = [medal, ...existing];
+  acc.profile.tournamentMedals = accumulateTournamentMedal(
+    acc.profile.tournamentMedals ?? [],
+    medal,
+  );
   if (medal.bonusXpAwarded > 0) {
     acc.profile.xp += medal.bonusXpAwarded;
     acc.profile.seasonXp = (acc.profile.seasonXp ?? 0) + medal.bonusXpAwarded;

@@ -231,6 +231,45 @@ export function PlayerMedalsInventory({
             )}
           </div>
 
+          {/* Medalhas do Torneio Semanal Ranqueado (Top 5 com contadores acumulativos) */}
+          {profile?.tournamentMedals && profile.tournamentMedals.length > 0 && (
+            <div className="rounded-2xl border bg-card/80 p-4 space-y-2.5">
+              <span className="font-display text-xs font-black uppercase text-amber-500 flex items-center gap-1.5">
+                <Trophy className="h-4 w-4" /> Medalhas do Torneio Semanal (Top 5)
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {profile.tournamentMedals.map((tm) => (
+                  <div
+                    key={tm.id}
+                    className="flex items-center justify-between gap-2 rounded-xl border bg-secondary/30 p-2.5"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">
+                        {tm.rank === 1 ? "🥇" : tm.rank === 2 ? "🥈" : tm.rank === 3 ? "🥉" : "🏅"}
+                      </span>
+                      <div>
+                        <div className="flex items-center gap-1.5 font-display text-xs font-black">
+                          <span>Top {tm.rank} Semanal</span>
+                          {(tm.count ?? 1) > 1 && (
+                            <span className="rounded-full bg-amber-500/20 border border-amber-500/40 px-1.5 py-0.2 text-[10px] font-black text-amber-600 dark:text-amber-400">
+                              x{tm.count}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">{tm.label}</div>
+                      </div>
+                    </div>
+                    {(tm.count ?? 1) > 1 && (
+                      <span className="rounded-lg bg-primary/10 px-2 py-1 font-mono text-xs font-extrabold text-primary">
+                        {tm.count}x Conquistada
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Quick link to catalogue */}
           <div className="flex justify-center">
             <button

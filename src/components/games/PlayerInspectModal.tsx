@@ -49,6 +49,7 @@ import {
 import { ALL_GAME_IDS, GAME_NAMES } from "@/lib/game-storage";
 import { PlayerMedalsInventory } from "./PlayerMedalsInventory";
 import { PresenceDot } from "./PresenceDot";
+import { TournamentRankBadge } from "./TournamentRankBadge";
 
 interface Props {
   playerId: string | null;
@@ -245,6 +246,13 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
                 </div>
                 <p className="truncate text-xs font-semibold text-muted-foreground uppercase">{profile.full_name}</p>
                 <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                  {/* Rank Ranqueado do Torneio */}
+                  <TournamentRankBadge
+                    points={profile.tournamentPoints ?? 0}
+                    size="xs"
+                    showLabel
+                  />
+                  <span className="text-muted-foreground">•</span>
                   <span className="font-extrabold text-primary">
                     {profile.xp} XP
                   </span>

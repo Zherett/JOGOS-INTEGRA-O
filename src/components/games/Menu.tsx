@@ -31,6 +31,14 @@ import {
 } from "@/lib/custom-events";
 import integracaoPreto from "@/assets/integracao-preto.jpg";
 import semed from "@/assets/semed.png";
+import type { PlayerProfile } from "@/lib/playfab";
+import { stageFromBirthdate } from "@/lib/player-profile";
+import {
+  formatRecordDateBR,
+  getGameStageRecord,
+  loadGameRecords,
+  type AllGameRecords,
+} from "@/lib/game-records";
 
 interface Props {
   stats: AllStats;
@@ -43,6 +51,7 @@ interface Props {
   tournamentEnabled?: boolean;
   weeklyGameName?: string;
   playerLevel?: number;
+  playerProfile?: PlayerProfile | null;
   onSelect: (id: GameId) => void;
   onAddCode: () => void;
   onOpenX1Arena?: () => void;
@@ -60,6 +69,7 @@ export function Menu({
   tournamentEnabled = true,
   weeklyGameName = "Batalha de Robôs",
   playerLevel = 1,
+  playerProfile = null,
   onSelect,
   onAddCode,
   onOpenX1Arena,
@@ -71,6 +81,18 @@ export function Menu({
   );
   const canTournament = playerLevel >= TOURNAMENT_MIN_LEVEL;
   const canX1 = playerLevel >= X1_MIN_LEVEL && x1OpenNow;
+
+  const stageId = playerProfile
+    ? stageFromBirthdate(playerProfile.birthdate, new Date(), playerProfile.school).id
+    : "etapa_1";
+
+  const [gameRecords, setGameRecords] = useState<AllGameRecords>(() => loadGameRecords());
+
+  useEffect(() => {
+    const handler = () => setGameRecords(loadGameRecords());
+    window.addEventListener("desafios:game-records-updated", handler);
+    return () => window.removeEventListener("desafios:game-records-updated", handler);
+  }, []);
 
   const [activeEvents, setActiveEvents] = useState<ActiveEventDisplayItem[]>(() =>
     getAllActiveEvents(),
@@ -462,6 +484,7 @@ export function Menu({
       <div className="grid sm:grid-cols-2 gap-5">
         {visible.map((g) => {
           const s = stats[g.id] ?? { bestScore: 0, bestLevel: 1 };
+          const stageRecord = getGameStageRecord(g.id, stageId, gameRecords);
           return (
             <button
               key={g.id}
@@ -479,7 +502,7 @@ export function Menu({
               <div className="mt-5 flex flex-wrap gap-2">
                 <Badge
                   icon={<Trophy className="h-3.5 w-3.5" />}
-                  label="Melhor"
+                  label="Seu Melhor"
                   value={s.bestScore}
                   tone="accent"
                 />
@@ -489,6 +512,32 @@ export function Menu({
                   value={s.bestLevel}
                   tone="primary"
                 />
+              </div>
+
+              {/* Recorde da Etapa e Detentor(es) */}
+              <div className="mt-4 rounded-2xl border bg-secondary/40 p-3 space-y-1">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                    <Trophy className="h-3.5 w-3.5" /> Recorde da Etapa:
+                  </span>
+                  <span className="font-mono font-extrabold text-foreground">
+                    {stageRecord ? `${stageRecord.score} pts` : "Ainda sem recorde"}
+                  </span>
+                </div>
+                {stageRecord && stageRecord.holders.length > 0 && (
+                  <div className="text-[11px] text-muted-foreground truncate">
+                    <span className="font-bold text-foreground">
+                      Detentor{stageRecord.holders.length > 1 ? "es" : ""}:
+                    </span>{" "}
+                    {stageRecord.holders.map((h, i) => (
+                      <span key={h.playerId + i}>
+                        {i > 0 && " • "}
+                        <b className="text-foreground">{i + 1}º {h.nick}</b>
+                        {h.achievedAt > 0 && ` (${formatRecordDateBR(h.achievedAt)})`}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="mt-6 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-primary-foreground font-bold shadow-md group-hover:bg-primary/90">

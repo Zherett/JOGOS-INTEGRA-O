@@ -2,8 +2,10 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildBaseMedalsCatalog,
+  calculateMaxConsecutiveWeeks,
   calculateMedalProgress,
   evaluatePlayerMedals,
+  getAllAvailableMedals,
   getDailyPostCapMatches,
   getDistinctFlawlessGames,
   getDistinctGamesPlayed,
@@ -996,5 +998,178 @@ describe("Sistema Completo de Medalhas e Inventário", () => {
     );
     assert.equal(accEshellen.profile.level, 2, "ESHELLEN2026 (270 XP, 5 vitórias) deve recuperar Nível 2");
     assert.ok(accEshellen.profile.unlockedMedals?.some((m) => m.medalId === "lvl_2"));
+  });
+
+  it("avalia e concede as medalhas secretas de quantidade de partidas jogadas (50, 100, 250 e 1000 partidas)", () => {
+    const all = getAllAvailableMedals();
+
+    const m50 = all.find((m) => m.id === "secret_matches_50");
+    const m100 = all.find((m) => m.id === "secret_matches_100");
+    const m250 = all.find((m) => m.id === "secret_matches_250");
+    const m1000 = all.find((m) => m.id === "secret_matches_1000");
+
+    assert.ok(m50 && m50.isSecret && m50.rarity === "prata" && m50.category === "secreta");
+    assert.ok(m100 && m100.isSecret && m100.rarity === "ouro" && m100.category === "secreta");
+    assert.ok(m250 && m250.isSecret && m250.rarity === "platina" && m250.category === "secreta");
+    assert.ok(m1000 && m1000.isSecret && m1000.rarity === "heroi" && m1000.category === "secreta");
+
+    const prof49 = {
+      id: "p49",
+      matchesPlayed: 49,
+      unlockedMedals: [],
+    };
+    const awarded49 = evaluatePlayerMedals({ profile: prof49 as any, stats: [] });
+    assert.ok(!awarded49.some((m) => m.id.startsWith("secret_matches_")));
+
+    // 50 partidas: destrava prata secreta
+    const prof50 = {
+      id: "p50",
+      matchesPlayed: 50,
+      unlockedMedals: [],
+    };
+    const awarded50 = evaluatePlayerMedals({ profile: prof50 as any, stats: [] });
+    assert.ok(awarded50.some((m) => m.id === "secret_matches_50"));
+    assert.ok(!awarded50.some((m) => m.id === "secret_matches_100"));
+
+    // 100 partidas: destrava ouro secreta
+    const prof100 = {
+      id: "p100",
+      matchesPlayed: 100,
+      unlockedMedals: [{ medalId: "secret_matches_50", earnedAt: "2026-11-01" }],
+    };
+    const awarded100 = evaluatePlayerMedals({ profile: prof100 as any, stats: [] });
+    assert.ok(awarded100.some((m) => m.id === "secret_matches_100"));
+    assert.ok(!awarded100.some((m) => m.id === "secret_matches_250"));
+
+    // 250 partidas: destrava platina secreta
+    const prof250 = {
+      id: "p250",
+      matchesPlayed: 250,
+      unlockedMedals: [],
+    };
+    const awarded250 = evaluatePlayerMedals({ profile: prof250 as any, stats: [] });
+    assert.ok(awarded250.some((m) => m.id === "secret_matches_250"));
+    assert.ok(!awarded250.some((m) => m.id === "secret_matches_1000"));
+
+    // 1000 partidas: destrava heroi secreta
+    const prof1000 = {
+      id: "p1000",
+      matchesPlayed: 1000,
+      unlockedMedals: [],
+    };
+    const awarded1000 = evaluatePlayerMedals({ profile: prof1000 as any, stats: [] });
+    assert.ok(awarded1000.some((m) => m.id === "secret_matches_1000"));
+  });
+
+  it("calcula corretamente semanas consecutivas com calculateMaxConsecutiveWeeks", () => {
+    assert.equal(calculateMaxConsecutiveWeeks([]), 0);
+    assert.equal(calculateMaxConsecutiveWeeks(["2026-W01"]), 1);
+    assert.equal(calculateMaxConsecutiveWeeks(["2026-W01", "2026-W03"]), 1);
+    assert.equal(calculateMaxConsecutiveWeeks(["2026-W01", "2026-W02", "2026-W03"]), 3);
+    assert.equal(calculateMaxConsecutiveWeeks(["2026-W01", "2026-W02", "2026-W04", "2026-W05", "2026-W06"]), 3);
+    // Transição de ano (52/53 semanas)
+    assert.equal(calculateMaxConsecutiveWeeks(["2025-W52", "2026-W01", "2026-W02"]), 3);
+  });
+
+  it("avalia e concede as medalhas secretas do torneio semanal (Top 5 e Top 1 consecutivo)", () => {
+    const all = getAllAvailableMedals();
+
+    const top5w2 = all.find((m) => m.id === "secret_top5_weeks_2");
+    const top5w4 = all.find((m) => m.id === "secret_top5_weeks_4");
+    const top1c2 = all.find((m) => m.id === "secret_top1_consecutive_2");
+    const top1c3 = all.find((m) => m.id === "secret_top1_consecutive_3");
+    const top1c4 = all.find((m) => m.id === "secret_top1_consecutive_4");
+
+    assert.ok(top5w2 && top5w2.isSecret && top5w2.rarity === "bronze" && top5w2.category === "secreta");
+    assert.ok(top5w4 && top5w4.isSecret && top5w4.rarity === "prata" && top5w4.category === "secreta");
+    assert.ok(top1c2 && top1c2.isSecret && top1c2.rarity === "ouro" && top1c2.category === "secreta");
+    assert.ok(top1c3 && top1c3.isSecret && top1c3.rarity === "platina" && top1c3.category === "secreta");
+    assert.ok(top1c4 && top1c4.isSecret && top1c4.rarity === "heroi" && top1c4.category === "secreta");
+
+    // Perfil com 1 semana no top 5 (sem medalhas secretas)
+    const prof1WeekTop5 = {
+      id: "p_t1",
+      tournamentMedals: [
+        { rank: 3, weekKey: "2026-W10", count: 1, historyWeeks: ["2026-W10"] },
+      ],
+      unlockedMedals: [],
+    };
+    const awarded1 = evaluatePlayerMedals({ profile: prof1WeekTop5 as any, stats: [] });
+    assert.ok(!awarded1.some((m) => m.id.startsWith("secret_top")));
+
+    // Perfil com 2 semanas no top 5 (não consecutivas) -> destrava segredo Bronze (2 semanas)
+    const prof2WeeksTop5 = {
+      id: "p_t2",
+      tournamentMedals: [
+        { rank: 3, weekKey: "2026-W10", count: 1, historyWeeks: ["2026-W10"] },
+        { rank: 5, weekKey: "2026-W13", count: 1, historyWeeks: ["2026-W13"] },
+      ],
+      unlockedMedals: [],
+    };
+    const awarded2 = evaluatePlayerMedals({ profile: prof2WeeksTop5 as any, stats: [] });
+    assert.ok(awarded2.some((m) => m.id === "secret_top5_weeks_2"));
+    assert.ok(!awarded2.some((m) => m.id === "secret_top5_weeks_4"));
+
+    // Perfil com 4 semanas no top 5 (acumuladas na mesma medalha de rank 2 e outra de rank 4)
+    const prof4WeeksTop5 = {
+      id: "p_t4",
+      tournamentMedals: [
+        { rank: 2, weekKey: "2026-W10", count: 3, historyWeeks: ["2026-W10", "2026-W12", "2026-W14"] },
+        { rank: 4, weekKey: "2026-W16", count: 1, historyWeeks: ["2026-W16"] },
+      ],
+      unlockedMedals: [],
+    };
+    const awarded4 = evaluatePlayerMedals({ profile: prof4WeeksTop5 as any, stats: [] });
+    assert.ok(awarded4.some((m) => m.id === "secret_top5_weeks_2"));
+    assert.ok(awarded4.some((m) => m.id === "secret_top5_weeks_4"));
+
+    // Top 1 não consecutivo (semanas 10 e 12) -> NÃO deve dar a medalha de 2 semanas consecutivas
+    const profTop1NonConsecutive = {
+      id: "p_t1_nc",
+      tournamentMedals: [
+        { rank: 1, weekKey: "2026-W10", count: 2, historyWeeks: ["2026-W10", "2026-W12"] },
+      ],
+      unlockedMedals: [],
+    };
+    const awardedTop1NC = evaluatePlayerMedals({ profile: profTop1NonConsecutive as any, stats: [] });
+    assert.ok(!awardedTop1NC.some((m) => m.id.startsWith("secret_top1_consecutive_")));
+
+    // Top 1 por 2 semanas consecutivas -> destrava Ouro
+    const profTop1Consec2 = {
+      id: "p_t1_c2",
+      tournamentMedals: [
+        { rank: 1, weekKey: "2026-W10", count: 2, historyWeeks: ["2026-W10", "2026-W11"] },
+      ],
+      unlockedMedals: [],
+    };
+    const awardedC2 = evaluatePlayerMedals({ profile: profTop1Consec2 as any, stats: [] });
+    assert.ok(awardedC2.some((m) => m.id === "secret_top1_consecutive_2"));
+    assert.ok(!awardedC2.some((m) => m.id === "secret_top1_consecutive_3"));
+
+    // Top 1 por 3 semanas consecutivas -> destrava Ouro e Platina
+    const profTop1Consec3 = {
+      id: "p_t1_c3",
+      tournamentMedals: [
+        { rank: 1, weekKey: "2026-W10", count: 3, historyWeeks: ["2026-W10", "2026-W11", "2026-W12"] },
+      ],
+      unlockedMedals: [],
+    };
+    const awardedC3 = evaluatePlayerMedals({ profile: profTop1Consec3 as any, stats: [] });
+    assert.ok(awardedC3.some((m) => m.id === "secret_top1_consecutive_2"));
+    assert.ok(awardedC3.some((m) => m.id === "secret_top1_consecutive_3"));
+    assert.ok(!awardedC3.some((m) => m.id === "secret_top1_consecutive_4"));
+
+    // Top 1 por 4 semanas consecutivas -> destrava Ouro, Platina e Herói!
+    const profTop1Consec4 = {
+      id: "p_t1_c4",
+      tournamentMedals: [
+        { rank: 1, weekKey: "2026-W10", count: 4, historyWeeks: ["2026-W10", "2026-W11", "2026-W12", "2026-W13"] },
+      ],
+      unlockedMedals: [],
+    };
+    const awardedC4 = evaluatePlayerMedals({ profile: profTop1Consec4 as any, stats: [] });
+    assert.ok(awardedC4.some((m) => m.id === "secret_top1_consecutive_2"));
+    assert.ok(awardedC4.some((m) => m.id === "secret_top1_consecutive_3"));
+    assert.ok(awardedC4.some((m) => m.id === "secret_top1_consecutive_4"));
   });
 });

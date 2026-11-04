@@ -17,6 +17,7 @@ import {
   AGE_STAGES,
   getAgeStageInfo,
   getLocalDateKey,
+  isMatchVictory,
   stageFromBirthdate,
   TOURNAMENT_DAILY_ENTRIES_LIMIT,
   TOURNAMENT_DAILY_EXTRA_XP_CAP,
@@ -25,6 +26,8 @@ import {
   type AgeStageId,
   type TournamentMedal,
 } from "./player-profile.ts";
+
+export type { AgeStageId };
 
 const TOURNAMENT_STORAGE_KEY = "desafios-weekly-tournament-v1";
 
@@ -35,6 +38,384 @@ export {
   TOURNAMENT_MIN_LEVEL,
   TOURNAMENT_XP_PER_ENTRY,
 };
+
+export type TournamentTier = "bronze" | "prata" | "ouro" | "platina" | "diamante" | "mestre";
+
+export type TournamentRankId =
+  | "bronze_1"
+  | "bronze_2"
+  | "bronze_3"
+  | "prata_1"
+  | "prata_2"
+  | "prata_3"
+  | "ouro_1"
+  | "ouro_2"
+  | "ouro_3"
+  | "platina_1"
+  | "platina_2"
+  | "platina_3"
+  | "platina_4"
+  | "diamante_1"
+  | "diamante_2"
+  | "diamante_3"
+  | "diamante_4"
+  | "diamante_5"
+  | "mestre";
+
+export interface TournamentRankDefinition {
+  id: TournamentRankId;
+  tier: TournamentTier;
+  tierName: string;
+  division: string;
+  name: string;
+  minPoints: number;
+  maxPoints: number;
+  textColor: string;
+  badgeBg: string;
+  borderColor: string;
+  glowHex: string;
+  iconName: string;
+  shape: "shield" | "crest" | "star" | "diamond" | "hexagon" | "crown";
+}
+
+export const TOURNAMENT_RANKS: TournamentRankDefinition[] = [
+  // Bronze (0 - 90 pts)
+  {
+    id: "bronze_1",
+    tier: "bronze",
+    tierName: "Bronze",
+    division: "I",
+    name: "Bronze I",
+    minPoints: 0,
+    maxPoints: 30,
+    textColor: "text-[#b8661d] dark:text-[#cd7f32]",
+    badgeBg: "bg-[#f7e4d0] dark:bg-[#3b2310]",
+    borderColor: "border-[#cd7f32]",
+    glowHex: "#cd7f32",
+    iconName: "Shield",
+    shape: "shield",
+  },
+  {
+    id: "bronze_2",
+    tier: "bronze",
+    tierName: "Bronze",
+    division: "II",
+    name: "Bronze II",
+    minPoints: 31,
+    maxPoints: 60,
+    textColor: "text-[#b8661d] dark:text-[#cd7f32]",
+    badgeBg: "bg-[#f7e4d0] dark:bg-[#3b2310]",
+    borderColor: "border-[#cd7f32]",
+    glowHex: "#cd7f32",
+    iconName: "Shield",
+    shape: "shield",
+  },
+  {
+    id: "bronze_3",
+    tier: "bronze",
+    tierName: "Bronze",
+    division: "III",
+    name: "Bronze III",
+    minPoints: 61,
+    maxPoints: 90,
+    textColor: "text-[#b8661d] dark:text-[#cd7f32]",
+    badgeBg: "bg-[#f7e4d0] dark:bg-[#3b2310]",
+    borderColor: "border-[#cd7f32]",
+    glowHex: "#cd7f32",
+    iconName: "Shield",
+    shape: "shield",
+  },
+  // Prata (91 - 240 pts)
+  {
+    id: "prata_1",
+    tier: "prata",
+    tierName: "Prata",
+    division: "I",
+    name: "Prata I",
+    minPoints: 91,
+    maxPoints: 140,
+    textColor: "text-slate-700 dark:text-slate-200",
+    badgeBg: "bg-slate-200 dark:bg-slate-700",
+    borderColor: "border-slate-400 dark:border-slate-500",
+    glowHex: "#94a3b8",
+    iconName: "Award",
+    shape: "crest",
+  },
+  {
+    id: "prata_2",
+    tier: "prata",
+    tierName: "Prata",
+    division: "II",
+    name: "Prata II",
+    minPoints: 141,
+    maxPoints: 190,
+    textColor: "text-slate-700 dark:text-slate-200",
+    badgeBg: "bg-slate-200 dark:bg-slate-700",
+    borderColor: "border-slate-400 dark:border-slate-500",
+    glowHex: "#94a3b8",
+    iconName: "Award",
+    shape: "crest",
+  },
+  {
+    id: "prata_3",
+    tier: "prata",
+    tierName: "Prata",
+    division: "III",
+    name: "Prata III",
+    minPoints: 191,
+    maxPoints: 240,
+    textColor: "text-slate-700 dark:text-slate-200",
+    badgeBg: "bg-slate-200 dark:bg-slate-700",
+    borderColor: "border-slate-400 dark:border-slate-500",
+    glowHex: "#94a3b8",
+    iconName: "Award",
+    shape: "crest",
+  },
+  // Ouro (241 - 450 pts)
+  {
+    id: "ouro_1",
+    tier: "ouro",
+    tierName: "Ouro",
+    division: "I",
+    name: "Ouro I",
+    minPoints: 241,
+    maxPoints: 310,
+    textColor: "text-amber-700 dark:text-amber-300",
+    badgeBg: "bg-amber-100 dark:bg-amber-950",
+    borderColor: "border-amber-400",
+    glowHex: "#fbbf24",
+    iconName: "Star",
+    shape: "star",
+  },
+  {
+    id: "ouro_2",
+    tier: "ouro",
+    tierName: "Ouro",
+    division: "II",
+    name: "Ouro II",
+    minPoints: 311,
+    maxPoints: 380,
+    textColor: "text-amber-700 dark:text-amber-300",
+    badgeBg: "bg-amber-100 dark:bg-amber-950",
+    borderColor: "border-amber-400",
+    glowHex: "#fbbf24",
+    iconName: "Star",
+    shape: "star",
+  },
+  {
+    id: "ouro_3",
+    tier: "ouro",
+    tierName: "Ouro",
+    division: "III",
+    name: "Ouro III",
+    minPoints: 381,
+    maxPoints: 450,
+    textColor: "text-amber-700 dark:text-amber-300",
+    badgeBg: "bg-amber-100 dark:bg-amber-950",
+    borderColor: "border-amber-400",
+    glowHex: "#fbbf24",
+    iconName: "Star",
+    shape: "star",
+  },
+  // Platina (451 - 680 pts)
+  {
+    id: "platina_1",
+    tier: "platina",
+    tierName: "Platina",
+    division: "I",
+    name: "Platina I",
+    minPoints: 451,
+    maxPoints: 507,
+    textColor: "text-cyan-700 dark:text-cyan-300",
+    badgeBg: "bg-cyan-100 dark:bg-cyan-950",
+    borderColor: "border-cyan-400",
+    glowHex: "#22d3ee",
+    iconName: "Sparkles",
+    shape: "diamond",
+  },
+  {
+    id: "platina_2",
+    tier: "platina",
+    tierName: "Platina",
+    division: "II",
+    name: "Platina II",
+    minPoints: 508,
+    maxPoints: 564,
+    textColor: "text-cyan-700 dark:text-cyan-300",
+    badgeBg: "bg-cyan-100 dark:bg-cyan-950",
+    borderColor: "border-cyan-400",
+    glowHex: "#22d3ee",
+    iconName: "Sparkles",
+    shape: "diamond",
+  },
+  {
+    id: "platina_3",
+    tier: "platina",
+    tierName: "Platina",
+    division: "III",
+    name: "Platina III",
+    minPoints: 565,
+    maxPoints: 621,
+    textColor: "text-cyan-700 dark:text-cyan-300",
+    badgeBg: "bg-cyan-100 dark:bg-cyan-950",
+    borderColor: "border-cyan-400",
+    glowHex: "#22d3ee",
+    iconName: "Sparkles",
+    shape: "diamond",
+  },
+  {
+    id: "platina_4",
+    tier: "platina",
+    tierName: "Platina",
+    division: "IV",
+    name: "Platina IV",
+    minPoints: 622,
+    maxPoints: 680,
+    textColor: "text-cyan-700 dark:text-cyan-300",
+    badgeBg: "bg-cyan-100 dark:bg-cyan-950",
+    borderColor: "border-cyan-400",
+    glowHex: "#22d3ee",
+    iconName: "Sparkles",
+    shape: "diamond",
+  },
+  // Diamante (681 - 849 pts)
+  {
+    id: "diamante_1",
+    tier: "diamante",
+    tierName: "Diamante",
+    division: "I",
+    name: "Diamante I",
+    minPoints: 681,
+    maxPoints: 714,
+    textColor: "text-fuchsia-700 dark:text-fuchsia-300",
+    badgeBg: "bg-fuchsia-100 dark:bg-fuchsia-950",
+    borderColor: "border-fuchsia-400",
+    glowHex: "#e879f9",
+    iconName: "Sparkles",
+    shape: "hexagon",
+  },
+  {
+    id: "diamante_2",
+    tier: "diamante",
+    tierName: "Diamante",
+    division: "II",
+    name: "Diamante II",
+    minPoints: 715,
+    maxPoints: 748,
+    textColor: "text-fuchsia-700 dark:text-fuchsia-300",
+    badgeBg: "bg-fuchsia-100 dark:bg-fuchsia-950",
+    borderColor: "border-fuchsia-400",
+    glowHex: "#e879f9",
+    iconName: "Sparkles",
+    shape: "hexagon",
+  },
+  {
+    id: "diamante_3",
+    tier: "diamante",
+    tierName: "Diamante",
+    division: "III",
+    name: "Diamante III",
+    minPoints: 749,
+    maxPoints: 782,
+    textColor: "text-fuchsia-700 dark:text-fuchsia-300",
+    badgeBg: "bg-fuchsia-100 dark:bg-fuchsia-950",
+    borderColor: "border-fuchsia-400",
+    glowHex: "#e879f9",
+    iconName: "Sparkles",
+    shape: "hexagon",
+  },
+  {
+    id: "diamante_4",
+    tier: "diamante",
+    tierName: "Diamante",
+    division: "IV",
+    name: "Diamante IV",
+    minPoints: 783,
+    maxPoints: 816,
+    textColor: "text-fuchsia-700 dark:text-fuchsia-300",
+    badgeBg: "bg-fuchsia-100 dark:bg-fuchsia-950",
+    borderColor: "border-fuchsia-400",
+    glowHex: "#e879f9",
+    iconName: "Sparkles",
+    shape: "hexagon",
+  },
+  {
+    id: "diamante_5",
+    tier: "diamante",
+    tierName: "Diamante",
+    division: "V",
+    name: "Diamante V",
+    minPoints: 817,
+    maxPoints: 849,
+    textColor: "text-fuchsia-700 dark:text-fuchsia-300",
+    badgeBg: "bg-fuchsia-100 dark:bg-fuchsia-950",
+    borderColor: "border-fuchsia-400",
+    glowHex: "#e879f9",
+    iconName: "Sparkles",
+    shape: "hexagon",
+  },
+  // Mestre (850+ pts)
+  {
+    id: "mestre",
+    tier: "mestre",
+    tierName: "Mestre",
+    division: "",
+    name: "Mestre",
+    minPoints: 850,
+    maxPoints: 99999,
+    textColor: "text-rose-600 dark:text-rose-300",
+    badgeBg: "bg-rose-100 dark:bg-rose-950",
+    borderColor: "border-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.6)] animate-pulse",
+    glowHex: "#f43f5e",
+    iconName: "Crown",
+    shape: "crown",
+  },
+];
+
+export function getTournamentRank(points: number): {
+  currentRank: TournamentRankDefinition;
+  nextRank: TournamentRankDefinition | null;
+  progressPercent: number;
+  pointsToNext: number;
+  pointsInCurrentRank: number;
+  pointsForCurrentRank: number;
+} {
+  const safePoints = Math.max(0, Math.floor(points));
+  let curIdx = 0;
+  for (let i = 0; i < TOURNAMENT_RANKS.length; i++) {
+    if (safePoints >= TOURNAMENT_RANKS[i].minPoints) {
+      curIdx = i;
+    }
+  }
+
+  const currentRank = TOURNAMENT_RANKS[curIdx];
+  const nextRank = curIdx < TOURNAMENT_RANKS.length - 1 ? TOURNAMENT_RANKS[curIdx + 1] : null;
+
+  if (!nextRank) {
+    return {
+      currentRank,
+      nextRank: null,
+      progressPercent: 100,
+      pointsToNext: 0,
+      pointsInCurrentRank: safePoints - currentRank.minPoints,
+      pointsForCurrentRank: 100,
+    };
+  }
+
+  const span = Math.max(1, nextRank.minPoints - currentRank.minPoints);
+  const inRank = Math.max(0, safePoints - currentRank.minPoints);
+  const progressPercent = Math.min(100, Math.round((inRank / span) * 100));
+  const pointsToNext = Math.max(0, nextRank.minPoints - safePoints);
+
+  return {
+    currentRank,
+    nextRank,
+    progressPercent,
+    pointsToNext,
+    pointsInCurrentRank: inRank,
+    pointsForCurrentRank: span,
+  };
+}
 
 export interface TournamentPlayerRecord {
   playerId: string;
@@ -47,6 +428,12 @@ export interface TournamentPlayerRecord {
   level: number;
   bestScore: number;
   totalEntries: number;
+  tournamentPoints?: number;
+  dailyWinsCount?: number;
+  dailyMatchesCount?: number;
+  dailyDateKey?: string;
+  dailyBonusAwarded?: boolean;
+  highestRankId?: TournamentRankId;
   /** Timestamp (epoch ms) when the player entered the Top 5 of their Etapa (null if currently outside Top 5) */
   activeTop5Since: number | null;
   /** Accumulated milliseconds previously spent inside the Top 5 of their Etapa this week */
@@ -65,6 +452,8 @@ export interface TournamentStandingRow {
   stageLabel: string;
   level: number;
   bestScore: number;
+  tournamentPoints: number;
+  currentRank: TournamentRankDefinition;
   holdMinutes: number;
   holdBonusPoints: number;
   totalRankedPoints: number;
@@ -206,34 +595,43 @@ export function evaluateTournamentStandings(
       );
     })
     .map((rec) => {
-    const resolvedAge =
-      rec.age ?? (rec.birthdate ? ageFrom(rec.birthdate, new Date(nowMs)) : 10);
-    const resolvedStage: AgeStageId =
-      rec.stage ??
-      (rec.birthdate ? stageFromBirthdate(rec.birthdate, new Date(nowMs), rec.school).id : "etapa_1");
-    const stInfo = getAgeStageInfo(resolvedStage);
-    const { holdMinutes, holdBonusPoints } = computeTop5HoldMetrics(rec, nowMs);
-    return {
-      rec: {
-        ...rec,
-        age: resolvedAge,
+      const resolvedAge =
+        rec.age ?? (rec.birthdate ? ageFrom(rec.birthdate, new Date(nowMs)) : 10);
+      const resolvedStage: AgeStageId =
+        rec.stage ??
+        (rec.birthdate ? stageFromBirthdate(rec.birthdate, new Date(nowMs), rec.school).id : "etapa_1");
+      const stInfo = getAgeStageInfo(resolvedStage);
+      const { holdMinutes, holdBonusPoints } = computeTop5HoldMetrics(rec, nowMs);
+      const tourPoints =
+        typeof rec.tournamentPoints === "number"
+          ? Math.max(0, rec.tournamentPoints)
+          : Math.max(0, rec.bestScore ?? 0);
+      const currentRank = getTournamentRank(tourPoints).currentRank;
+      return {
+        rec: {
+          ...rec,
+          age: resolvedAge,
+          stage: resolvedStage,
+          tournamentPoints: tourPoints,
+        },
         stage: resolvedStage,
-      },
-      stage: resolvedStage,
-      stageLabel: stInfo.shortLabel,
-      age: resolvedAge,
-      holdMinutes,
-      holdBonusPoints,
-      totalRankedPoints: rec.bestScore + holdBonusPoints,
-    };
-  });
+        stageLabel: stInfo.shortLabel,
+        age: resolvedAge,
+        tournamentPoints: tourPoints,
+        currentRank,
+        holdMinutes,
+        holdBonusPoints,
+        totalRankedPoints: tourPoints + holdBonusPoints,
+      };
+    });
 
-  // Sort by Total Ranked Points (Best Score + Top 5 Hold Bonus), then Hold Time, then Best Score
+  // Ordena prioritariamente por Pontos Totais (Pontos Ranqueados + Bônus de Permanência no Top 5)
   list.sort(
     (a, b) =>
       b.totalRankedPoints - a.totalRankedPoints ||
-      b.holdMinutes - a.holdMinutes ||
+      b.tournamentPoints - a.tournamentPoints ||
       b.rec.bestScore - a.rec.bestScore ||
+      b.holdMinutes - a.holdMinutes ||
       a.rec.updatedAt - b.rec.updatedAt,
   );
 
@@ -278,6 +676,8 @@ export function evaluateTournamentStandings(
       stageLabel: item.stageLabel,
       level: copy.level,
       bestScore: copy.bestScore,
+      tournamentPoints: item.tournamentPoints,
+      currentRank: item.currentRank,
       holdMinutes: item.holdMinutes,
       holdBonusPoints: item.holdBonusPoints,
       totalRankedPoints: item.totalRankedPoints,
@@ -390,7 +790,12 @@ export async function syncWeeklyTournamentWithPlayFab(): Promise<void> {
       >;
       for (const [id, r] of Object.entries(remoteRecords)) {
         const local = store.records[id];
-        if (!local || r.bestScore > local.bestScore || r.updatedAt > local.updatedAt) {
+        if (
+          !local ||
+          (r.tournamentPoints ?? 0) > (local.tournamentPoints ?? 0) ||
+          r.bestScore > local.bestScore ||
+          r.updatedAt > local.updatedAt
+        ) {
           store.records[id] = r;
         }
       }
@@ -445,6 +850,12 @@ export function getWeeklyTournamentSnapshot(
     ? (myStageEvaluated.allStandings.find((s) => s.playerId === profile.id) ?? null)
     : null;
 
+  const currentPoints = Math.max(
+    0,
+    myStanding?.tournamentPoints ?? profile?.tournamentPoints ?? 0,
+  );
+  const rankInfo = getTournamentRank(currentPoints);
+
   return {
     weekKey,
     endsAtLabel,
@@ -459,21 +870,32 @@ export function getWeeklyTournamentSnapshot(
     entriesRemainingToday,
     extraXpEarnedToday,
     canEnterLevel: (profile?.level ?? 1) >= TOURNAMENT_MIN_LEVEL,
+    tournamentPoints: currentPoints,
+    rankInfo,
   };
 }
 
 /**
- * Records a finished Ranked Tournament attempt for the logged-in player,
- * updates Top 5 permanence tracking in their Etapa, and stages/awards their Top 5 Tournament Medal!
+ * Registra o resultado da partida ranqueada:
+ * - Vitória = +10 pontos
+ * - Derrota = -5 pontos
+ * - Erro de questão = -1 ponto (por questão errada)
+ * - Vencer todas as 10 partidas diárias = +25 pontos de bônus diário
+ * - Trava no zero: nunca desce abaixo de 0 pontos (Bronze I)
  */
 export async function recordWeeklyTournamentAttempt(args: {
   profile: PlayerProfile;
   score: number;
+  correct?: number;
+  wrong?: number;
 }): Promise<{
   standing: TournamentStandingRow | null;
   awardedMedal: TournamentMedal | null;
+  pointsDelta: number;
+  newTournamentPoints: number;
+  currentRank: TournamentRankDefinition;
+  dailyBonusAwarded: boolean;
 }> {
-  // Admin accounts can test the games, but are not recorded into competitive student standings
   const pId = args.profile.id.toLowerCase();
   const nick = args.profile.nickNormalized?.toLowerCase();
   if (
@@ -484,16 +906,52 @@ export async function recordWeeklyTournamentAttempt(args: {
     nick === "josiney" ||
     nick === "quemuel"
   ) {
-    return { standing: null, awardedMedal: null };
+    const curRank = getTournamentRank(0).currentRank;
+    return {
+      standing: null,
+      awardedMedal: null,
+      pointsDelta: 0,
+      newTournamentPoints: 0,
+      currentRank: curRank,
+      dailyBonusAwarded: false,
+    };
   }
 
   const nowMs = Date.now();
   const nowDate = new Date(nowMs);
+  const todayKey = getLocalDateKey(nowDate);
   const store = loadTournamentStore(nowDate);
   const safeScore = Math.max(0, Math.floor(args.score));
+  const safeCorrect = Math.max(0, args.correct ?? 0);
+  const safeWrong = Math.max(0, args.wrong ?? 0);
+  const won = isMatchVictory(safeScore, safeCorrect, safeWrong);
+
   const existing = store.records[args.profile.id];
   const pAge = ageFrom(args.profile.birthdate, nowDate);
   const pStage = stageFromBirthdate(args.profile.birthdate, nowDate, args.profile.school);
+
+  // Regra de pontuação ranqueada:
+  // Vitória: +10 pontos | Derrota: -5 pontos | Erro: -1 ponto por questão
+  const baseDelta = won ? 10 : -5;
+  const errorPenalty = safeWrong * 1;
+  let pointsDelta = baseDelta - errorPenalty;
+
+  // Acompanhamento do bônus diário das 10 vitórias
+  const isSameDay = existing?.dailyDateKey === todayKey;
+  const currentDailyMatches = isSameDay ? (existing?.dailyMatchesCount ?? 0) : 0;
+  const currentDailyWins = isSameDay ? (existing?.dailyWinsCount ?? 0) : 0;
+  const nextDailyMatches = currentDailyMatches + 1;
+  const nextDailyWins = currentDailyWins + (won ? 1 : 0);
+  let dailyBonusAwarded = false;
+
+  if (nextDailyMatches === 10 && nextDailyWins === 10 && !existing?.dailyBonusAwarded) {
+    pointsDelta += 25;
+    dailyBonusAwarded = true;
+  }
+
+  const curPoints = Math.max(0, existing?.tournamentPoints ?? args.profile.tournamentPoints ?? 0);
+  const newTournamentPoints = Math.max(0, curPoints + pointsDelta);
+  const rankInfo = getTournamentRank(newTournamentPoints);
 
   store.records[args.profile.id] = {
     playerId: args.profile.id,
@@ -506,6 +964,12 @@ export async function recordWeeklyTournamentAttempt(args: {
     level: args.profile.level,
     bestScore: Math.max(existing?.bestScore ?? 0, safeScore),
     totalEntries: (existing?.totalEntries ?? 0) + 1,
+    tournamentPoints: newTournamentPoints,
+    dailyWinsCount: nextDailyWins,
+    dailyMatchesCount: nextDailyMatches,
+    dailyDateKey: todayKey,
+    dailyBonusAwarded: dailyBonusAwarded || (isSameDay ? (existing?.dailyBonusAwarded ?? false) : false),
+    highestRankId: rankInfo.currentRank.id,
     activeTop5Since: existing?.activeTop5Since ?? null,
     accumulatedTop5Ms: existing?.accumulatedTop5Ms ?? 0,
     updatedAt: nowMs,
@@ -519,7 +983,7 @@ export async function recordWeeklyTournamentAttempt(args: {
   const myRow = evaluated.allStandings.find((s) => s.playerId === args.profile.id) ?? null;
   let awardedMedal: TournamentMedal | null = null;
 
-  // If the student is in the Top 5 of their Etapa, stage/update their Weekly Tournament Medal on their profile!
+  // Se o aluno está no Top 5 de sua Etapa, atualiza/concede a medalha semanal Top 5 de forma acumulativa
   if (myRow && myRow.rank <= 5) {
     const medal: TournamentMedal = {
       id: `medal_${store.weekKey}_${pStage.id}_r${myRow.rank}`,
@@ -529,12 +993,27 @@ export async function recordWeeklyTournamentAttempt(args: {
       tier: myRow.projectedMedal.tier,
       label: `${myRow.projectedMedal.emoji} Top ${myRow.rank} ${pStage.shortLabel} (${GAME_NAMES[store.gameId]})`,
       heldMinutes: myRow.holdMinutes,
-      bonusXpAwarded: 0, // Daily +10 XP is granted via playfabRecordMatch("torneio_semanal")
+      bonusXpAwarded: 0,
       earnedAt: new Date(nowMs).toISOString(),
     };
     await grantPlayerTournamentMedal(medal);
     awardedMedal = medal;
   }
 
-  return { standing: myRow, awardedMedal };
+  // Atualiza pontos do torneio no perfil local
+  args.profile.tournamentPoints = newTournamentPoints;
+  args.profile.tournamentRankId = rankInfo.currentRank.id;
+  args.profile.bestTournamentPoints = Math.max(
+    args.profile.bestTournamentPoints ?? 0,
+    newTournamentPoints,
+  );
+
+  return {
+    standing: myRow,
+    awardedMedal,
+    pointsDelta,
+    newTournamentPoints,
+    currentRank: rankInfo.currentRank,
+    dailyBonusAwarded,
+  };
 }

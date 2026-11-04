@@ -58,6 +58,7 @@ export interface MedalCondition {
     | "max_daily_xp"
     | "streak_days"
     | "tournament_rank"
+    | "tournament_rank_mastery"
     | "all_level_medals"
     | "all_game_medals"
     | "total_medals_count"
@@ -67,6 +68,9 @@ export interface MedalCondition {
     | "beta_tester_platina"
     | "beta_tester_heroi"
     | "daily_post_cap_matches"
+    | "total_matches_played"
+    | "top5_weeks_count"
+    | "top1_consecutive_weeks"
     | "manual_event"
     | EventRequirementType;
   threshold?: number;
@@ -526,6 +530,61 @@ export function buildBaseMedalsCatalog(): MedalDefinition[] {
       iconName: "Award",
       condition: { type: "tournament_rank", targetRank: 3 },
     },
+    // Superação de Rank no Torneio Semanal Ranqueado (Conquistas Únicas no ápice de cada elo)
+    {
+      id: "tour_master_bronze",
+      title: "Dominador do Bronze",
+      description: "Alcance o ápice da divisão de Bronze chegando a Bronze III (61+ pts) no Torneio Semanal Ranqueado.",
+      rarity: "bronze",
+      category: "ranking",
+      iconName: "Shield",
+      condition: { type: "tournament_rank_mastery", threshold: 61 },
+    },
+    {
+      id: "tour_master_prata",
+      title: "Dominador da Prata",
+      description: "Alcance o ápice da divisão de Prata chegando a Prata III (191+ pts) no Torneio Semanal Ranqueado.",
+      rarity: "prata",
+      category: "ranking",
+      iconName: "Award",
+      condition: { type: "tournament_rank_mastery", threshold: 191 },
+    },
+    {
+      id: "tour_master_ouro",
+      title: "Dominador do Ouro",
+      description: "Alcance o ápice da divisão de Ouro chegando a Ouro III (381+ pts) no Torneio Semanal Ranqueado.",
+      rarity: "ouro",
+      category: "ranking",
+      iconName: "Star",
+      condition: { type: "tournament_rank_mastery", threshold: 381 },
+    },
+    {
+      id: "tour_master_platina",
+      title: "Dominador da Platina",
+      description: "Alcance o ápice da divisão de Platina chegando a Platina IV (622+ pts) no Torneio Semanal Ranqueado.",
+      rarity: "platina",
+      category: "ranking",
+      iconName: "Sparkles",
+      condition: { type: "tournament_rank_mastery", threshold: 622 },
+    },
+    {
+      id: "tour_master_diamante",
+      title: "Dominador do Diamante",
+      description: "Alcance o ápice da divisão de Diamante chegando a Diamante V (817+ pts) no Torneio Semanal Ranqueado.",
+      rarity: "diamante",
+      category: "ranking",
+      iconName: "Flame",
+      condition: { type: "tournament_rank_mastery", threshold: 817 },
+    },
+    {
+      id: "tour_master_mestre",
+      title: "Grande Mestre do Torneio",
+      description: "Conquiste o prestigiado rank Mestre (850+ pts) no Torneio Semanal Ranqueado!",
+      rarity: "heroi",
+      category: "ranking",
+      iconName: "Crown",
+      condition: { type: "tournament_rank_mastery", threshold: 850 },
+    },
   );
 
   // 11. Meta-Medalhas Especiais Sugeridas (Platina & Diamante)
@@ -650,6 +709,100 @@ export function buildBaseMedalsCatalog(): MedalDefinition[] {
       condition: { type: "daily_post_cap_matches", threshold: 100 },
       isSecret: true,
     },
+
+    // 14. Medalhas Secretas - Constância e Dedicação (Total de partidas disputadas)
+    {
+      id: "secret_matches_50",
+      title: "Constância de Prata",
+      description: "Segredo revelado: disputou 50 partidas na plataforma!",
+      rarity: "prata",
+      category: "secreta",
+      iconName: "Shield",
+      condition: { type: "total_matches_played", threshold: 50 },
+      isSecret: true,
+    },
+    {
+      id: "secret_matches_100",
+      title: "Centurião de Ouro",
+      description: "Segredo revelado: alcançou a marca de 100 partidas disputadas!",
+      rarity: "ouro",
+      category: "secreta",
+      iconName: "Flame",
+      condition: { type: "total_matches_played", threshold: 100 },
+      isSecret: true,
+    },
+    {
+      id: "secret_matches_250",
+      title: "Mestre da Platina",
+      description: "Segredo revelado: disputou 250 partidas na plataforma!",
+      rarity: "platina",
+      category: "secreta",
+      iconName: "Sparkles",
+      condition: { type: "total_matches_played", threshold: 250 },
+      isSecret: true,
+    },
+    {
+      id: "secret_matches_1000",
+      title: "Lenda dos Desafios",
+      description: "Segredo supremo revelado: alcançou a lendária marca de 1.000 partidas disputadas!",
+      rarity: "heroi",
+      category: "secreta",
+      iconName: "Crown",
+      condition: { type: "total_matches_played", threshold: 1000 },
+      isSecret: true,
+    },
+
+    // 15. Medalhas Secretas de Domínio no Torneio Semanal (Top 5 e Top 1 Consecutivos)
+    {
+      id: "secret_top5_weeks_2",
+      title: "Guardião do Top 5",
+      description: "Segredo revelado: manteve-se no Top 5 do ranking por 2 semanas!",
+      rarity: "bronze",
+      category: "secreta",
+      iconName: "Shield",
+      condition: { type: "top5_weeks_count", threshold: 2 },
+      isSecret: true,
+    },
+    {
+      id: "secret_top5_weeks_4",
+      title: "Pilar do Top 5",
+      description: "Segredo revelado: manteve-se no Top 5 do ranking por 4 semanas!",
+      rarity: "prata",
+      category: "secreta",
+      iconName: "Award",
+      condition: { type: "top5_weeks_count", threshold: 4 },
+      isSecret: true,
+    },
+    {
+      id: "secret_top1_consecutive_2",
+      title: "Soberano Consecutivo",
+      description: "Segredo revelado: manteve-se no Top 1 do ranking de alunos por 2 semanas consecutivas!",
+      rarity: "ouro",
+      category: "secreta",
+      iconName: "Star",
+      condition: { type: "top1_consecutive_weeks", threshold: 2 },
+      isSecret: true,
+    },
+    {
+      id: "secret_top1_consecutive_3",
+      title: "Dinastia da Liderança",
+      description: "Segredo revelado: manteve-se no Top 1 do ranking de alunos por 3 semanas consecutivas!",
+      rarity: "platina",
+      category: "secreta",
+      iconName: "Sparkles",
+      condition: { type: "top1_consecutive_weeks", threshold: 3 },
+      isSecret: true,
+    },
+    {
+      id: "secret_top1_consecutive_4",
+      title: "Império Lendário",
+      description: "Segredo supremo revelado: manteve-se no Top 1 do ranking de alunos por 4 semanas consecutivas!",
+      rarity: "heroi",
+      category: "secreta",
+      iconName: "Crown",
+      condition: { type: "top1_consecutive_weeks", threshold: 4 },
+      isSecret: true,
+    },
   );
 
   return medals;
@@ -661,6 +814,86 @@ export function getDailyPostCapMatches(
 ): number {
   if (!profile || profile.dailyPostCapDate !== todayKey) return 0;
   return profile.dailyPostCapMatches ?? 0;
+}
+
+/** Returns epoch ms for Monday 00:00:00 UTC of an ISO week */
+export function getMondayOfIsoWeek(year: number, week: number): number {
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const day = jan4.getUTCDay() || 7;
+  const mondayWeek1 = jan4.getTime() - (day - 1) * 86400000;
+  return mondayWeek1 + (week - 1) * 7 * 86400000;
+}
+
+/** Calculates the maximum streak of consecutive ISO weeks from week keys like 'YYYY-Www' */
+export function calculateMaxConsecutiveWeeks(weekKeys: string[]): number {
+  if (!Array.isArray(weekKeys) || weekKeys.length === 0) return 0;
+  const mondays = Array.from(new Set(weekKeys))
+    .map((k) => {
+      const match = k.match(/^(\d{4})-W(\d{1,2})$/);
+      if (!match) return null;
+      return getMondayOfIsoWeek(parseInt(match[1], 10), parseInt(match[2], 10));
+    })
+    .filter((t): t is number => t !== null)
+    .sort((a, b) => a - b);
+
+  if (mondays.length === 0) return 0;
+  let maxStreak = 1;
+  let currentStreak = 1;
+  const ONE_WEEK_MS = 7 * 86400000;
+
+  for (let i = 1; i < mondays.length; i++) {
+    const diffWeeks = Math.round((mondays[i] - mondays[i - 1]) / ONE_WEEK_MS);
+    if (diffWeeks === 1) {
+      currentStreak++;
+      if (currentStreak > maxStreak) {
+        maxStreak = currentStreak;
+      }
+    } else if (diffWeeks > 1) {
+      currentStreak = 1;
+    }
+  }
+
+  return maxStreak;
+}
+
+/** Total distinct weeks a player maintained a Top 5 position in the tournament */
+export function getTop5TotalWeeks(profile?: PlayerProfile | null): number {
+  if (!profile || !Array.isArray(profile.tournamentMedals)) return 0;
+  const weeks = new Set<string>();
+  let countSum = 0;
+
+  for (const m of profile.tournamentMedals) {
+    if (m.rank <= 5) {
+      if (m.weekKey) weeks.add(m.weekKey);
+      if (Array.isArray(m.historyWeeks)) {
+        for (const w of m.historyWeeks) weeks.add(w);
+      }
+      countSum += m.count ?? 1;
+    }
+  }
+
+  return Math.max(weeks.size, countSum);
+}
+
+/** Maximum streak of consecutive weeks a player finished in Top 1 */
+export function getTop1ConsecutiveWeeks(profile?: PlayerProfile | null): number {
+  if (!profile || !Array.isArray(profile.tournamentMedals)) return 0;
+  const weeks = new Set<string>();
+
+  for (const m of profile.tournamentMedals) {
+    if (m.rank === 1) {
+      if (m.weekKey) weeks.add(m.weekKey);
+      if (Array.isArray(m.historyWeeks)) {
+        for (const w of m.historyWeeks) weeks.add(w);
+      }
+    }
+  }
+
+  const streak = calculateMaxConsecutiveWeeks(Array.from(weeks));
+  if (streak === 0 && profile.tournamentMedals.some((m) => m.rank === 1 && (m.count ?? 1) >= 1)) {
+    return 1;
+  }
+  return streak;
 }
 
 /** Merges the default catalog with custom medals defined by the administrator */
@@ -1277,6 +1510,18 @@ export function evaluatePlayerMedals(
         }
         break;
 
+      case "tournament_rank_mastery": {
+        const threshold = cond.threshold ?? 61;
+        const pts = Math.max(
+          (p as any)?.tournamentPoints ?? 0,
+          (p as any)?.bestTournamentPoints ?? 0,
+        );
+        if (pts >= threshold) {
+          earned = true;
+        }
+        break;
+      }
+
       case "all_level_medals":
         if (currentLevelMedals === 9) earned = true;
         break;
@@ -1332,6 +1577,30 @@ export function evaluatePlayerMedals(
         const postCapMatches = getDailyPostCapMatches(p, todayKey);
         const target = cond.threshold ?? 10;
         if (postCapMatches >= target) {
+          earned = true;
+        }
+        break;
+      }
+
+      case "total_matches_played": {
+        const target = cond.threshold ?? 50;
+        if (totalCompletedPlays >= target) {
+          earned = true;
+        }
+        break;
+      }
+
+      case "top5_weeks_count": {
+        const target = cond.threshold ?? 2;
+        if (getTop5TotalWeeks(p) >= target) {
+          earned = true;
+        }
+        break;
+      }
+
+      case "top1_consecutive_weeks": {
+        const target = cond.threshold ?? 2;
+        if (getTop1ConsecutiveWeeks(p) >= target) {
           earned = true;
         }
         break;
@@ -1633,6 +1902,18 @@ export function calculateMedalProgress(
             : `Alcance o ${target}º lugar da sua etapa no Torneio Semanal`,
       };
     }
+    case "tournament_rank_mastery": {
+      const threshold = cond.threshold ?? 61;
+      const pts = Math.max(
+        (profile as any)?.tournamentPoints ?? 0,
+        (profile as any)?.bestTournamentPoints ?? 0,
+      );
+      const percent = Math.min(100, Math.round((pts / threshold) * 100));
+      return {
+        percent,
+        progressText: `${pts} / ${threshold} pts no Torneio Semanal`,
+      };
+    }
     case "total_medals_count": {
       const count = profile.unlockedMedals?.length ?? 0;
       const target = cond.threshold ?? 50;
@@ -1708,6 +1989,37 @@ export function calculateMedalProgress(
       return {
         percent: pct,
         progressText: `${postCapToday} de ${target} partidas hoje com limite de XP atingido`,
+      };
+    }
+    case "total_matches_played": {
+      const target = cond.threshold ?? 50;
+      const cur = Math.max(
+        profile.matchesPlayed ?? 0,
+        (profile as any).totalMatches ?? 0,
+        aggregatedRows.reduce((acc, s) => acc + s.plays, 0),
+      );
+      const pct = Math.min(100, Math.round((cur / target) * 100));
+      return {
+        percent: pct,
+        progressText: `${cur} de ${target} partidas disputadas`,
+      };
+    }
+    case "top5_weeks_count": {
+      const target = cond.threshold ?? 2;
+      const cur = getTop5TotalWeeks(profile);
+      const pct = Math.min(100, Math.round((cur / target) * 100));
+      return {
+        percent: pct,
+        progressText: `${cur} de ${target} semanas no Top 5`,
+      };
+    }
+    case "top1_consecutive_weeks": {
+      const target = cond.threshold ?? 2;
+      const cur = getTop1ConsecutiveWeeks(profile);
+      const pct = Math.min(100, Math.round((cur / target) * 100));
+      return {
+        percent: pct,
+        progressText: `${cur} de ${target} semanas consecutivas no Top 1`,
       };
     }
     default:

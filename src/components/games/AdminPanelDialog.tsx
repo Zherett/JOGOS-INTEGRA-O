@@ -26,6 +26,7 @@ import {
   ChevronRight,
   Calendar,
   RefreshCw,
+  Trophy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -110,6 +111,14 @@ import {
   PRESENCE_UPDATED_EVENT,
   syncPresenceFromPlayFab,
 } from "@/lib/presence";
+import { TournamentRankBadge } from "./TournamentRankBadge";
+import {
+  AGE_STAGES,
+  getTournamentRank,
+  getWeeklyTournamentSnapshot,
+  syncWeeklyTournamentWithPlayFab,
+  type AgeStageId,
+} from "@/lib/weekly-tournament";
 
 interface Props {
   open: boolean;
@@ -117,7 +126,7 @@ interface Props {
   onConfigSaved?: () => void;
 }
 
-type AdminTab = "jogos" | "arena_x1" | "eventos" | "medalhas" | "turmas" | "resets" | "sistema";
+type AdminTab = "jogos" | "arena_x1" | "torneio" | "eventos" | "medalhas" | "turmas" | "resets" | "sistema";
 
 function randomGameCode(prefix: string): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -155,6 +164,8 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [copied, setCopied] = useState(false);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [, setPresenceTick] = useState(0);
+  const [tournamentStageFilter, setTournamentStageFilter] = useState<AgeStageId | "TODAS">("TODAS");
+  const [syncingTournament, setSyncingTournament] = useState(false);
 
   // Special Events states (with 3 simultaneous lines of bonus)
   const [specialEvents, setSpecialEvents] = useState<SpecialEvent[]>([]);
@@ -811,7 +822,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
           <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
             {/* Header Tabs */}
             <div className="px-6 py-3 border-b shrink-0 bg-secondary/30">
-              <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5 rounded-2xl bg-secondary p-1">
+              <div className="grid grid-cols-4 sm:grid-cols-8 gap-1.5 rounded-2xl bg-secondary p-1">
                 <button
                   type="button"
                   onClick={() => setTab("jogos")}
@@ -834,6 +845,15 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                       {unreadX1Count}
                     </span>
                   )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTab("torneio")}
+                  className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition-colors ${
+                    tab === "torneio" ? "bg-card text-primary shadow-sm" : "text-muted-foreground"
+                  }`}
+                >
+                  <Trophy className="h-4 w-4 text-accent" /> Torneio
                 </button>
                 <button
                   type="button"
@@ -1508,6 +1528,236 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                 </div>
               </div>
             )}
+
+            {/* TAB: TORNEIO SEMANAL RANQUEADO (CONFIGURAÇÃO & VISUALIZAÇÃO POR ETAPA) */}
+            {tab === "torneio" && (() => {
+              const snap = getWeeklyTournamentSnapshot(auth.profile, tournamentStageFilter);
+
+              return (
+                <div className="space-y-4">
+                  {/* Cabeçalho e Ações do Torneio */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-secondary/30 p-4">
+                    <div>
+                      <h3 className="flex items-center gap-2 font-display text-base font-extrabold text-foreground">
+                        <Trophy className="h-5 w-5 text-accent" /> Torneio Semanal Ranqueado
+                      </h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Gerencie o jogo oficial da semana, ative/desative o torneio e inspecione a classificação e ranks de todas as etapas escolares.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={syncingTournament}
+                        onClick={async () => {
+                          setSyncingTournament(true);
+                          await syncWeeklyTournamentWithPlayFab();
+                          setSyncingTournament(false);
+                          flashSaved("Dados do Torneio sincronizados com a nuvem!");
+                        }}
+                        className="rounded-xl font-bold"
+                      >
+                        <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${syncingTournament ? "animate-spin" : ""}`} />
+                        Sincronizar Torneio
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={async () => {
+                          await auth.updateAdminConfig(draft);
+                          onConfigSaved?.();
+                          flashSaved("Configurações do Torneio salvas com sucesso!");
+                        }}
+                        className="rounded-xl font-bold"
+                      >
+                        <Save className="mr-1.5 h-3.5 w-3.5" /> Salvar Alterações
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Painel de Configurações do Torneio */}
+                  <div className="rounded-2xl border bg-card p-5 space-y-4">
+                    <h4 className="font-display text-sm font-black text-foreground">
+                      Parâmetros da Semana ({snap.weekKey} • Até {snap.endsAtLabel})
+                    </h4>
+
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      {/* Ativar / Desativar Torneio */}
+                      <div className="flex items-center justify-between rounded-xl border bg-secondary/20 p-3.5">
+                        <div className="space-y-0.5">
+                          <Label className="font-bold text-xs">Torneio Semanal Ativo</Label>
+                          <p className="text-[11px] text-muted-foreground">
+                            Permite aos alunos a partir do Nível 3 entrarem na disputa ranqueada.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={draft.tournamentEnabled !== false}
+                          onCheckedChange={(checked) =>
+                            setDraft((d) => ({ ...d, tournamentEnabled: checked }))
+                          }
+                        />
+                      </div>
+
+                      {/* Escolha do Jogo da Semana */}
+                      <div className="rounded-xl border bg-secondary/20 p-3.5 space-y-1.5">
+                        <Label className="font-bold text-xs">Jogo Oficial da Semana</Label>
+                        <select
+                          value={draft.tournamentGameOverride || ""}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setDraft((d) => ({
+                              ...d,
+                              tournamentGameOverride: val ? (val as GameId) : null,
+                            }));
+                          }}
+                          className="w-full rounded-xl border bg-background px-3 py-2 text-xs font-semibold"
+                        >
+                          <option value="">🔄 Rotação Automática Semanal (Pelo Calendário)</option>
+                          {ALL_GAME_IDS.map((gId) => (
+                            <option key={gId} value={gId}>
+                              🎯 {GAME_NAMES[gId]}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-[10px] text-muted-foreground">
+                          Jogo atualmente ativo nesta semana: <b>{snap.gameName}</b>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Inspeção do Ranking por Etapa Escolar */}
+                  <div className="rounded-2xl border bg-card p-5 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h4 className="font-display text-sm font-black text-foreground flex items-center gap-1.5">
+                          <Award className="h-4 w-4 text-accent" /> Classificação Geral e por Etapas
+                        </h4>
+                        <p className="text-xs text-muted-foreground">
+                          Inspecione o progresso, pontos ranqueados e divisão de cada aluno participante.
+                        </p>
+                      </div>
+
+                      {/* Seletor de Etapas para o ADM */}
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setTournamentStageFilter("TODAS")}
+                          className={`rounded-xl border px-3 py-1.5 text-xs font-bold transition-all ${
+                            tournamentStageFilter === "TODAS"
+                              ? "border-accent bg-accent text-accent-foreground shadow-xs"
+                              : "bg-secondary/40 text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          🌐 Todas as Etapas
+                        </button>
+                        {AGE_STAGES.map((st) => (
+                          <button
+                            key={st.id}
+                            type="button"
+                            onClick={() => setTournamentStageFilter(st.id)}
+                            className={`rounded-xl border px-3 py-1.5 text-xs font-bold transition-all ${
+                              tournamentStageFilter === st.id
+                                ? "border-primary bg-primary text-primary-foreground shadow-xs"
+                                : "bg-secondary/40 text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            {st.emoji} {st.shortLabel}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Tabela de Classificação do Torneio */}
+                    {snap.allStandings.length === 0 ? (
+                      <div className="rounded-xl bg-secondary/40 p-8 text-center text-xs text-muted-foreground">
+                        Nenhum jogador pontuou no torneio semanal nesta etapa até o momento.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto rounded-xl border">
+                        <table className="w-full text-left text-xs">
+                          <thead className="border-b bg-secondary/50 font-bold text-muted-foreground">
+                            <tr>
+                              <th className="px-3 py-2.5">Posição</th>
+                              <th className="px-3 py-2.5">Aluno</th>
+                              <th className="px-3 py-2.5">Escola & Etapa</th>
+                              <th className="px-3 py-2.5 text-center">Divisão / Rank</th>
+                              <th className="px-3 py-2.5 text-right">Pontos Ranqueados</th>
+                              <th className="px-3 py-2.5 text-center">Top 5</th>
+                              <th className="px-3 py-2.5 text-right">Recorde (Tentativas)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y">
+                            {snap.allStandings.map((row) => {
+                              const pts = row.tournamentPoints ?? row.totalRankedPoints;
+                              const rDef = getTournamentRank(pts).currentRank;
+
+                              return (
+                                <tr key={row.playerId} className="hover:bg-secondary/20 transition-colors">
+                                  <td className="px-3 py-2.5 font-display font-black">
+                                    <span
+                                      className={`inline-grid h-7 w-7 place-items-center rounded-lg text-xs font-black ${
+                                        row.rank === 1
+                                          ? "bg-yellow-400 text-yellow-950"
+                                          : row.rank === 2
+                                            ? "bg-slate-300 text-slate-800"
+                                            : row.rank === 3
+                                              ? "bg-amber-700 text-amber-50"
+                                              : "bg-secondary text-foreground"
+                                      }`}
+                                    >
+                                      {row.rank}º
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2.5 min-w-[140px]">
+                                    <div className="font-bold text-foreground truncate">{row.nick}</div>
+                                    {row.fullName && row.fullName.toLowerCase() !== row.nick.toLowerCase() && (
+                                      <div className="text-[10px] uppercase text-muted-foreground truncate">
+                                        {row.fullName}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2.5">
+                                    <div className="truncate font-medium">{row.school}</div>
+                                    <div className="text-[10px] text-muted-foreground">
+                                      {row.stageLabel} • Nv. {row.level}
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2.5 text-center">
+                                    <div className="inline-flex items-center gap-1.5">
+                                      <TournamentRankBadge rankId={rDef.id} points={pts} size="xs" />
+                                      <span className={`font-bold ${rDef.textColor}`}>{rDef.name}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2.5 text-right font-mono font-black text-primary">
+                                    {pts} pts
+                                  </td>
+                                  <td className="px-3 py-2.5 text-center text-muted-foreground">
+                                    {row.holdMinutes > 0 ? (
+                                      <span className="font-semibold text-accent">
+                                        {row.holdMinutes} min (+{row.holdBonusPoints} pts)
+                                      </span>
+                                    ) : (
+                                      "—"
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2.5 text-right text-muted-foreground">
+                                    <b>{row.bestScore}</b> ({row.totalEntries}x)
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* TAB 3: EVENTOS ESPECIAIS & EVENTOS RECORRENTES (2 SUB-ABAS) */}
             {tab === "eventos" && (

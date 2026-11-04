@@ -8,6 +8,8 @@ import {
   type ReactNode,
 } from "react";
 import { onMatchSaved, type GameId } from "./game-storage";
+import { recordGameStageScore } from "./game-records";
+import { stageFromBirthdate } from "./player-profile";
 import {
   loadAdminConfig,
   type PlatformAdminConfig,
@@ -223,6 +225,19 @@ export function PlayerAuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     onMatchSaved((id, match) => {
+      if (match.score > 0) {
+        const stage = stageFromBirthdate(profile.birthdate, new Date(), profile.school).id;
+        recordGameStageScore({
+          gameId: id,
+          stage,
+          playerId: profile.id,
+          nick: profile.nick,
+          fullName: profile.full_name,
+          school: profile.school,
+          score: match.score,
+          achievedAt: match.at ?? Date.now(),
+        });
+      }
       void recordMatch({
         gameId: id,
         mode: match.isTeam ? "equipes" : (match.mode ?? "padrao"),

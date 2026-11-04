@@ -11,6 +11,12 @@ import { X1ArenaDialog } from "@/components/games/X1ArenaDialog";
 import { X1MatchOverlay } from "@/components/games/X1MatchOverlay";
 import { WeeklyTournamentDialog } from "@/components/games/WeeklyTournamentDialog";
 import { MedalUnlockNotification } from "@/components/games/MedalUnlockNotification";
+import { GameRecordBanner } from "@/components/games/GameRecordBanner";
+import {
+  recordGameStageScore,
+  seedRecordsFromRegistry,
+  syncGameRecordsWithPlayFab,
+} from "@/lib/game-records";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -110,17 +116,32 @@ function Index() {
     setActiveRankedGameId(null);
 
     if (auth.profile) {
+      const correct = last?.correct ?? 0;
+      const wrong = last?.wrong ?? 0;
+      const pStage = stageFromBirthdate(auth.profile.birthdate, new Date(), auth.profile.school).id;
+      recordGameStageScore({
+        gameId: gId,
+        stage: pStage,
+        playerId: auth.profile.id,
+        nick: auth.profile.nick,
+        fullName: auth.profile.full_name,
+        school: auth.profile.school,
+        score: Math.max(10, score),
+        achievedAt: Date.now(),
+      });
       await recordWeeklyTournamentAttempt({
         profile: auth.profile,
         score: Math.max(10, score),
+        correct,
+        wrong,
       });
       await auth.recordMatch({
         gameId: gId,
         mode: "torneio_semanal",
         score: Math.max(10, score),
         level,
-        correct: last?.correct ?? 0,
-        wrong: last?.wrong ?? 0,
+        correct,
+        wrong,
       });
     }
     refreshLocal();
@@ -133,6 +154,8 @@ function Index() {
   useEffect(() => {
     setMounted(true);
     refreshLocal();
+    seedRecordsFromRegistry();
+    void syncGameRecordsWithPlayFab();
   }, [view]);
 
   // Instantly re-render when ADM updates enabled/disabled games or lock gates
@@ -285,6 +308,7 @@ function Index() {
           tournamentEnabled={cfg.tournamentEnabled ?? true}
           weeklyGameName={weeklyGameName}
           playerLevel={auth.profile?.level}
+          playerProfile={auth.profile}
           onSelect={(id) => {
             setActiveRankedGameId(null);
             setView(id);
@@ -334,12 +358,20 @@ function Index() {
         const reg = getGameRegistration(view);
         if (!reg) return null;
         const GameComponent = reg.component;
+        const personalBest = displayStats[view]?.bestScore ?? 0;
         return (
-          <GameComponent
-            onExit={handleExitGame}
-            onStatsChange={refreshLocal}
-            isRanked={Boolean(activeRankedGameId && view === activeRankedGameId)}
-          />
+          <div className="space-y-4">
+            <GameRecordBanner
+              gameId={view}
+              profile={auth.profile}
+              personalBest={personalBest}
+            />
+            <GameComponent
+              onExit={handleExitGame}
+              onStatsChange={refreshLocal}
+              isRanked={Boolean(activeRankedGameId && view === activeRankedGameId)}
+            />
+          </div>
         );
       })()}
 

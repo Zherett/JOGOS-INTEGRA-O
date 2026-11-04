@@ -27,6 +27,7 @@ import { PlayerAuthDialog } from "./PlayerAuthDialog";
 import { LeaderboardDialog } from "./LeaderboardDialog";
 import { AdminPanelDialog } from "./AdminPanelDialog";
 import { PlayerMedalsInventory } from "./PlayerMedalsInventory";
+import { TournamentRankBadge } from "./TournamentRankBadge";
 import {
   aggregateStatsByGame,
   getDistinctGamesPlayed,
@@ -377,6 +378,14 @@ export function PlayerMenu({ onConfigChanged }: Props) {
 
                   {/* Badges de Informações Simplificadas */}
                   <div className="flex flex-wrap items-center gap-2 pt-1">
+                    {/* Rank Ranqueado Oficial */}
+                    <TournamentRankBadge
+                      points={profile.tournamentPoints ?? 0}
+                      size="sm"
+                      showLabel
+                      showPoints
+                    />
+
                     {/* Quantidade de Medalhas */}
                     <span
                       title="Total de medalhas e troféus desbloqueados em partidas, níveis e desafios."
