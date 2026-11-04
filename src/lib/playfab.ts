@@ -2509,6 +2509,7 @@ export async function playfabUnlockGames(games: GameId[]): Promise<GameId[]> {
 export async function playfabRecordMatch(args: {
   gameId: GameId;
   mode?: string;
+  won?: boolean;
   isTeam?: boolean;
   score: number;
   level: number;
@@ -2528,7 +2529,7 @@ export async function playfabRecordMatch(args: {
   const safeLevel = Math.max(1, args.level);
   const mode = args.mode ?? "padrao";
   const wrong = args.wrong ?? 0;
-  const won = isMatchVictory(safeScore, args.correct, wrong);
+  const won = typeof args.won === "boolean" ? args.won : isMatchVictory(safeScore, args.correct, wrong);
   const flawless = isFlawlessMatch({
     score: safeScore,
     correct: args.correct,

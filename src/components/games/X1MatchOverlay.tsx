@@ -65,7 +65,7 @@ export function X1MatchOverlay({ initialRoom, onExitX1 }: Props) {
     };
   }, [initialRoom.code]);
 
-  // Countdown timer + Trainer Bot simulation (if opponent is a simulated bot)
+  // Countdown timer
   useEffect(() => {
     if (room.status !== "playing") return;
 
@@ -80,37 +80,10 @@ export function X1MatchOverlay({ initialRoom, onExitX1 }: Props) {
         if (finishedRoom) setRoom({ ...finishedRoom });
         return;
       }
-
-      // If playing against the Trainer Bot (`guest.isBot`), simulate periodic bot progress
-      if (room.guest?.isBot && isHost) {
-        if (room.gameId === "rpg") {
-          // Bot answers every ~3.5 seconds with 72% accuracy
-          if (elapsed > 0 && elapsed % 4 === 0) {
-            const botCorrect = Math.random() < 0.72;
-            const res = submitX1RobotClashAnswer({
-              code: room.code,
-              playerId: room.guest.playerId,
-              isCorrect: botCorrect,
-            });
-            if (res.room) setRoom({ ...res.room });
-          }
-        } else if (elapsed > 0 && elapsed % 3 === 0) {
-          // Score-race bot gains points steadily
-          const gain = Math.random() < 0.75 ? 10 : 0;
-          const updated = updateX1PlayerProgress({
-            code: room.code,
-            playerId: room.guest.playerId,
-            score: room.guest.score + gain,
-            correct: room.guest.correct + (gain > 0 ? 1 : 0),
-            wrong: room.guest.wrong + (gain === 0 ? 1 : 0),
-          });
-          if (updated) setRoom({ ...updated });
-        }
-      }
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [room, isHost]);
+  }, [room]);
 
   // For Score-Race games (non-RPG), poll `loadLastMatch(room.gameId)` so when the player finishes the underlying game, it syncs immediately to the X1 room!
   useEffect(() => {
@@ -146,11 +119,12 @@ export function X1MatchOverlay({ initialRoom, onExitX1 }: Props) {
     saveLastMatch(room.gameId, {
       score: finalScore,
       level: 2,
-      correct: Math.max(wonX1 ? 4 : 1, me.correct),
+      correct: me.correct,
       wrong: me.wrong,
-      mode: room.guest?.isBot ? "x1_treino" : "x1_online",
+      won: wonX1,
+      mode: "x1_online",
     });
-  }, [room.status, room.winnerId, room.gameId, room.guest?.isBot, myId, me.score, me.correct, me.wrong]);
+  }, [room.status, room.winnerId, room.gameId, myId, me.score, me.correct, me.wrong]);
 
   const handleRobotAnswer = useCallback(
     (chosen: boolean) => {

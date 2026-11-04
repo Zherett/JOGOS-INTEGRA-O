@@ -128,4 +128,30 @@ describe("Arena de Desafio X1 Online (1v1 Versus Mode)", () => {
     assert.equal(superRes.room.winnerId, "host_1");
     assert.equal( resolveX1Winner(superRes.room), "host_1");
   });
+
+  it("determina vencedor de forma justa por pontuação e desempate por acertos", () => {
+    const room = makeSampleRoom();
+    room.gameId = "logica";
+
+    // Host com mais pontos vence
+    room.host.score = 120;
+    room.guest!.score = 80;
+    assert.equal(resolveX1Winner(room), "host_1");
+
+    // Guest com mais pontos vence
+    room.host.score = 90;
+    room.guest!.score = 110;
+    assert.equal(resolveX1Winner(room), "guest_2");
+
+    // Empate em pontos -> desempata por maior número de acertos
+    room.host.score = 100;
+    room.guest!.score = 100;
+    room.host.correct = 10;
+    room.guest!.correct = 8;
+    assert.equal(resolveX1Winner(room), "host_1");
+
+    // Ambos empatados em pontos e acertos -> empate legítimo
+    room.guest!.correct = 10;
+    assert.equal(resolveX1Winner(room), "draw");
+  });
 });

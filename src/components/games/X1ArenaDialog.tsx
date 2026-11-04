@@ -8,7 +8,6 @@ import {
   Copy,
   Check,
   Sparkles,
-  Bot,
   Trophy,
   Loader2,
   X,
@@ -276,25 +275,6 @@ export function X1ArenaDialog({
     onStartX1Match(res.room);
   }
 
-  function handleStartWithTrainerBot() {
-    if (!waitingRoomCode) return;
-    const res = joinX1Room({
-      code: waitingRoomCode,
-      guest: {
-        playerId: `bot_${Date.now()}`,
-        nick: "Robô Desafiante",
-        school: profile?.school ?? "SEMED Coari",
-        level: profile?.level ?? 2,
-        isBot: true,
-      },
-    });
-    if (res.room) {
-      setWaitingRoomCode(null);
-      onOpenChange(false);
-      onStartX1Match(res.room);
-    }
-  }
-
   async function copyRoomCode(code: string) {
     try {
       await navigator.clipboard.writeText(code);
@@ -392,19 +372,13 @@ export function X1ArenaDialog({
               </div>
             </div>
 
-            <div className="rounded-2xl border bg-secondary/40 p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div className="text-xs text-muted-foreground text-center sm:text-left">
-                <b className="text-foreground block">Quer testar o X1 agora sem esperar?</b>
-                Inicie imediatamente contra o Robô Desafiante no ritmo do seu nível!
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={handleStartWithTrainerBot}
-                className="rounded-xl font-bold shrink-0"
-              >
-                <Bot className="mr-1.5 h-4 w-4 text-primary" /> Simular Oponente Agora
-              </Button>
+            <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-center space-y-1.5">
+              <span className="font-display text-xs font-bold text-primary flex items-center justify-center gap-1.5">
+                <Users className="h-4 w-4" /> Desafio Online 1v1 entre Alunos
+              </span>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Compartilhe o código de 4 dígitos <b>#{waitingRoom.code}</b> com seu colega ou peça para ele entrar pela lista de salas da Arena X1!
+              </p>
             </div>
 
             <Button

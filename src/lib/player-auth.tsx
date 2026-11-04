@@ -67,6 +67,7 @@ interface AuthValue {
   recordMatch: (args: {
     gameId: GameId;
     mode?: string;
+    won?: boolean;
     score: number;
     level: number;
     correct: number;
@@ -203,6 +204,7 @@ export function PlayerAuthProvider({ children }: { children: ReactNode }) {
     async (args: {
       gameId: GameId;
       mode?: string;
+      won?: boolean;
       isTeam?: boolean;
       score: number;
       level: number;
@@ -242,6 +244,7 @@ export function PlayerAuthProvider({ children }: { children: ReactNode }) {
         gameId: id,
         mode: match.isTeam ? "equipes" : (match.mode ?? "padrao"),
         isTeam: match.isTeam,
+        won: match.won,
         score: match.score,
         level: match.level,
         correct: match.correct,
