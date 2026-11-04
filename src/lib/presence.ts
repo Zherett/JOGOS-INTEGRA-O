@@ -132,18 +132,11 @@ export function formatPresenceTimeAgo(
     return diffMin === 1 ? "Online há 1 minuto" : `Online há ${diffMin} minutos`;
   }
 
-  // Menos de 24 horas: verifica se foi hoje ou ontem
-  const refDate = new Date(refTime);
-  const nowDate = new Date(now);
-  const isSameDay =
-    refDate.getDate() === nowDate.getDate() &&
-    refDate.getMonth() === nowDate.getMonth() &&
-    refDate.getFullYear() === nowDate.getFullYear();
-
-  if (isSameDay) {
+  if (diffHours < 24) {
     return diffHours === 1 ? "Online há 1 hora" : `Online há ${diffHours} horas`;
   }
 
+  const refDate = new Date(refTime);
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
   const isYesterday =
@@ -154,7 +147,7 @@ export function formatPresenceTimeAgo(
   const hh = String(refDate.getHours()).padStart(2, "0");
   const mm = String(refDate.getMinutes()).padStart(2, "0");
 
-  if (isYesterday || diffHours < 36) {
+  if (isYesterday || diffHours < 48) {
     return `Online ontem às ${hh}:${mm}`;
   }
 
