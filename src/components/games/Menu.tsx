@@ -54,6 +54,9 @@ interface Props {
   playerLevel?: number;
   playerProfile?: PlayerProfile | null;
   noticeSlides?: PlatformNoticeSlide[];
+  enabledDefaultNotices?: Record<string, boolean>;
+  hideAllDefaultNotices?: boolean;
+  pauseNoticeBoard?: boolean;
   onSelect: (id: GameId) => void;
   onAddCode: () => void;
   onOpenX1Arena?: () => void;
@@ -74,6 +77,9 @@ export function Menu({
   playerLevel = 1,
   playerProfile = null,
   noticeSlides = [],
+  enabledDefaultNotices,
+  hideAllDefaultNotices = false,
+  pauseNoticeBoard = false,
   onSelect,
   onAddCode,
   onOpenX1Arena,
@@ -385,6 +391,9 @@ export function Menu({
       {/* 3. Quadro de Avisos & Novidades (Sempre Aberto e em Destaque) */}
       <NoticeBoard
         slides={noticeSlides}
+        enabledDefaultNotices={enabledDefaultNotices}
+        hideAllDefaultNotices={hideAllDefaultNotices}
+        pauseNoticeBoard={pauseNoticeBoard}
         weeklyGameName={weeklyGameName}
         onSelectGame={onSelect}
         onOpenWeeklyTournament={handleTournamentClick}

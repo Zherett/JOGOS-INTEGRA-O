@@ -328,6 +328,9 @@ function Index() {
           playerLevel={auth.profile?.level}
           playerProfile={auth.profile}
           noticeSlides={cfg.noticeSlides}
+          enabledDefaultNotices={cfg.enabledDefaultNotices}
+          hideAllDefaultNotices={cfg.hideAllDefaultNotices}
+          pauseNoticeBoard={cfg.pauseNoticeBoard}
           onSelect={(id) => {
             setActiveRankedGameId(null);
             setView(id);

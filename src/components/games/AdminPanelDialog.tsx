@@ -27,6 +27,10 @@ import {
   Calendar,
   RefreshCw,
   Trophy,
+  Pause,
+  Play,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -38,6 +42,8 @@ import {
   DEFAULT_ENABLED_GAMES,
   DEFAULT_GAME_CODES,
   DEFAULT_MASTER_CODE,
+  DEFAULT_ENABLED_DEFAULT_NOTICES,
+  SYSTEM_DEFAULT_NOTICES,
   normalizeCode,
   type PlatformAdminConfig,
   type PlatformNoticeSlide,

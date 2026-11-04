@@ -20,6 +20,9 @@ import { buildBaseMedalsCatalog, type MedalDefinition } from "@/lib/medals-catal
 
 export interface NoticeBoardProps {
   slides?: PlatformNoticeSlide[];
+  enabledDefaultNotices?: Record<string, boolean>;
+  hideAllDefaultNotices?: boolean;
+  pauseNoticeBoard?: boolean;
   weeklyGameName?: string;
   onSelectGame?: (gameId: GameId) => void;
   onOpenWeeklyTournament?: () => void;
@@ -29,6 +32,9 @@ export interface NoticeBoardProps {
 
 export const NoticeBoard: React.FC<NoticeBoardProps> = ({
   slides = [],
+  enabledDefaultNotices,
+  hideAllDefaultNotices = false,
+  pauseNoticeBoard = false,
   weeklyGameName = "Batalha de Robôs",
   onSelectGame,
   onOpenWeeklyTournament,
@@ -41,61 +47,74 @@ export const NoticeBoard: React.FC<NoticeBoardProps> = ({
 
   const medalsCatalog = useMemo<MedalDefinition[]>(() => buildBaseMedalsCatalog(), []);
 
-  // Slides efetivos: customizados ativos pelo ADM ou slides informativos padrão
+  // Slides efetivos: customizados ativos pelo ADM e slides informativos padrão selecionados
   const effectiveSlides = useMemo<PlatformNoticeSlide[]>(() => {
+    // 1. Slides customizados ativos criados pelo ADM
     const activeCustom = (slides || []).filter((s) => s.active !== false);
-    if (activeCustom.length > 0) {
-      return activeCustom;
+
+    // 2. Slides padrão do sistema (caso não estejam ocultados globalmente)
+    const defaults: PlatformNoticeSlide[] = [];
+    if (!hideAllDefaultNotices) {
+      if (enabledDefaultNotices?.default_weekly_tournament !== false) {
+        defaults.push({
+          id: "default_weekly_tournament",
+          title: `Desafio da Semana: ${weeklyGameName}`,
+          message:
+            "Participe do Torneio Semanal Ranqueado! Dispute as 10 entradas diárias, garanta +100 XP extras e suba de Rank da Liga Bronze até o Mestre!",
+          badgeLabel: "TORNEIO RANQUEADO",
+          type: "event_challenge",
+          featuredGameId: null,
+          active: true,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        });
+      }
+      if (enabledDefaultNotices?.default_x1_arena !== false) {
+        defaults.push({
+          id: "default_x1_arena",
+          title: "Arena X1 Online: Desafie seus colegas!",
+          message:
+            "Duelos 1 vs 1 ao vivo das 07:00 às 19:00 com rotação de jogos e barra de vantagem dinâmica. Conquiste até +100 XP extras por dia!",
+          badgeLabel: "BATALHA AO VIVO",
+          type: "announcement",
+          featuredGameId: null,
+          active: true,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        });
+      }
+      if (enabledDefaultNotices?.default_new_games !== false) {
+        defaults.push({
+          id: "default_new_games",
+          title: "Explore Todos os Desafios de Lógica",
+          message:
+            "Pratique raciocínio lógico, geometria no plano cartesiano, porcentagens e labirintos matemáticos para subir do Nível 1 ao Nível Máximo 10!",
+          badgeLabel: "NOVIDADE & DESTAQUE",
+          type: "game_highlight",
+          featuredGameId: "rpg",
+          active: true,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        });
+      }
     }
 
-    // Slides Padrão Informativos
-    return [
-      {
-        id: "default_weekly_tournament",
-        title: `Desafio da Semana: ${weeklyGameName}`,
-        message:
-          "Participe do Torneio Semanal Ranqueado! Dispute as 10 entradas diárias, garanta +100 XP extras e suba de Rank da Liga Bronze até o Mestre!",
-        badgeLabel: "TORNEIO RANQUEADO",
-        type: "event_challenge",
-        featuredGameId: null,
-        active: true,
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: "default_x1_arena",
-        title: "Arena X1 Online: Desafie seus colegas!",
-        message:
-          "Duelos 1 vs 1 ao vivo das 07:00 às 19:00 com rotação de jogos e barra de vantagem dinâmica. Conquiste até +100 XP extras por dia!",
-        badgeLabel: "BATALHA AO VIVO",
-        type: "announcement",
-        featuredGameId: null,
-        active: true,
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: "default_new_games",
-        title: "Explore Todos os Desafios de Lógica",
-        message:
-          "Pratique raciocínio lógico, geometria no plano cartesiano, porcentagens e labirintos matemáticos para subir do Nível 1 ao Nível Máximo 10!",
-        badgeLabel: "NOVIDADE & DESTAQUE",
-        type: "game_highlight",
-        featuredGameId: "rpg",
-        active: true,
-        createdAt: new Date().toISOString(),
-      },
-    ];
-  }, [slides, weeklyGameName]);
+    return [...activeCustom, ...defaults];
+  }, [slides, hideAllDefaultNotices, enabledDefaultNotices, weeklyGameName]);
 
   const count = effectiveSlides.length;
 
-  // Auto-slide a cada 7 segundos com pausa em hover
   useEffect(() => {
-    if (count <= 1 || isPaused) return;
+    if (currentIndex >= count && count > 0) {
+      setCurrentIndex(0);
+    }
+  }, [count, currentIndex]);
+
+  // Auto-slide a cada 7 segundos com pausa em hover ou se pausado pelo ADM
+  useEffect(() => {
+    if (count <= 1 || isPaused || pauseNoticeBoard) return;
     const timer = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % count);
     }, 7000);
     return () => clearInterval(timer);
-  }, [count, isPaused]);
+  }, [count, isPaused, pauseNoticeBoard]);
 
   if (count === 0) return null;
 

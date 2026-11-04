@@ -127,10 +127,50 @@ export interface PlatformAdminConfig {
   recurringEvents?: RecurringEvent[];
   /** Slides/notices managed by the ADM for the prominent Notice Board */
   noticeSlides?: PlatformNoticeSlide[];
+  /** Controle individual de exibição dos avisos padrão do sistema (marcado/desmarcado) */
+  enabledDefaultNotices?: Record<string, boolean>;
+  /** Ocultar/pausar todos os avisos padrão de uma só vez */
+  hideAllDefaultNotices?: boolean;
+  /** Pausar a rotação automática do slide do quadro de avisos */
+  pauseNoticeBoard?: boolean;
   /** Optional PlayFab Title ID configured via Admin UI. */
   playfabTitleId?: string;
   updatedAt: string;
 }
+
+export const DEFAULT_ENABLED_DEFAULT_NOTICES: Record<string, boolean> = {
+  default_weekly_tournament: true,
+  default_x1_arena: true,
+  default_new_games: true,
+};
+
+export interface DefaultNoticeDescriptor {
+  id: "default_weekly_tournament" | "default_x1_arena" | "default_new_games";
+  title: string;
+  badgeLabel: string;
+  description: string;
+}
+
+export const SYSTEM_DEFAULT_NOTICES: DefaultNoticeDescriptor[] = [
+  {
+    id: "default_weekly_tournament",
+    badgeLabel: "TORNEIO RANQUEADO",
+    title: "Torneio Semanal Ranqueado (Desafio da Semana)",
+    description: "Incentiva a disputa diária de 10 partidas ranqueadas para subir da Liga Bronze até o Mestre (+100 XP extras).",
+  },
+  {
+    id: "default_x1_arena",
+    badgeLabel: "BATALHA AO VIVO",
+    title: "Arena X1 Online (Duelo 1 vs 1 ao Vivo)",
+    description: "Informa sobre os confrontos diretos em tempo real das 07:00 às 19:00 com rotação de jogos (+100 XP extras).",
+  },
+  {
+    id: "default_new_games",
+    badgeLabel: "NOVIDADE & DESTAQUE",
+    title: "Explore Todos os Desafios de Lógica",
+    description: "Divulga jogos de raciocínio, geometria e porcentagem para avançar rumo ao Nível Máximo 10.",
+  },
+];
 
 export const DEFAULT_ADMIN_CONFIG: PlatformAdminConfig = {
   enabledGames: { ...DEFAULT_ENABLED_GAMES },
@@ -157,6 +197,9 @@ export const DEFAULT_ADMIN_CONFIG: PlatformAdminConfig = {
   specialEvents: [],
   recurringEvents: [],
   noticeSlides: [],
+  enabledDefaultNotices: { ...DEFAULT_ENABLED_DEFAULT_NOTICES },
+  hideAllDefaultNotices: false,
+  pauseNoticeBoard: false,
   playfabTitleId: "186F63",
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
@@ -208,6 +251,15 @@ export function loadAdminConfig(): PlatformAdminConfig {
         : [],
       specialEvents: Array.isArray(parsed.specialEvents) ? parsed.specialEvents : loadSpecialEvents(),
       recurringEvents: Array.isArray(parsed.recurringEvents) ? parsed.recurringEvents : loadRecurringEvents(),
+      noticeSlides: Array.isArray(parsed.noticeSlides) ? parsed.noticeSlides : [],
+      enabledDefaultNotices:
+        parsed.enabledDefaultNotices && typeof parsed.enabledDefaultNotices === "object"
+          ? { ...DEFAULT_ENABLED_DEFAULT_NOTICES, ...parsed.enabledDefaultNotices }
+          : { ...DEFAULT_ENABLED_DEFAULT_NOTICES },
+      hideAllDefaultNotices:
+        typeof parsed.hideAllDefaultNotices === "boolean" ? parsed.hideAllDefaultNotices : false,
+      pauseNoticeBoard:
+        typeof parsed.pauseNoticeBoard === "boolean" ? parsed.pauseNoticeBoard : false,
       dailyXpCap:
         typeof parsed.dailyXpCap === "number" && parsed.dailyXpCap >= 100
           ? Math.floor(parsed.dailyXpCap)
@@ -230,6 +282,15 @@ export function saveAdminConfig(config: PlatformAdminConfig): PlatformAdminConfi
     ) as Record<GameId, string>,
     specialEvents: Array.isArray(config.specialEvents) ? config.specialEvents : loadSpecialEvents(),
     recurringEvents: Array.isArray(config.recurringEvents) ? config.recurringEvents : loadRecurringEvents(),
+    noticeSlides: Array.isArray(config.noticeSlides) ? config.noticeSlides : [],
+    enabledDefaultNotices:
+      config.enabledDefaultNotices && typeof config.enabledDefaultNotices === "object"
+        ? { ...DEFAULT_ENABLED_DEFAULT_NOTICES, ...config.enabledDefaultNotices }
+        : { ...DEFAULT_ENABLED_DEFAULT_NOTICES },
+    hideAllDefaultNotices:
+      typeof config.hideAllDefaultNotices === "boolean" ? config.hideAllDefaultNotices : false,
+    pauseNoticeBoard:
+      typeof config.pauseNoticeBoard === "boolean" ? config.pauseNoticeBoard : false,
     updatedAt: new Date().toISOString(),
   };
   if (typeof window !== "undefined") {
