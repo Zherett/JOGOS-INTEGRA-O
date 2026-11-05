@@ -192,6 +192,8 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [evMatchXpCap, setEvMatchXpCap] = useState<number>(30);
   const [evHasDailyCap, setEvHasDailyCap] = useState(false);
   const [evDailyExtraXp, setEvDailyExtraXp] = useState<number>(500);
+  const [evHasRankedMultiplier, setEvHasRankedMultiplier] = useState(false);
+  const [evRankedMultiplier, setEvRankedMultiplier] = useState<number>(2);
   const [evDurationHours, setEvDurationHours] = useState<number>(24);
   const [evLinkedMedalId, setEvLinkedMedalId] = useState<string>("");
   const [evObjective, setEvObjective] = useState<string>("");
@@ -227,6 +229,8 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [recMatchCap, setRecMatchCap] = useState<number>(30);
   const [recHasDailyCap, setRecHasDailyCap] = useState(false);
   const [recDailyExtraXp, setRecDailyExtraXp] = useState<number>(500);
+  const [recHasRankedMultiplier, setRecHasRankedMultiplier] = useState(false);
+  const [recRankedMultiplier, setRecRankedMultiplier] = useState<number>(2);
   const [recLinkedMedal, setRecLinkedMedal] = useState<string>("");
   const [recObjective, setRecObjective] = useState<string>("");
 
@@ -277,6 +281,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [newNoticeType, setNewNoticeType] = useState<"announcement" | "game_highlight" | "event_challenge">("announcement");
   const [newNoticeGame, setNewNoticeGame] = useState<GameId>("rpg");
   const [newNoticeMedal, setNewNoticeMedal] = useState<string>("");
+  const [newNoticeDuration, setNewNoticeDuration] = useState<number>(7);
 
   // Custom Medal Form states
   const [isCreatingMedal, setIsCreatingMedal] = useState(false);
@@ -572,6 +577,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     xpMultiplier?: number;
     matchXpCap?: number;
     dailyXpCap?: number;
+    rankedMultiplier?: number;
     bonusType?: string;
     bonusValue?: number;
     linkedMedalIds?: string[];
@@ -584,6 +590,9 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
           ? "2x XP (Dobro)"
           : `${ev.xpMultiplier}x XP (+${Math.round((ev.xpMultiplier - 1) * 100)}%)`,
       );
+    }
+    if (ev.rankedMultiplier && ev.rankedMultiplier > 1) {
+      parts.push(`${ev.rankedMultiplier}x Pontos Ranqueados`);
     }
     if (ev.matchXpCap && ev.matchXpCap > 20) {
       parts.push(`Max ${ev.matchXpCap} XP/partida`);
@@ -611,7 +620,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
       flashSaved("Informe o título do evento.");
       return;
     }
-    const hasAnyBonus = evHasMultiplier || evHasMatchCap || evHasDailyCap;
+    const hasAnyBonus = evHasMultiplier || evHasMatchCap || evHasDailyCap || evHasRankedMultiplier;
     const hasAnyMedal = evAttachedMedals.length > 0 || Boolean(evLinkedMedalId);
     if (!hasAnyBonus && !hasAnyMedal) {
       flashSaved("Marque pelo menos uma caixa de bônus ou vincule uma medalha ao evento.");
@@ -639,6 +648,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
           : "personalizado",
       bonusValue: evHasDailyCap ? 1000 + Number(evDailyExtraXp) : undefined,
       xpMultiplier: evHasMultiplier ? Number(evMultiplier) : undefined,
+      rankedMultiplier: evHasRankedMultiplier ? Number(evRankedMultiplier) : undefined,
       matchXpCap: evHasMatchCap ? Number(evMatchXpCap) : undefined,
       dailyXpCap: evHasDailyCap ? 1000 + Number(evDailyExtraXp) : undefined,
       durationHours: Number(evDurationHours),
@@ -706,7 +716,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
       flashSaved("Selecione pelo menos um dia da semana ou uma data específica.");
       return;
     }
-    const hasAnyBonus = recHasMultiplier || recHasMatchCap || recHasDailyCap;
+    const hasAnyBonus = recHasMultiplier || recHasMatchCap || recHasDailyCap || recHasRankedMultiplier;
     const hasAnyMedal = recAttachedMedals.length > 0 || Boolean(recLinkedMedal);
     if (!hasAnyBonus && !hasAnyMedal) {
       flashSaved("Marque pelo menos uma caixa de bônus ou vincule uma medalha ao evento.");
@@ -728,6 +738,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
       daysOfWeek: recDaysOfWeek,
       specificDates: recSpecificDates,
       xpMultiplier: recHasMultiplier ? Number(recMultiplier) : undefined,
+      rankedMultiplier: recHasRankedMultiplier ? Number(recRankedMultiplier) : undefined,
       matchXpCap: recHasMatchCap ? Number(recMatchCap) : undefined,
       dailyXpCap: recHasDailyCap ? 1000 + Number(recDailyExtraXp) : undefined,
       linkedMedalId: linkedIds[0] ?? (recLinkedMedal || null),
@@ -1978,7 +1989,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                             </span>
                           </div>
 
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                             {/* Bônus 1: Multiplicador */}
                             <div className={`rounded-xl border p-2.5 space-y-2 transition-all ${evHasMultiplier ? "border-amber-500/60 bg-card shadow-xs" : "border-border/60 bg-muted/20 opacity-60"}`}>
                               <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -2048,7 +2059,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                   className="h-4 w-4 rounded accent-amber-500 cursor-pointer"
                                 />
                                 <span className="text-xs font-bold text-foreground">
-                                  3. Adicionar ao Limite Diário (+XP)
+                                  3. Limite Diário (+XP)
                                 </span>
                               </label>
                               <div className="space-y-1">
@@ -2066,8 +2077,36 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                 <p className="text-[10px] text-muted-foreground font-semibold">
                                   {evHasDailyCap
                                     ? `Base (1.000 XP) + ${evDailyExtraXp} = ${1000 + evDailyExtraXp} XP/dia`
-                                    : "Normal da plataforma: 1.000 XP/dia"}
+                                    : "Normal: 1.000 XP/dia"}
                                 </p>
+                              </div>
+                            </div>
+
+                            {/* Bônus 4: Multiplicador na Ranqueada */}
+                            <div className={`rounded-xl border p-2.5 space-y-2 transition-all ${evHasRankedMultiplier ? "border-amber-500/60 bg-card shadow-xs" : "border-border/60 bg-muted/20 opacity-60"}`}>
+                              <label className="flex items-center gap-2 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={evHasRankedMultiplier}
+                                  onChange={(e) => setEvHasRankedMultiplier(e.target.checked)}
+                                  className="h-4 w-4 rounded accent-amber-500 cursor-pointer"
+                                />
+                                <span className="text-xs font-bold text-foreground">
+                                  4. Ranqueada (Pontos)
+                                </span>
+                              </label>
+                              <div className="space-y-1">
+                                <select
+                                  disabled={!evHasRankedMultiplier}
+                                  value={evRankedMultiplier}
+                                  onChange={(e) => setEvRankedMultiplier(Number(e.target.value))}
+                                  className={`h-8 w-full rounded-lg border bg-background px-2 text-xs font-bold text-amber-500 ${!evHasRankedMultiplier && "opacity-40 cursor-not-allowed"}`}
+                                >
+                                  <option value={1.5}>1.5x (+50% pontos)</option>
+                                  <option value={2}>2x (Dobro de pontos)</option>
+                                  <option value={3}>3x (Triplo de pontos)</option>
+                                </select>
+                                <p className="text-[10px] text-muted-foreground">Multiplica pontos no torneio</p>
                               </div>
                             </div>
                           </div>
@@ -2701,7 +2740,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                             </span>
                           </div>
 
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                             {/* Bônus 1: Multiplicador */}
                             <div className={`rounded-xl border p-2.5 space-y-2 transition-all ${recHasMultiplier ? "border-amber-500/60 bg-card shadow-xs" : "border-border/60 bg-muted/20 opacity-60"}`}>
                               <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -2771,7 +2810,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                   className="h-4 w-4 rounded accent-amber-500 cursor-pointer"
                                 />
                                 <span className="text-xs font-bold text-foreground">
-                                  3. Adicionar ao Limite Diário (+XP)
+                                  3. Limite Diário (+XP)
                                 </span>
                               </label>
                               <div className="space-y-1">
@@ -2789,8 +2828,36 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                 <p className="text-[10px] text-muted-foreground font-semibold">
                                   {recHasDailyCap
                                     ? `Base (1.000 XP) + ${recDailyExtraXp} = ${1000 + recDailyExtraXp} XP/dia`
-                                    : "Normal da plataforma: 1.000 XP/dia"}
+                                    : "Normal: 1.000 XP/dia"}
                                 </p>
+                              </div>
+                            </div>
+
+                            {/* Bônus 4: Multiplicador na Ranqueada */}
+                            <div className={`rounded-xl border p-2.5 space-y-2 transition-all ${recHasRankedMultiplier ? "border-amber-500/60 bg-card shadow-xs" : "border-border/60 bg-muted/20 opacity-60"}`}>
+                              <label className="flex items-center gap-2 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={recHasRankedMultiplier}
+                                  onChange={(e) => setRecHasRankedMultiplier(e.target.checked)}
+                                  className="h-4 w-4 rounded accent-amber-500 cursor-pointer"
+                                />
+                                <span className="text-xs font-bold text-foreground">
+                                  4. Ranqueada (Pontos)
+                                </span>
+                              </label>
+                              <div className="space-y-1">
+                                <select
+                                  disabled={!recHasRankedMultiplier}
+                                  value={recRankedMultiplier}
+                                  onChange={(e) => setRecRankedMultiplier(Number(e.target.value))}
+                                  className={`h-8 w-full rounded-lg border bg-background px-2 text-xs font-bold text-amber-500 ${!recHasRankedMultiplier && "opacity-40 cursor-not-allowed"}`}
+                                >
+                                  <option value={1.5}>1.5x (+50% pontos)</option>
+                                  <option value={2}>2x (Dobro de pontos)</option>
+                                  <option value={3}>3x (Triplo de pontos)</option>
+                                </select>
+                                <p className="text-[10px] text-muted-foreground">Multiplica pontos no torneio</p>
                               </div>
                             </div>
                           </div>
@@ -3547,11 +3614,56 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                     )}
                   </div>
 
+                  {/* Configuração do Tempo de Duração do Slide em Segundos */}
+                  <div className="space-y-1.5 rounded-xl border bg-secondary/30 p-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5 text-primary" /> Tempo de Exibição deste Aviso (segundos):
+                      </label>
+                      <span className="font-mono text-xs font-black text-primary">
+                        {newNoticeDuration}s
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="number"
+                        min={2}
+                        max={120}
+                        step={1}
+                        value={newNoticeDuration}
+                        onChange={(e) =>
+                          setNewNoticeDuration(Math.max(2, Math.min(120, Number(e.target.value) || 7)))
+                        }
+                        className="h-8 w-24 rounded-lg border bg-background px-2.5 text-xs font-bold font-mono text-center focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                      <div className="flex flex-wrap gap-1">
+                        {[4, 6, 8, 10, 15, 20].map((sec) => (
+                          <button
+                            key={sec}
+                            type="button"
+                            onClick={() => setNewNoticeDuration(sec)}
+                            className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition-all ${
+                              newNoticeDuration === sec
+                                ? "bg-primary text-primary-foreground shadow-xs"
+                                : "bg-card border text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            {sec}s
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      Digite ou selecione quantos segundos este aviso vai ficar disponível na tela até pular para o próximo slide.
+                    </p>
+                  </div>
+
                   <div className="flex justify-end pt-1">
                     <Button
                       type="button"
                       disabled={!newNoticeTitle.trim() || !newNoticeMsg.trim()}
                       onClick={async () => {
+                        const durationVal = Math.max(2, Math.min(120, Number(newNoticeDuration) || 7));
                         const slide: PlatformNoticeSlide = {
                           id: `notice_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
                           title: newNoticeTitle.trim(),
@@ -3560,6 +3672,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                           type: newNoticeType,
                           featuredGameId: newNoticeType === "game_highlight" ? newNoticeGame : null,
                           linkedMedalId: newNoticeType === "event_challenge" && newNoticeMedal ? newNoticeMedal : null,
+                          durationSeconds: durationVal,
                           active: true,
                           createdAt: new Date().toISOString(),
                         };
@@ -3572,6 +3685,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                         setNewNoticeMsg("");
                         setNewNoticeBadge("NOVIDADE");
                         setNewNoticeMedal("");
+                        setNewNoticeDuration(7);
                         flashSaved(
                           isPlayFabConfigured()
                             ? "✅ Novo aviso publicado no Quadro de Avisos e sincronizado com o PlayFab!"
@@ -3620,6 +3734,9 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                             </div>
                             <p className="text-xs text-muted-foreground line-clamp-1">{slide.message}</p>
                             <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground font-semibold">
+                              <span className="inline-flex items-center gap-1 text-primary font-bold">
+                                ⏱️ Duração: {slide.durationSeconds ?? 7}s
+                              </span>
                               {slide.featuredGameId && (
                                 <span className="text-primary font-bold">
                                   🎮 Jogo: {GAME_NAMES[slide.featuredGameId] || slide.featuredGameId}
@@ -3633,7 +3750,29 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-1.5 shrink-0">
+                          <div className="flex items-center gap-2 shrink-0">
+                            <div className="flex items-center gap-1 rounded-lg border bg-background/80 px-2 py-1">
+                              <span className="text-[10px] font-bold text-muted-foreground">Tempo:</span>
+                              <input
+                                type="number"
+                                min={2}
+                                max={120}
+                                value={slide.durationSeconds ?? 7}
+                                onChange={async (e) => {
+                                  const val = Math.max(2, Math.min(120, Number(e.target.value) || 7));
+                                  const next = (draft.noticeSlides || []).map((s) =>
+                                    s.id === slide.id ? { ...s, durationSeconds: val } : s
+                                  );
+                                  const nextCfg: PlatformAdminConfig = { ...draft, noticeSlides: next };
+                                  setDraft(nextCfg);
+                                  await auth.updateAdminConfig(nextCfg);
+                                  onConfigSaved?.();
+                                }}
+                                className="h-6 w-12 rounded border bg-background px-1 text-[11px] font-mono font-bold text-center"
+                                title="Editar duração deste aviso em segundos"
+                              />
+                              <span className="text-[10px] font-bold text-muted-foreground">s</span>
+                            </div>
                             <Button
                               type="button"
                               variant="outline"
@@ -4919,6 +5058,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                             `Lixeira esvaziada: ${res.count} perfil(is) excluído(s) permanentemente.`,
                           );
                           refreshRoster();
+                          void syncStudentRosterFromPlayFab().then(() => refreshRoster());
                         }
                       }}
                       className="rounded-xl font-bold text-xs"
@@ -4995,6 +5135,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                 if (res.success) {
                                   flashSaved(`Perfil de "${st.nick}" recuperado com sucesso!`);
                                   refreshRoster();
+                                  void syncStudentRosterFromPlayFab().then(() => refreshRoster());
                                 }
                               }}
                               className="rounded-xl border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 font-bold text-xs h-8"
@@ -5017,6 +5158,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                   if (res.success) {
                                     flashSaved(`Perfil de "${st.nick}" excluído permanentemente.`);
                                     refreshRoster();
+                                    void syncStudentRosterFromPlayFab().then(() => refreshRoster());
                                   }
                                 }
                               }}
@@ -5046,7 +5188,10 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
               refreshRoster();
             }
           }}
-          onStudentUpdated={() => refreshRoster()}
+          onStudentUpdated={() => {
+            refreshRoster();
+            void syncStudentRosterFromPlayFab().then(() => refreshRoster());
+          }}
         />
       </DialogContent>
     </Dialog>

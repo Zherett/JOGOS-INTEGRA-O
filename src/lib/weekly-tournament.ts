@@ -7,6 +7,7 @@ import { ALL_GAME_IDS, GAME_NAMES, type GameId } from "./game-storage.ts";
 import { loadAdminConfig } from "./game-codes.ts";
 import {
   grantPlayerTournamentMedal,
+  deductPaidTournamentPoints,
   getAdminPlayFabTicket,
   getAllRegisteredPlayers,
   getPlayFabTitleId,
@@ -16,13 +17,21 @@ import {
   type PlayerProfile,
 } from "./playfab.ts";
 import {
+  getActiveEventBonuses,
+  type SpecialEvent,
+  type RecurringEvent,
+} from "./custom-events.ts";
+import {
   ageFrom,
   AGE_STAGES,
   getAgeStageInfo,
   getLocalDateKey,
   isMatchVictory,
   stageFromBirthdate,
+  TOURNAMENT_DAILY_FREE_ENTRIES,
+  TOURNAMENT_DAILY_PAID_ENTRIES_LIMIT,
   TOURNAMENT_DAILY_ENTRIES_LIMIT,
+  TOURNAMENT_PAID_ENTRY_COST,
   TOURNAMENT_DAILY_EXTRA_XP_CAP,
   TOURNAMENT_MIN_LEVEL,
   TOURNAMENT_XP_PER_ENTRY,
@@ -36,7 +45,10 @@ const TOURNAMENT_STORAGE_KEY = "desafios-weekly-tournament-v1";
 
 export {
   AGE_STAGES,
+  TOURNAMENT_DAILY_FREE_ENTRIES,
+  TOURNAMENT_DAILY_PAID_ENTRIES_LIMIT,
   TOURNAMENT_DAILY_ENTRIES_LIMIT,
+  TOURNAMENT_PAID_ENTRY_COST,
   TOURNAMENT_DAILY_EXTRA_XP_CAP,
   TOURNAMENT_MIN_LEVEL,
   TOURNAMENT_XP_PER_ENTRY,
@@ -940,6 +952,9 @@ export function getWeeklyTournamentSnapshot(
   const isToday = profile?.dailyXpDate === todayKey;
   const entriesUsedToday = isToday ? Math.max(0, profile?.dailyTournamentEntries ?? 0) : 0;
   const entriesRemainingToday = Math.max(0, TOURNAMENT_DAILY_ENTRIES_LIMIT - entriesUsedToday);
+  const freeRemainingToday = Math.max(0, TOURNAMENT_DAILY_FREE_ENTRIES - entriesUsedToday);
+  const paidRemainingToday = Math.max(0, TOURNAMENT_DAILY_ENTRIES_LIMIT - Math.max(entriesUsedToday, TOURNAMENT_DAILY_FREE_ENTRIES));
+  const isFreeEntry = entriesUsedToday < TOURNAMENT_DAILY_FREE_ENTRIES;
   const extraXpEarnedToday = isToday ? Math.max(0, profile?.dailyTournamentXp ?? 0) : 0;
   const myStanding = profile
     ? (myStageEvaluated.allStandings.find(
@@ -955,6 +970,14 @@ export function getWeeklyTournamentSnapshot(
     myStanding?.tournamentPoints ?? profile?.tournamentPoints ?? 0,
   );
   const rankInfo = getTournamentRank(currentPoints);
+  const canAffordPaid = currentPoints >= TOURNAMENT_PAID_ENTRY_COST;
+  const canStartMatch = Boolean(
+    (profile?.isAdmin || (profile?.level ?? 1) >= TOURNAMENT_MIN_LEVEL) &&
+      (isFreeEntry ? freeRemainingToday > 0 : paidRemainingToday > 0 && canAffordPaid),
+  );
+
+  const eventBonuses = getActiveEventBonuses();
+  const rankedMultiplier = eventBonuses.rankedMultiplier ?? 1;
 
   return {
     weekKey,
@@ -968,6 +991,13 @@ export function getWeeklyTournamentSnapshot(
     myStanding,
     entriesUsedToday,
     entriesRemainingToday,
+    freeRemainingToday,
+    paidRemainingToday,
+    isFreeEntry,
+    canAffordPaid,
+    canStartMatch,
+    paidCost: TOURNAMENT_PAID_ENTRY_COST,
+    rankedMultiplier,
     extraXpEarnedToday,
     canEnterLevel: Boolean(profile?.isAdmin || (profile?.level ?? 1) >= TOURNAMENT_MIN_LEVEL),
     tournamentPoints: currentPoints,
@@ -976,11 +1006,19 @@ export function getWeeklyTournamentSnapshot(
 }
 
 /**
+ * Deduz 5 pontos ranqueados para autorizar uma entrada paga extra.
+ */
+export async function spendPaidTournamentEntry(playerId: string, cost = TOURNAMENT_PAID_ENTRY_COST) {
+  return deductPaidTournamentPoints(playerId, cost);
+}
+
+/**
  * Registra o resultado da partida ranqueada:
- * - Vitória = +10 pontos
- * - Derrota = -5 pontos
- * - Erro de questão = -1 ponto (por questão errada)
- * - Vencer todas as 10 partidas diárias = +25 pontos de bônus diário
+ * - Base = 10 pontos
+ * - Cada erro comete descontos = -1 ponto
+ * - Piso mínimo garantido por partida concluída = 1 ponto: Math.max(1, 10 - wrong)
+ * - Multiplicador de eventos especiais: Math.round(basePoints * rankedMultiplier)
+ * - Bônus de 10 partidas perfeitas sem erro no dia = +25 pontos
  * - Trava no zero: nunca desce abaixo de 0 pontos (Bronze I)
  */
 export async function recordWeeklyTournamentAttempt(args: {
@@ -1023,17 +1061,20 @@ export async function recordWeeklyTournamentAttempt(args: {
   const pStage = stageFromBirthdate(args.profile.birthdate, nowDate, args.profile.school);
 
   // Regra de pontuação ranqueada:
-  // Vitória: +10 pontos | Derrota: -5 pontos | Erro: -1 ponto por questão
-  const baseDelta = won ? 10 : -5;
-  const errorPenalty = safeWrong * 1;
-  let pointsDelta = baseDelta - errorPenalty;
+  // Base 10 pontos, -1 ponto por erro cometido. Piso mínimo de 1 ponto ao concluir.
+  const baseEarned = Math.max(1, 10 - safeWrong);
+  const eventBonuses = getActiveEventBonuses();
+  const rankedMultiplier = Math.max(1, eventBonuses.rankedMultiplier ?? 1);
+  const matchPoints = Math.round(baseEarned * rankedMultiplier);
+  let pointsDelta = matchPoints;
 
-  // Acompanhamento do bônus diário das 10 vitórias
+  // Acompanhamento do bônus diário de 10 partidas sem nenhum erro (10 perfeitas)
   const isSameDay = existing?.dailyDateKey === todayKey;
   const currentDailyMatches = isSameDay ? (existing?.dailyMatchesCount ?? 0) : 0;
-  const currentDailyWins = isSameDay ? (existing?.dailyWinsCount ?? 0) : 0;
+  const currentDailyFlawless = isSameDay ? (existing?.dailyWinsCount ?? 0) : 0;
+  const isFlawless = safeWrong === 0;
   const nextDailyMatches = currentDailyMatches + 1;
-  const nextDailyWins = currentDailyWins + (won ? 1 : 0);
+  const nextDailyWins = currentDailyFlawless + (isFlawless ? 1 : 0);
   let dailyBonusAwarded = false;
 
   if (nextDailyMatches === 10 && nextDailyWins === 10 && !existing?.dailyBonusAwarded) {
@@ -1118,4 +1159,38 @@ export async function recordWeeklyTournamentAttempt(args: {
     currentRank: rankInfo.currentRank,
     dailyBonusAwarded,
   };
+}
+
+/**
+ * Remove o jogador do armazenamento local e rankings do torneio semanal (usado ao excluir ou mover para a lixeira).
+ */
+export function removePlayerFromTournament(playerId: string, playerNick?: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(TOURNAMENT_STORAGE_KEY);
+    if (!raw) return;
+    const store = JSON.parse(raw);
+    if (!store?.records) return;
+
+    let changed = false;
+    const normNick = playerNick?.trim().toLowerCase();
+
+    for (const [key, rec] of Object.entries(store.records as Record<string, TournamentPlayerRecord>)) {
+      if (
+        rec.playerId === playerId ||
+        key === playerId ||
+        (normNick && rec.nick.trim().toLowerCase() === normNick)
+      ) {
+        delete store.records[key];
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      saveTournamentStore(store);
+      window.dispatchEvent(new CustomEvent("desafios:weekly-tournament-updated", { detail: store }));
+    }
+  } catch {
+    /* ignore */
+  }
 }

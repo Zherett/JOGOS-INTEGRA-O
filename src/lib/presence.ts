@@ -864,3 +864,44 @@ export function usePresenceTracker(player?: {
   }, [player?.playerId, player?.playfabId, player?.nick, player?.nickNormalized]);
 }
 
+/**
+ * Remove o jogador do armazenamento local e da nuvem de presença (usado ao excluir perfil).
+ */
+export async function removePlayerFromPresence(
+  playerId: string,
+  playerNick?: string,
+): Promise<void> {
+  const store = loadPresenceStore();
+  const slug = playerNick ? nickSlug(playerNick) : nickSlug(playerId);
+  let changed = false;
+
+  for (const k of Object.keys(store.players)) {
+    const p = store.players[k];
+    if (
+      p.playerId === playerId ||
+      (playerNick && p.nick.toLowerCase() === playerNick.toLowerCase()) ||
+      p.nickNormalized === slug
+    ) {
+      delete store.players[k];
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    savePresenceStore(store);
+  }
+
+  if (typeof window !== "undefined" && isPlayFabConfigured()) {
+    try {
+      const keysToRemove = [`pres_${slug}`];
+      if (playerId && playerId !== slug) keysToRemove.push(`pres_${playerId}`);
+      await callPresencePlayFab("UpdateSharedGroupData", {
+        SharedGroupId: PRESENCE_SHARED_GROUP_ID,
+        KeysToRemove: keysToRemove,
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+

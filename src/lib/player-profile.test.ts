@@ -37,6 +37,8 @@ import {
   isSpecialAdminAccount,
   purgeExpiredTrash,
   STUDENT_TRASH_RETENTION_MS,
+  addTombstone,
+  isTombstoned,
   type StoredAccount,
 } from "./playfab.ts";
 
@@ -686,6 +688,13 @@ describe("Perfil do Jogador, Escolas, Trava de Níveis (1..10) e Limite Diário 
       updatedAt: "2026-11-05T10:00:00Z",
     };
     assert.equal(isSpecialAdminAccount(adminAcc.profile), true, "Conta ADM protegida identificada");
+  });
+
+  it("impede que alunos apagados definitivamente retornem através do sistema de Tombstones", () => {
+    addTombstone("alunoteste_excluido");
+    assert.equal(isTombstoned("alunoteste_excluido"), true);
+    assert.equal(isTombstoned("AlunoTeste_Excluido"), true);
+    assert.equal(isTombstoned("outro_aluno_ativo"), false);
   });
 
   it("calcula o XP da partida e formata a fórmula entre parênteses quando há bônus ou redução", () => {

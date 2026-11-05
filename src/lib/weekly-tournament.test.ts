@@ -8,7 +8,10 @@ import {
   getWeekInfo,
   recordWeeklyTournamentAttempt,
   resolveWeeklyTournamentGame,
+  TOURNAMENT_DAILY_FREE_ENTRIES,
+  TOURNAMENT_DAILY_PAID_ENTRIES_LIMIT,
   TOURNAMENT_DAILY_ENTRIES_LIMIT,
+  TOURNAMENT_PAID_ENTRY_COST,
   TOURNAMENT_DAILY_EXTRA_XP_CAP,
   TOURNAMENT_MIN_LEVEL,
   TOURNAMENT_XP_PER_ENTRY,
@@ -23,13 +26,16 @@ import { evaluatePlayerMedals } from "./medals-catalog.ts";
 import { accumulateTournamentMedal, ensurePlayerSeasonAligned } from "./playfab.ts";
 
 describe("Torneio Semanal Ranqueado (Nível 3+) e Regras da Arena X1 (Nível 5+, 07h–19h)", () => {
-  it("valida os requisitos de nível e limites de XP extra diário (100 XP X1 + 100 XP Ranqueada em 10 entradas)", () => {
+  it("valida os requisitos de nível e limites de XP extra diário (100 XP X1 + 100 XP Ranqueada em 10 entradas gratuitas e até 60 entradas diárias totais)", () => {
     assert.equal(X1_MIN_LEVEL, 5);
     assert.equal(TOURNAMENT_MIN_LEVEL, 3);
     assert.equal(X1_DAILY_EXTRA_XP_CAP, 100);
     assert.equal(TOURNAMENT_DAILY_EXTRA_XP_CAP, 100);
-    assert.equal(TOURNAMENT_DAILY_ENTRIES_LIMIT, 10);
-    assert.equal(TOURNAMENT_DAILY_ENTRIES_LIMIT * TOURNAMENT_XP_PER_ENTRY, 100);
+    assert.equal(TOURNAMENT_DAILY_FREE_ENTRIES, 10);
+    assert.equal(TOURNAMENT_DAILY_PAID_ENTRIES_LIMIT, 50);
+    assert.equal(TOURNAMENT_DAILY_ENTRIES_LIMIT, 60);
+    assert.equal(TOURNAMENT_PAID_ENTRY_COST, 5);
+    assert.equal(TOURNAMENT_DAILY_FREE_ENTRIES * TOURNAMENT_XP_PER_ENTRY, 100);
   });
 
   it("verifica a janela de funcionamento da Arena X1 (aberta das 07:00 às 19:00 e fechada fora desse horário)", () => {
@@ -201,7 +207,7 @@ describe("Torneio Semanal Ranqueado (Nível 3+) e Regras da Arena X1 (Nível 5+,
     assert.equal(mestrePlus.currentRank.name, "Mestre");
   });
 
-  it("aplica a regra de pontuação ranqueada (+10 vitória, -5 derrota, -1 por erro, +25 bônus diário de 10 vitórias e piso no 0)", async () => {
+  it("aplica a regra de pontuação ranqueada (10 base, -1 por erro, piso mínimo de 1 pt ao concluir, +25 bônus diário de 10 partidas perfeitas)", async () => {
     const baseProfile = {
       id: "student_test_1",
       nick: "AlunoRanqueado",
@@ -213,7 +219,7 @@ describe("Torneio Semanal Ranqueado (Nível 3+) e Regras da Arena X1 (Nível 5+,
       tournamentPoints: 0,
     };
 
-    // 1. Vitória com 10 acertos e 0 erros: +10 pontos
+    // 1. Partida com 10 acertos e 0 erros: 10 - 0 = +10 pontos
     const r1 = await recordWeeklyTournamentAttempt({
       profile: baseProfile as any,
       score: 100,
@@ -224,7 +230,7 @@ describe("Torneio Semanal Ranqueado (Nível 3+) e Regras da Arena X1 (Nível 5+,
     assert.equal(r1.newTournamentPoints, 10);
     assert.equal(r1.currentRank.name, "Bronze I");
 
-    // 2. Vitória com 2 erros: +10 - 2 = +8 pontos -> Total 18
+    // 2. Partida com 2 erros: 10 - 2 = +8 pontos -> Total 18
     const r2 = await recordWeeklyTournamentAttempt({
       profile: { ...baseProfile, tournamentPoints: 10 } as any,
       score: 80,
@@ -234,27 +240,37 @@ describe("Torneio Semanal Ranqueado (Nível 3+) e Regras da Arena X1 (Nível 5+,
     assert.equal(r2.pointsDelta, 8);
     assert.equal(r2.newTournamentPoints, 18);
 
-    // 3. Derrota com 1 erro: -5 - 1 = -6 pontos -> Total 12
+    // 3. Partida com 1 erro: 10 - 1 = +9 pontos -> Total 27
     const r3 = await recordWeeklyTournamentAttempt({
       profile: { ...baseProfile, tournamentPoints: 18 } as any,
-      score: 20,
-      correct: 2,
+      score: 90,
+      correct: 9,
       wrong: 1,
     });
-    assert.equal(r3.pointsDelta, -6);
-    assert.equal(r3.newTournamentPoints, 12);
+    assert.equal(r3.pointsDelta, 9);
+    assert.equal(r3.newTournamentPoints, 27);
 
-    // 4. Piso no zero: perda grande nunca desce abaixo de zero
+    // 4. Partida com 9 erros: 10 - 9 = 1 ponto. Piso mínimo de 1 ponto garantido! -> Total 28
     const r4 = await recordWeeklyTournamentAttempt({
-      profile: { ...baseProfile, tournamentPoints: 2 } as any,
+      profile: { ...baseProfile, tournamentPoints: 27 } as any,
+      score: 10,
+      correct: 1,
+      wrong: 9,
+    });
+    assert.equal(r4.pointsDelta, 1);
+    assert.equal(r4.newTournamentPoints, 28);
+
+    // 5. Partida com mais de 10 erros (ex: 12 erros): nunca dá menos que 1 ponto! -> Total 29
+    const r5 = await recordWeeklyTournamentAttempt({
+      profile: { ...baseProfile, tournamentPoints: 28 } as any,
       score: 0,
       correct: 0,
-      wrong: 5, // -5 - 5 = -10
+      wrong: 12,
     });
-    assert.equal(r4.pointsDelta, -10);
-    assert.equal(r4.newTournamentPoints, 0); // Floor at 0!
+    assert.equal(r5.pointsDelta, 1);
+    assert.equal(r5.newTournamentPoints, 29);
 
-    // 5. Garante que perfis de administradores reais (Josiney / Quemuel) pontuam normalmente e aparecem na classificação
+    // 6. Garante que perfis de administradores reais (Josiney / Quemuel) pontuam normalmente e aparecem na classificação
     const rJosiney = await recordWeeklyTournamentAttempt({
       profile: {
         ...baseProfile,

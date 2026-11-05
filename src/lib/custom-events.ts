@@ -12,6 +12,8 @@ export interface SpecialEvent {
   bonusValue?: number;
   /** Multiplicador de XP (ex: 2x, 1.5x, 3x) */
   xpMultiplier?: number;
+  /** Multiplicador de pontos no Torneio Ranqueado (ex: 1.5x, 2x, 3x) */
+  rankedMultiplier?: number;
   /** Limite de XP por partida/atividade (padrão normal: 20 XP, evento pode elevar para 50 XP, etc.) */
   matchXpCap?: number;
   /** Limite diário de XP geral (padrão normal: 1.000 XP, evento pode elevar para 2.500 XP, etc.) */
@@ -105,6 +107,7 @@ export interface ActiveEventBonuses {
   dailyXpCap: number; // default 1000 XP
   extraDailyXp: number;
   extraMatchXp: number;
+  rankedMultiplier: number; // Multiplicador de pontos no Torneio Ranqueado (1x, 1.5x, 2x, 3x)
   activeEventNames: string[];
 }
 
@@ -114,12 +117,13 @@ export interface CumulativeActiveBonuses {
   totalMatchCap: number;
   totalExtraDaily: number;
   totalExtraMatch: number;
+  totalRankedMultiplier: number;
   hasActiveBonuses: boolean;
   activeEventsCount: number;
 }
 
 /**
- * Calculates combined 3 lines of bonuses (XP multiplier, match XP cap, daily XP cap)
+ * Calculates combined bonuses (XP multiplier, match XP cap, daily XP cap, ranked multiplier)
  * by summing additional gains from all currently active special events and recurring events.
  * Example: base 1.0x + 0.5x (Ev 1) + 1.0x (Ev 2) = 2.5x total XP multiplier.
  * Daily cap: base 1000 + 500 (Ev 1) + 200 (Ev 2) = 1700 total XP daily cap.
@@ -135,6 +139,7 @@ export function getActiveEventBonuses(
   let extraMultiplier = 0;
   let extraMatch = 0;
   let extraDaily = 0;
+  let extraRankedMultiplier = 0;
   const activeEventNames: string[] = [];
 
   const allActive = [
@@ -168,12 +173,18 @@ export function getActiveEventBonuses(
       if (dCap && dCap > baseDailyCap) {
         extraDaily += (dCap - baseDailyCap);
       }
+
+      // Linha 4: Multiplicador de Pontos na Ranqueada (1.5x, 2x, 3x)
+      if (ev.rankedMultiplier && ev.rankedMultiplier > 1) {
+        extraRankedMultiplier += (ev.rankedMultiplier - 1);
+      }
     }
   }
 
   const multiplier = Number((1 + extraMultiplier).toFixed(2));
   const matchXpCap = baseMatchCap + extraMatch;
   const dailyXpCap = baseDailyCap + extraDaily;
+  const rankedMultiplier = Number((1 + extraRankedMultiplier).toFixed(2));
 
   return {
     multiplier,
@@ -181,6 +192,7 @@ export function getActiveEventBonuses(
     dailyXpCap,
     extraDailyXp: extraDaily,
     extraMatchXp: extraMatch,
+    rankedMultiplier,
     activeEventNames,
   };
 }
@@ -356,6 +368,8 @@ export interface RecurringEvent {
   specificDates: string[];
   /** Multiplicador de XP (ex: 2x, 1.5x, 3x) */
   xpMultiplier?: number;
+  /** Multiplicador de pontos no Torneio Ranqueado (ex: 1.5x, 2x, 3x) */
+  rankedMultiplier?: number;
   /** Limite de XP por partida/atividade */
   matchXpCap?: number;
   /** Limite diário de XP geral */
@@ -464,6 +478,7 @@ export function createRecurringEvent(args: {
   daysOfWeek: number[];
   specificDates: string[];
   xpMultiplier?: number;
+  rankedMultiplier?: number;
   matchXpCap?: number;
   dailyXpCap?: number;
   linkedMedalId?: string | null;
@@ -486,6 +501,7 @@ export function createRecurringEvent(args: {
     daysOfWeek: args.daysOfWeek,
     specificDates: args.specificDates,
     xpMultiplier: args.xpMultiplier,
+    rankedMultiplier: args.rankedMultiplier,
     matchXpCap: args.matchXpCap,
     dailyXpCap: args.dailyXpCap,
     active: true,
@@ -529,6 +545,7 @@ export interface ActiveEventDisplayItem {
 
 function buildEventBonusBadges(ev: {
   xpMultiplier?: number;
+  rankedMultiplier?: number;
   bonusType?: EventBonusType;
   bonusValue?: number;
   matchXpCap?: number;
@@ -547,6 +564,15 @@ function buildEventBonusBadges(ev: {
       type: "multiplier",
       label: `${mult}x de XP (+${Math.round((mult - 1) * 100)}%)`,
       icon: "🔥",
+    });
+  }
+
+  // 2. Multiplicador de Pontos Ranqueados
+  if (ev.rankedMultiplier && ev.rankedMultiplier > 1) {
+    badges.push({
+      type: "multiplier",
+      label: `${ev.rankedMultiplier}x Pontos na Ranqueada`,
+      icon: "🏆",
     });
   }
 

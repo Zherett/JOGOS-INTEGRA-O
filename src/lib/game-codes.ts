@@ -77,6 +77,8 @@ export interface PlatformNoticeSlide {
   featuredGameId?: GameId | null;
   linkedEventId?: string | null;
   linkedMedalId?: string | null;
+  /** Duração em segundos que o slide fica visível antes de passar para o próximo (padrão: 7s) */
+  durationSeconds?: number;
   active: boolean;
   createdAt: string;
 }

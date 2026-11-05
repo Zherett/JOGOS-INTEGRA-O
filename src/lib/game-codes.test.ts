@@ -65,4 +65,37 @@ describe("Liberação Inicial de Jogos e Controle de Bloqueio com SEMED26", () =
     });
     assert.equal(unlocked.requireCodeGate, false);
   });
+
+  it("salva e carrega avisos personalizados com duração de exibição customizada em segundos", () => {
+    const configWithNotices = saveAdminConfig({
+      ...DEFAULT_ADMIN_CONFIG,
+      noticeSlides: [
+        {
+          id: "notice_1",
+          title: "Aviso Rápido",
+          message: "Este slide dura 5 segundos",
+          badgeLabel: "NOVIDADE",
+          type: "announcement",
+          durationSeconds: 5,
+          active: true,
+          createdAt: new Date().toISOString(),
+        },
+        {
+          id: "notice_2",
+          title: "Aviso Longo",
+          message: "Este slide dura 15 segundos",
+          badgeLabel: "DESTAQUE",
+          type: "game_highlight",
+          featuredGameId: "rpg",
+          durationSeconds: 15,
+          active: true,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    });
+
+    assert.equal(configWithNotices.noticeSlides?.length, 2);
+    assert.equal(configWithNotices.noticeSlides?.[0].durationSeconds, 5);
+    assert.equal(configWithNotices.noticeSlides?.[1].durationSeconds, 15);
+  });
 });

@@ -107,18 +107,21 @@ export const NoticeBoard: React.FC<NoticeBoardProps> = ({
     }
   }, [count, currentIndex]);
 
-  // Auto-slide a cada 7 segundos com pausa em hover ou se pausado pelo ADM
+  const currentSlide = effectiveSlides[currentIndex % count] || effectiveSlides[0];
+  const slideDurationSeconds = Math.max(2, currentSlide?.durationSeconds ?? 7);
+
+  // Auto-slide com duração individual definida pelo ADM para cada aviso
+  // Pausa automaticamente se o usuário passar o mouse/tocar (hover/touch) ou se pausado pelo ADM
   useEffect(() => {
     if (count <= 1 || isPaused || pauseNoticeBoard) return;
-    const timer = setInterval(() => {
+    const durationMs = slideDurationSeconds * 1000;
+    const timer = setTimeout(() => {
       setCurrentIndex((prev) => (prev + 1) % count);
-    }, 7000);
-    return () => clearInterval(timer);
-  }, [count, isPaused, pauseNoticeBoard]);
+    }, durationMs);
+    return () => clearTimeout(timer);
+  }, [count, currentIndex, isPaused, pauseNoticeBoard, slideDurationSeconds]);
 
   if (count === 0) return null;
-
-  const currentSlide = effectiveSlides[currentIndex % count] || effectiveSlides[0];
 
   const handlePrev = (e: React.MouseEvent) => {
     e.stopPropagation();

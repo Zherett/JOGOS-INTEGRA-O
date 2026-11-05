@@ -712,7 +712,10 @@ export const X1_MIN_LEVEL = 5;
 export const TOURNAMENT_MIN_LEVEL = 3;
 export const X1_DAILY_EXTRA_XP_CAP = 100;
 export const TOURNAMENT_DAILY_EXTRA_XP_CAP = 100;
-export const TOURNAMENT_DAILY_ENTRIES_LIMIT = 10;
+export const TOURNAMENT_DAILY_FREE_ENTRIES = 10;
+export const TOURNAMENT_DAILY_PAID_ENTRIES_LIMIT = 50;
+export const TOURNAMENT_DAILY_ENTRIES_LIMIT = 60; // 10 gratuitas + 50 pagas
+export const TOURNAMENT_PAID_ENTRY_COST = 5;
 export const TOURNAMENT_XP_PER_ENTRY = 10;
 
 /** Fator de redução de XP quando uma partida é jogada em equipes/grupos (redução de 4X) */

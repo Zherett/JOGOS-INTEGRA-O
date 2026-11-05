@@ -45,9 +45,11 @@ import {
   getLocalDateKey,
   isX1WindowOpen,
   stageFromBirthdate,
+  TOURNAMENT_DAILY_FREE_ENTRIES,
   TOURNAMENT_DAILY_ENTRIES_LIMIT,
   TOURNAMENT_DAILY_EXTRA_XP_CAP,
 } from "@/lib/player-profile";
+import { getActiveEventBonuses } from "@/lib/custom-events";
 import {
   DEFAULT_STATS,
   GAME_NAMES,
@@ -347,27 +349,43 @@ function Index() {
         />
       )}
 
-      {/* Banner Ao Vivo de Entrada no Torneio Semanal Ranqueado */}
-      {activeRankedGameId && view === activeRankedGameId && (
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-primary bg-primary/10 px-4 py-3 shadow-sm">
-          <div>
-            <div className="font-display text-sm font-extrabold text-primary">
-              🏆 TORNEIO SEMANAL RANQUEADO ATIVO — {GAME_NAMES[activeRankedGameId]}
+      {/* Banner Ao Vivo Informativo do Torneio Semanal Ranqueado */}
+      {activeRankedGameId && view === activeRankedGameId && (() => {
+        const eventBonuses = getActiveEventBonuses();
+        const rankedMult = eventBonuses.rankedMultiplier ?? 1;
+        const isFree = dailyTournamentEntries < TOURNAMENT_DAILY_FREE_ENTRIES;
+        return (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-primary bg-primary/10 px-4 py-3 shadow-sm">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <span className="font-display text-sm font-extrabold text-primary">
+                  🏆 PARTIDA RANQUEADA EM ANDAMENTO — {GAME_NAMES[activeRankedGameId]}
+                </span>
+                {rankedMult > 1 && (
+                  <span className="rounded-full bg-amber-500/20 border border-amber-500/40 px-2 py-0.5 text-[11px] font-black text-amber-500 animate-pulse">
+                    ⚡ {rankedMult}x Pontos
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {isFree ? (
+                  <span>
+                    Entrada Gratuita: <b>{dailyTournamentEntries + 1}/{TOURNAMENT_DAILY_FREE_ENTRIES}</b> • Conclua a partida para somar seus pontos ranqueados (10 base - 1 por erro).
+                  </span>
+                ) : (
+                  <span>
+                    Entrada Extra Paga (5 pts) • Conclua a partida para somar seus pontos ranqueados (10 base - 1 por erro).
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="text-xs text-muted-foreground">
-              Entrada <b>{Math.min(TOURNAMENT_DAILY_ENTRIES_LIMIT, dailyTournamentEntries + 1)}/{TOURNAMENT_DAILY_ENTRIES_LIMIT}</b> de hoje • XP Extra Torneio:{" "}
-              <b>{dailyTournamentXp}/{TOURNAMENT_DAILY_EXTRA_XP_CAP} XP</b> (+10 XP garantidos ao concluir!)
+            <div className="rounded-xl border border-primary/30 bg-background/60 px-3 py-1.5 text-right">
+              <div className="text-[10px] uppercase font-bold text-muted-foreground">Regra Ranqueada</div>
+              <div className="text-xs font-black text-foreground">Conclusão Obrigatória</div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => void finishRankedEntry(true)}
-            className="rounded-xl bg-primary px-4 py-2 font-display text-xs font-extrabold text-primary-foreground shadow-sm transition-transform hover:scale-[1.02] active:scale-95"
-          >
-            Concluir Entrada e Salvar no Ranking →
-          </button>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Overlay Ao Vivo do Desafio X1 (1v1) */}
       {activeX1Room && (

@@ -12,9 +12,11 @@ import {
   Layers,
   ChevronRight,
   Shield,
+  Coins,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import type { GameId } from "@/lib/game-storage";
 import { usePlayerAuth } from "@/lib/player-auth";
 import {
@@ -22,6 +24,9 @@ import {
   getTournamentRank,
   getWeeklyTournamentSnapshot,
   syncWeeklyTournamentWithPlayFab,
+  spendPaidTournamentEntry,
+  TOURNAMENT_DAILY_FREE_ENTRIES,
+  TOURNAMENT_PAID_ENTRY_COST,
   TOURNAMENT_DAILY_ENTRIES_LIMIT,
   TOURNAMENT_DAILY_EXTRA_XP_CAP,
   TOURNAMENT_MIN_LEVEL,
@@ -47,6 +52,8 @@ export function WeeklyTournamentDialog({
   const profile = auth.profile;
   const [, setTick] = useState(0);
   const [activeTab, setActiveTab] = useState<"desafio" | "ranking">("desafio");
+  const [confirmPaidOpen, setConfirmPaidOpen] = useState(false);
+  const [spendingEntry, setSpendingEntry] = useState(false);
 
   const myStageId = profile
     ? stageFromBirthdate(profile.birthdate, new Date(), profile.school).id
@@ -189,12 +196,21 @@ export function WeeklyTournamentDialog({
                 <Calendar className="h-3.5 w-3.5 text-primary" /> {snap.weekKey} • Até {snap.endsAtLabel}
               </span>
               <div className="flex items-center gap-3">
-                <span className="inline-flex items-center gap-1 font-bold text-foreground">
-                  <Flame className="h-3.5 w-3.5 text-accent" /> Entradas:{" "}
-                  <b className="font-mono text-primary">
-                    {snap.entriesUsedToday}/{TOURNAMENT_DAILY_ENTRIES_LIMIT}
-                  </b>
-                </span>
+                {snap.isFreeEntry ? (
+                  <span className="inline-flex items-center gap-1 font-bold text-foreground">
+                    <Flame className="h-3.5 w-3.5 text-accent" /> Grátis:{" "}
+                    <b className="font-mono text-primary">
+                      {snap.freeRemainingToday}/10 restantes
+                    </b>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 font-bold text-amber-500">
+                    <Coins className="h-3.5 w-3.5 text-amber-500" /> Pagas:{" "}
+                    <b className="font-mono text-amber-500">
+                      {snap.paidRemainingToday}/50 restantes
+                    </b>
+                  </span>
+                )}
                 <span className="inline-flex items-center gap-1 font-bold text-foreground">
                   <Zap className="h-3.5 w-3.5 text-success" /> XP Extra:{" "}
                   <b className="font-mono text-success">
@@ -324,28 +340,62 @@ export function WeeklyTournamentDialog({
               </div>
 
               {/* Botão de Jogar */}
-              <Button
-                size="lg"
-                disabled={snap.entriesRemainingToday <= 0}
-                onClick={() => {
-                  onOpenChange(false);
-                  onStartRankedEntry(snap.gameId);
-                }}
-                className="h-13 w-full rounded-2xl font-display text-base font-extrabold shadow-md"
-              >
-                {snap.entriesRemainingToday > 0 ? (
-                  <>
-                    <Play className="mr-2 h-5 w-5" /> Jogar Entrada Ranqueada Agora (
-                    {snap.entriesRemainingToday}/{TOURNAMENT_DAILY_ENTRIES_LIMIT} restantes)
-                  </>
-                ) : (
-                  "Limite de 10 entradas diárias concluído hoje! Volte amanhã"
-                )}
-              </Button>
+              {snap.isFreeEntry ? (
+                <Button
+                  size="lg"
+                  disabled={snap.freeRemainingToday <= 0}
+                  onClick={() => {
+                    onOpenChange(false);
+                    onStartRankedEntry(snap.gameId);
+                  }}
+                  className="h-13 w-full rounded-2xl font-display text-base font-extrabold shadow-md"
+                >
+                  <Play className="mr-2 h-5 w-5" /> Jogar Entrada Grátis ({snap.freeRemainingToday}/10 restantes)
+                </Button>
+              ) : snap.paidRemainingToday > 0 ? (
+                <Button
+                  size="lg"
+                  disabled={!snap.canAffordPaid}
+                  onClick={() => setConfirmPaidOpen(true)}
+                  className={`h-13 w-full rounded-2xl font-display text-base font-extrabold shadow-md ${
+                    snap.canAffordPaid
+                      ? "bg-amber-600 hover:bg-amber-700 text-white"
+                      : "opacity-60 cursor-not-allowed"
+                  }`}
+                >
+                  {snap.canAffordPaid ? (
+                    <>
+                      <Coins className="mr-2 h-5 w-5" /> Jogar Entrada Paga (Custo: 5 pts • {snap.paidRemainingToday}/50 restantes)
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="mr-2 h-4 w-4" /> Pontos insuficientes para entrada paga (Saldo: {currentPoints} pts / Necessário: 5 pts)
+                    </>
+                  )}
+                </Button>
+              ) : (
+                <Button
+                  size="lg"
+                  disabled
+                  className="h-13 w-full rounded-2xl font-display text-base font-extrabold shadow-md opacity-60 cursor-not-allowed"
+                >
+                  Limite de 60 entradas diárias concluído hoje! Volte amanhã
+                </Button>
+              )}
 
               {/* Regras de Pontos Ranqueados */}
-              <div className="rounded-xl border bg-secondary/30 p-2.5 text-[11px] text-muted-foreground text-center">
-                🎯 <b>Pontuação Ranqueada:</b> Vitória (+10 pts) • Derrota (-5 pts) • Erro de questão (-1 pt) • Bônus por 10 vitórias diárias (+25 pts). Ao reiniciar a semana todo domingo, todos descem para Bronze I.
+              <div className="rounded-xl border bg-secondary/30 p-2.5 text-[11px] text-muted-foreground text-center space-y-1">
+                <div>
+                  🎯 <b>Pontuação Ranqueada:</b> Cada partida finalizada garante até 10 pontos (-1 ponto por erro cometido, piso mínimo garantido de 1 ponto ao concluir).
+                </div>
+                {snap.rankedMultiplier > 1 && (
+                  <div className="text-amber-500 font-extrabold">
+                    ⚡ Evento Ativo: <b>{snap.rankedMultiplier}x Pontos</b> em cada partida ranqueada!
+                  </div>
+                )}
+                <div className="text-[10px] text-muted-foreground/80">
+                  10 entradas gratuitas por dia + até 50 entradas extras por 5 pontos cada • Bônus de +25 pontos ao fechar 10 partidas no dia sem nenhum erro.
+                </div>
               </div>
             </div>
           </div>
@@ -523,6 +573,79 @@ export function WeeklyTournamentDialog({
           </div>
         )}
       </DialogContent>
+
+      {/* Modal de Confirmação de Entrada Paga */}
+      <Dialog open={confirmPaidOpen} onOpenChange={setConfirmPaidOpen}>
+        <DialogContent className="rounded-3xl sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 font-display text-xl font-extrabold text-foreground">
+              <Coins className="h-5 w-5 text-amber-500" /> Confirmar Entrada Ranqueada
+            </DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground pt-1">
+              As suas entradas gratuitas acabaram. Você deseja gastar <b>{snap.paidCost} pontos</b> para entrar na partida?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-2xl border bg-secondary/30 p-3.5 space-y-2 text-xs">
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Seu saldo atual:</span>
+              <span className="font-bold font-mono text-sm">{currentPoints} pts</span>
+            </div>
+            <div className="flex justify-between items-center text-amber-500 font-bold">
+              <span>Custo desta entrada:</span>
+              <span className="font-mono text-sm">-{snap.paidCost} pts</span>
+            </div>
+            <div className="flex justify-between items-center border-t pt-2 font-extrabold">
+              <span>Saldo restante após entrar:</span>
+              <span className="font-mono text-sm text-primary">
+                {Math.max(0, currentPoints - snap.paidCost)} pts
+              </span>
+            </div>
+            <div className="rounded-xl bg-background/60 p-2 text-[11px] text-muted-foreground">
+              💡 Partida concluída: ganhe até <b>10 pontos</b> (-1 ponto por erro cometido, mínimo 1 ponto).
+              {snap.rankedMultiplier > 1 && (
+                <div className="text-amber-500 font-bold mt-0.5">
+                  ⚡ Multiplicador do evento ativo: <b>{snap.rankedMultiplier}x</b>!
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button
+              variant="outline"
+              className="flex-1 rounded-2xl"
+              onClick={() => setConfirmPaidOpen(false)}
+              disabled={spendingEntry}
+            >
+              Cancelar
+            </Button>
+            <Button
+              className="flex-1 rounded-2xl font-bold bg-amber-600 hover:bg-amber-700 text-white"
+              disabled={spendingEntry}
+              onClick={async () => {
+                if (!profile) return;
+                setSpendingEntry(true);
+                try {
+                  const res = await spendPaidTournamentEntry(profile.id, snap.paidCost);
+                  if (!res.ok) {
+                    alert(res.error ?? "Não foi possível deduzir os pontos.");
+                    setSpendingEntry(false);
+                    return;
+                  }
+                  setConfirmPaidOpen(false);
+                  onOpenChange(false);
+                  onStartRankedEntry(snap.gameId);
+                } catch (e: any) {
+                  alert(e?.message ?? "Erro ao iniciar partida paga.");
+                } finally {
+                  setSpendingEntry(false);
+                }
+              }}
+            >
+              {spendingEntry ? "Entrando..." : `Confirmar (-${snap.paidCost} pts)`}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

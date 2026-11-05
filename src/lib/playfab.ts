@@ -94,6 +94,8 @@ import {
   removePlayerFromGameRecords,
   seedRecordsFromRegistry,
 } from "./game-records.ts";
+import { removePlayerFromPresence } from "./presence.ts";
+import { removePlayerFromTournament } from "./weekly-tournament.ts";
 
 const SESSION_KEY = "desafios-playfab-session-v1";
 const REGISTRY_KEY = "desafios-playfab-registry-v1";
@@ -101,6 +103,47 @@ const ADMIN_AUTH_KEY = "desafios-playfab-admin-auth-v1";
 const ADMIN_PIN_KEY = "desafios-playfab-admin-pin-v1";
 export const ROSTER_SHARED_GROUP_ID = "SEMED_STUDENT_ROSTER_V1";
 export const ADMIN_CONFIG_SHARED_GROUP_ID = "SEMED_PLATFORM_CONFIG_V1";
+export const TOMBSTONES_STORAGE_KEY = "desafios:deleted-students-tombstones-v1";
+const inMemoryTombstones = new Set<string>();
+
+export function loadTombstones(): Set<string> {
+  if (typeof window === "undefined") return inMemoryTombstones;
+  try {
+    const raw = window.localStorage.getItem(TOMBSTONES_STORAGE_KEY);
+    if (!raw) return inMemoryTombstones;
+    const arr = JSON.parse(raw);
+    const set = new Set(
+      Array.isArray(arr) ? arr.map((s: string) => String(s).toLowerCase().trim()) : [],
+    );
+    for (const item of inMemoryTombstones) set.add(item);
+    return set;
+  } catch {
+    return inMemoryTombstones;
+  }
+}
+
+export function saveTombstones(set: Set<string>): void {
+  for (const item of set) inMemoryTombstones.add(item);
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(TOMBSTONES_STORAGE_KEY, JSON.stringify(Array.from(set)));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function addTombstone(slugOrId?: string | null): void {
+  if (!slugOrId) return;
+  const set = loadTombstones();
+  set.add(slugOrId.trim().toLowerCase());
+  saveTombstones(set);
+}
+
+export function isTombstoned(slugOrId?: string | null): boolean {
+  if (!slugOrId) return false;
+  const set = loadTombstones();
+  return set.has(slugOrId.trim().toLowerCase());
+}
 
 export interface EventProgressData {
   cycleKey: string;
@@ -381,6 +424,24 @@ export function purgeExpiredTrash(reg: Record<string, StoredAccount>): boolean {
     if (acc?.profile?.deletedAt) {
       const delTime = new Date(acc.profile.deletedAt).getTime();
       if (!isNaN(delTime) && now - delTime >= STUDENT_TRASH_RETENTION_MS) {
+        addTombstone(acc.profile.nickNormalized);
+        if (acc.profile.id) addTombstone(acc.profile.id);
+        if (acc.profile.nick) addTombstone(acc.profile.nick);
+        try {
+          removePlayerFromGameRecords(acc.profile.id, acc.profile.nick);
+        } catch {
+          /* ignore */
+        }
+        try {
+          void removePlayerFromPresence(acc.profile.id, acc.profile.nick);
+        } catch {
+          /* ignore */
+        }
+        try {
+          removePlayerFromTournament(acc.profile.id, acc.profile.nick);
+        } catch {
+          /* ignore */
+        }
         delete reg[key];
         changed = true;
       }
@@ -395,7 +456,18 @@ export function loadRegistry(): Record<string, StoredAccount> {
     const raw = window.localStorage.getItem(REGISTRY_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw) as Record<string, StoredAccount>;
-    if (purgeExpiredTrash(parsed)) {
+    let tombstoneCleaned = false;
+    for (const [key, acc] of Object.entries(parsed)) {
+      if (
+        isTombstoned(key) ||
+        isTombstoned(acc?.profile?.id) ||
+        isTombstoned(acc?.profile?.nickNormalized)
+      ) {
+        delete parsed[key];
+        tombstoneCleaned = true;
+      }
+    }
+    if (purgeExpiredTrash(parsed) || tombstoneCleaned) {
       saveRegistry(parsed);
     }
     return parsed;
@@ -2010,6 +2082,7 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
     const reg = loadRegistry();
     let updated = false;
     const needsCloudSanitize = new Set<string>();
+    const keysToRemoveFromCloud: string[] = [];
 
     // 0. Recover PlayFabIds, XP, and per-game best scores from PlayFab Leaderboards
     const playfabIdBySlug = new Map<string, string>();
@@ -2167,6 +2240,16 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
           const parsed = JSON.parse(item.Value) as Partial<PlayerProfile>;
           if (!parsed.nickNormalized) continue;
           const slug = parsed.nickNormalized;
+
+          if (isTombstoned(slug) || isTombstoned(parsed.id)) {
+            keysToRemoveFromCloud.push(`stu_${slug}`);
+            if (parsed.id && parsed.id !== slug) keysToRemoveFromCloud.push(`stu_${parsed.id}`);
+            delete reg[slug];
+            if (parsed.id) delete reg[parsed.id];
+            updated = true;
+            continue;
+          }
+
           const existing = reg[slug];
           const recoveredUd = userDataBySlug.get(slug);
           const udProf = recoveredUd?.profile;
@@ -2347,6 +2430,11 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
             badges: Array.from(badgeMap.values()),
             eventProgress:
               parsed.eventProgress ?? existing?.profile.eventProgress ?? udProf?.eventProgress,
+            deletedAt: parsed.deletedAt ?? existing?.profile.deletedAt ?? udProf?.deletedAt,
+            deleteScheduledPermanentAt:
+              parsed.deleteScheduledPermanentAt ??
+              existing?.profile.deleteScheduledPermanentAt ??
+              udProf?.deleteScheduledPermanentAt,
             isAdmin: parsed.isAdmin ?? existing?.profile.isAdmin,
             seasonId: parsed.seasonId ?? existing?.profile.seasonId ?? 1,
           };
@@ -2455,11 +2543,17 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
     // 2. Push any local students that are not yet in the cloud roster (or whose medals/stats were reconciled)
     const missingInCloud: Record<string, string> = {};
     for (const [slug, rawAcc] of Object.entries(reg)) {
+      if (isTombstoned(slug) || isTombstoned(rawAcc.profile.id)) {
+        keysToRemoveFromCloud.push(`stu_${slug}`);
+        delete reg[slug];
+        updated = true;
+        continue;
+      }
       const acc = ensurePlayerSeasonAligned(rawAcc, cfg);
       reg[slug] = acc;
       if (isSpecialAdminAccount(acc.profile)) continue;
       const key = `stu_${slug}`;
-      if (!data || !data[key] || needsCloudSanitize.has(slug)) {
+      if (!data || !data[key] || needsCloudSanitize.has(slug) || acc.profile.deletedAt) {
         missingInCloud[key] = JSON.stringify({
           id: acc.profile.id,
           playfabId: acc.profile.playfabId,
@@ -2487,6 +2581,8 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
           unlockedMedals: acc.profile.unlockedMedals ?? [],
           badges: acc.profile.badges ?? [],
           stats: acc.stats ?? [],
+          deletedAt: acc.profile.deletedAt,
+          deleteScheduledPermanentAt: acc.profile.deleteScheduledPermanentAt,
           isAdmin: acc.profile.isAdmin,
           seasonId: acc.profile.seasonId,
           updatedAt: acc.updatedAt,
@@ -2504,6 +2600,21 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
         },
         ticket,
       );
+    }
+
+    if (keysToRemoveFromCloud.length > 0) {
+      try {
+        await callPlayFabClient(
+          "UpdateSharedGroupData",
+          {
+            SharedGroupId: ROSTER_SHARED_GROUP_ID,
+            KeysToRemove: Array.from(new Set(keysToRemoveFromCloud)),
+          },
+          ticket,
+        );
+      } catch {
+        /* ignore cloud removal error */
+      }
     }
 
     if (updated) {
@@ -3470,16 +3581,34 @@ export async function moveStudentToTrash(
   targetAcc.profile.deleteScheduledPermanentAt = permIso;
   targetAcc.updatedAt = nowIso;
 
+  const pNorm = targetAcc.profile.nickNormalized;
+  const pId = targetAcc.profile.id;
+  const pNick = targetAcc.profile.nick;
+
   // Save to registry under all keys referencing this student
-  reg[targetAcc.profile.nickNormalized] = targetAcc;
-  if (targetAcc.profile.id && targetAcc.profile.id !== targetAcc.profile.nickNormalized) {
-    reg[targetAcc.profile.id] = targetAcc;
+  reg[pNorm] = targetAcc;
+  if (pId && pId !== pNorm) {
+    reg[pId] = targetAcc;
   }
   saveRegistry(reg);
 
-  // Remove student from records
+  // Remove student from game records
   try {
-    removePlayerFromGameRecords(targetAcc.profile.id, targetAcc.profile.nick);
+    removePlayerFromGameRecords(pId, pNick);
+  } catch {
+    /* ignore */
+  }
+
+  // Remove student from presence
+  try {
+    void removePlayerFromPresence(pId, pNick);
+  } catch {
+    /* ignore */
+  }
+
+  // Remove student from weekly tournament rankings
+  try {
+    removePlayerFromTournament(pId, pNick);
   } catch {
     /* ignore */
   }
@@ -3487,18 +3616,34 @@ export async function moveStudentToTrash(
   // If this student is currently logged in on this browser, disconnect them
   const currentSession = loadStoredSession();
   if (
-    currentSession?.playerId === targetAcc.profile.id ||
-    currentSession?.playerId === targetAcc.profile.nickNormalized
+    currentSession?.playerId === pId ||
+    currentSession?.playerId === pNorm
   ) {
     playfabSignOut();
   }
 
-  // Update cloud UserData / roster if configured
+  // Sincroniza com PlayFab SharedGroupData informando que o aluno está na lixeira
   if (isPlayFabConfigured()) {
     try {
-      const session = loadStoredSession();
-      if (session?.sessionTicket) {
-        await pushProfileToPlayFab(targetAcc, session.sessionTicket);
+      const ticket = (await getAdminPlayFabTicket()) ?? currentSession?.sessionTicket;
+      if (ticket) {
+        await callPlayFabClient(
+          "UpdateSharedGroupData",
+          {
+            SharedGroupId: ROSTER_SHARED_GROUP_ID,
+            Data: {
+              [`stu_${pNorm}`]: JSON.stringify({
+                ...targetAcc.profile,
+                stats: targetAcc.stats ?? [],
+                deletedAt: nowIso,
+                deleteScheduledPermanentAt: permIso,
+                updatedAt: nowIso,
+              }),
+            },
+            Permission: "Public",
+          },
+          ticket,
+        );
       }
     } catch {
       /* ignore cloud failure */
@@ -3527,11 +3672,15 @@ export async function restoreStudentFromTrash(
 
   delete targetAcc.profile.deletedAt;
   delete targetAcc.profile.deleteScheduledPermanentAt;
-  targetAcc.updatedAt = new Date().toISOString();
+  const nowIso = new Date().toISOString();
+  targetAcc.updatedAt = nowIso;
 
-  reg[targetAcc.profile.nickNormalized] = targetAcc;
-  if (targetAcc.profile.id && targetAcc.profile.id !== targetAcc.profile.nickNormalized) {
-    reg[targetAcc.profile.id] = targetAcc;
+  const pNorm = targetAcc.profile.nickNormalized;
+  const pId = targetAcc.profile.id;
+
+  reg[pNorm] = targetAcc;
+  if (pId && pId !== pNorm) {
+    reg[pId] = targetAcc;
   }
   saveRegistry(reg);
 
@@ -3544,9 +3693,23 @@ export async function restoreStudentFromTrash(
 
   if (isPlayFabConfigured()) {
     try {
-      const session = loadStoredSession();
-      if (session?.sessionTicket) {
-        await pushProfileToPlayFab(targetAcc, session.sessionTicket);
+      const ticket = (await getAdminPlayFabTicket()) ?? loadStoredSession()?.sessionTicket;
+      if (ticket) {
+        await callPlayFabClient(
+          "UpdateSharedGroupData",
+          {
+            SharedGroupId: ROSTER_SHARED_GROUP_ID,
+            Data: {
+              [`stu_${pNorm}`]: JSON.stringify({
+                ...targetAcc.profile,
+                stats: targetAcc.stats ?? [],
+                updatedAt: nowIso,
+              }),
+            },
+            Permission: "Public",
+          },
+          ticket,
+        );
       }
     } catch {
       /* ignore cloud failure */
@@ -3557,7 +3720,7 @@ export async function restoreStudentFromTrash(
 }
 
 /**
- * Permanently deletes a student profile from the registry, records, and cloud immediately.
+ * Permanently deletes a student profile from the registry, records, presence, tournament and cloud immediately.
  */
 export async function permanentlyDeleteStudent(
   playerId: string,
@@ -3581,9 +3744,14 @@ export async function permanentlyDeleteStudent(
   const pNick = targetAcc.profile.nick;
   const pNorm = targetAcc.profile.nickNormalized;
 
+  // 1. Marca tombstones para NUNCA mais reviver do leaderboard do PlayFab
+  addTombstone(pNorm);
+  if (pId) addTombstone(pId);
+  if (pNick) addTombstone(pNick);
+
+  // 2. Remove de todas as chaves do registro local
   delete reg[pNorm];
   if (pId) delete reg[pId];
-  // Clean any remaining matching entries
   for (const [k, v] of Object.entries(reg)) {
     if (v.profile.id === pId || v.profile.nickNormalized === pNorm) {
       delete reg[k];
@@ -3591,17 +3759,52 @@ export async function permanentlyDeleteStudent(
   }
   saveRegistry(reg);
 
-  // Remove from game records
+  // 3. Remove dos recordes de jogos
   try {
     removePlayerFromGameRecords(pId, pNick);
   } catch {
     /* ignore */
   }
 
-  // If current session belongs to this deleted player, sign out
+  // 4. Remove da presença online/offline
+  try {
+    void removePlayerFromPresence(pId, pNick);
+  } catch {
+    /* ignore */
+  }
+
+  // 5. Remove dos rankings do torneio semanal
+  try {
+    removePlayerFromTournament(pId, pNick);
+  } catch {
+    /* ignore */
+  }
+
+  // 6. Se a sessão ativa deste navegador pertencer ao aluno deletado, desconecta
   const currentSession = loadStoredSession();
   if (currentSession?.playerId === pId || currentSession?.playerId === pNorm) {
     playfabSignOut();
+  }
+
+  // 7. DELETA DEFINITIVAMENTE A CHAVE DO ROSTER NA NUVEM PLAYFAB
+  if (isPlayFabConfigured()) {
+    try {
+      const ticket = (await getAdminPlayFabTicket()) ?? currentSession?.sessionTicket;
+      if (ticket) {
+        const keysToRemove = [`stu_${pNorm}`];
+        if (pId && pId !== pNorm) keysToRemove.push(`stu_${pId}`);
+        await callPlayFabClient(
+          "UpdateSharedGroupData",
+          {
+            SharedGroupId: ROSTER_SHARED_GROUP_ID,
+            KeysToRemove: keysToRemove,
+          },
+          ticket,
+        );
+      }
+    } catch {
+      /* ignore cloud error */
+    }
   }
 
   return { success: true };
@@ -3613,14 +3816,37 @@ export async function permanentlyDeleteStudent(
 export async function emptyStudentTrash(): Promise<{ success: boolean; count: number }> {
   const reg = loadRegistry();
   let count = 0;
+  const keysToRemoveFromCloud: string[] = [];
 
   for (const [k, acc] of Object.entries(reg)) {
     if (acc?.profile?.deletedAt && !acc.profile.isAdmin && !isSpecialAdminAccount(acc.profile)) {
+      const pId = acc.profile.id;
+      const pNick = acc.profile.nick;
+      const pNorm = acc.profile.nickNormalized;
+
+      addTombstone(pNorm);
+      if (pId) addTombstone(pId);
+      if (pNick) addTombstone(pNick);
+
+      keysToRemoveFromCloud.push(`stu_${pNorm}`);
+      if (pId && pId !== pNorm) keysToRemoveFromCloud.push(`stu_${pId}`);
+
       try {
-        removePlayerFromGameRecords(acc.profile.id, acc.profile.nick);
+        removePlayerFromGameRecords(pId, pNick);
       } catch {
         /* ignore */
       }
+      try {
+        void removePlayerFromPresence(pId, pNick);
+      } catch {
+        /* ignore */
+      }
+      try {
+        removePlayerFromTournament(pId, pNick);
+      } catch {
+        /* ignore */
+      }
+
       delete reg[k];
       count++;
     }
@@ -3628,6 +3854,24 @@ export async function emptyStudentTrash(): Promise<{ success: boolean; count: nu
 
   if (count > 0) {
     saveRegistry(reg);
+  }
+
+  if (isPlayFabConfigured() && keysToRemoveFromCloud.length > 0) {
+    try {
+      const ticket = (await getAdminPlayFabTicket()) ?? loadStoredSession()?.sessionTicket;
+      if (ticket) {
+        await callPlayFabClient(
+          "UpdateSharedGroupData",
+          {
+            SharedGroupId: ROSTER_SHARED_GROUP_ID,
+            KeysToRemove: Array.from(new Set(keysToRemoveFromCloud)),
+          },
+          ticket,
+        );
+      }
+    } catch {
+      /* ignore cloud error */
+    }
   }
 
   return { success: true, count };
@@ -3789,6 +4033,40 @@ export async function grantSpecialRobotMedal(
   if (!def) return false;
   const res = await grantPlayerMedalManually(session.playerId, def);
   return res.success;
+}
+
+/**
+ * Deduz a taxa fixa de 5 pontos ranqueados para compra de entrada extra (após esgotar as 10 grátis).
+ */
+export async function deductPaidTournamentPoints(
+  playerId: string,
+  points = 5,
+): Promise<{ success: boolean; newPoints: number; error?: string }> {
+  const reg = loadRegistry();
+  const acc = reg[playerId] || Object.values(reg).find((a) => a.profile.id === playerId);
+  if (!acc) return { success: false, newPoints: 0, error: "Jogador não encontrado." };
+
+  const currentPoints = acc.profile.tournamentPoints ?? 0;
+  if (currentPoints < points) {
+    return {
+      success: false,
+      newPoints: currentPoints,
+      error: `Pontos insuficientes (possui ${currentPoints}, necessários ${points}).`,
+    };
+  }
+
+  const newPoints = currentPoints - points;
+  acc.profile.tournamentPoints = newPoints;
+  acc.profile.dailyTournamentEntries = (acc.profile.dailyTournamentEntries ?? 0) + 1;
+  acc.updatedAt = new Date().toISOString();
+  saveRegistry(reg);
+
+  const session = loadStoredSession();
+  if (session?.sessionTicket && isPlayFabConfigured() && acc.profile.id === session.playerId) {
+    await pushProfileToPlayFab(acc, session.sessionTicket);
+  }
+
+  return { success: true, newPoints };
 }
 
 /**
