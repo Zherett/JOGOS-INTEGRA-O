@@ -91,6 +91,7 @@ export interface MedalDefinition {
   createdByAdmin?: boolean;
   gameId?: GameId;
   isSecret?: boolean;
+  isStackable?: boolean;
   eventId?: string | null;
   eventName?: string | null;
   eventRequirement?: EventMedalRequirement | null;
@@ -137,6 +138,8 @@ export function formatEventRequirementLabel(req: EventMedalRequirement): string 
 export interface PlayerUnlockedMedal {
   medalId: string;
   unlockedAt: string;
+  count?: number;
+  lastUnlockedAt?: string;
 }
 
 export interface AdminMedalNotification {

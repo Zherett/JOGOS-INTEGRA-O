@@ -39,6 +39,7 @@ import {
   getX1Room,
   heartbeatOnlinePlayer,
   joinX1Room,
+  joinX1RoomAsync,
   subscribeX1Updates,
   syncX1WithPlayFabCloud,
   type X1Room,
@@ -70,6 +71,7 @@ export function X1ArenaDialog({
   const [selectedGame, setSelectedGame] = useState<GameId>(x1Rotation.currentGame);
   const [waitingRoomCode, setWaitingRoomCode] = useState<string | null>(null);
   const [joinCodeInput, setJoinCodeInput] = useState("");
+  const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [onlyMyStage, setOnlyMyStage] = useState(true);
@@ -254,25 +256,30 @@ export function X1ArenaDialog({
     setWaitingRoomCode(room.code);
   }
 
-  function handleJoinRoomByCode(codeToJoin: string) {
-    if (!profile) return;
+  async function handleJoinRoomByCode(codeToJoin: string) {
+    if (!profile || isJoining) return;
     setError(null);
-    const res = joinX1Room({
-      code: codeToJoin,
-      guest: {
-        playerId: profile.id,
-        nick: profile.nick,
-        school: profile.school,
-        level: profile.level,
-      },
-    });
-    if (res.error || !res.room) {
-      setError(res.error ?? "Não foi possível entrar na sala.");
-      return;
+    setIsJoining(true);
+    try {
+      const res = await joinX1RoomAsync({
+        code: codeToJoin,
+        guest: {
+          playerId: profile.id,
+          nick: profile.nick,
+          school: profile.school,
+          level: profile.level,
+        },
+      });
+      if (res.error || !res.room) {
+        setError(res.error ?? "Não foi possível entrar na sala.");
+        return;
+      }
+      setWaitingRoomCode(null);
+      onOpenChange(false);
+      onStartX1Match(res.room);
+    } finally {
+      setIsJoining(false);
     }
-    setWaitingRoomCode(null);
-    onOpenChange(false);
-    onStartX1Match(res.room);
   }
 
   async function copyRoomCode(code: string) {
@@ -580,10 +587,16 @@ export function X1ArenaDialog({
                           <Button
                             type="button"
                             size="sm"
-                            onClick={() => handleJoinRoomByCode(r.code)}
+                            disabled={isJoining}
+                            onClick={() => void handleJoinRoomByCode(r.code)}
                             className="rounded-xl font-bold shrink-0"
                           >
-                            <Play className="mr-1 h-3.5 w-3.5" /> Entrar no X1
+                            {isJoining ? (
+                              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Play className="mr-1 h-3.5 w-3.5" />
+                            )}
+                            Entrar no X1
                           </Button>
                         </div>
                       ))}
@@ -709,7 +722,7 @@ export function X1ArenaDialog({
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  handleJoinRoomByCode(joinCodeInput);
+                  void handleJoinRoomByCode(joinCodeInput);
                 }}
                 className="space-y-4 py-2"
               >
@@ -726,6 +739,7 @@ export function X1ArenaDialog({
                     placeholder="0000"
                     autoFocus
                     required
+                    disabled={isJoining}
                     className="mx-auto h-16 max-w-[220px] rounded-2xl text-center font-mono text-3xl font-extrabold tracking-[0.3em]"
                   />
                 </div>
@@ -733,10 +747,18 @@ export function X1ArenaDialog({
                 <Button
                   type="submit"
                   size="lg"
-                  disabled={joinCodeInput.length < 4}
+                  disabled={joinCodeInput.length < 4 || isJoining}
                   className="h-13 w-full rounded-2xl font-display text-base font-extrabold"
                 >
-                  <Swords className="mr-2 h-5 w-5" /> Entrar na Sala e Começar X1!
+                  {isJoining ? (
+                    <>
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Conectando à Sala...
+                    </>
+                  ) : (
+                    <>
+                      <Swords className="mr-2 h-5 w-5" /> Entrar na Sala e Começar X1!
+                    </>
+                  )}
                 </Button>
               </form>
             )}

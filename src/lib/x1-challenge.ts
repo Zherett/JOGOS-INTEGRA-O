@@ -14,7 +14,7 @@ import { recordPlayerHeartbeat } from "./presence.ts";
 
 const X1_STORAGE_KEY = "desafios-x1-lobby-state-v1";
 const X1_CHANNEL_NAME = "desafios-x1-broadcast-v1";
-const LOBBY_SHARED_GROUP_ID = "X1_LOBBY_SEMED_V1";
+const LOBBY_SHARED_GROUP_ID = "X1_LOBBY_SEMED_V2";
 
 export const X1_MATCH_DURATION_SEC = 90;
 export const X1_ROBOT_INITIAL_HP = 10;
@@ -389,9 +389,11 @@ export function subscribeX1Updates(fn: () => void): () => void {
   };
 }
 
+let memoryStoreFallback: X1LobbyStore = { players: {}, rooms: {}, invites: [], updatedAt: Date.now() };
+
 function loadStore(): X1LobbyStore {
   const empty: X1LobbyStore = { players: {}, rooms: {}, invites: [], updatedAt: Date.now() };
-  if (typeof window === "undefined") return empty;
+  if (typeof window === "undefined") return memoryStoreFallback;
   try {
     const raw = window.localStorage.getItem(X1_STORAGE_KEY);
     if (!raw) return empty;
@@ -418,8 +420,9 @@ function loadStore(): X1LobbyStore {
 }
 
 function saveStore(store: X1LobbyStore) {
-  if (typeof window === "undefined") return;
   store.updatedAt = Date.now();
+  memoryStoreFallback = store;
+  if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(X1_STORAGE_KEY, JSON.stringify(store));
     getChannel()?.postMessage({ type: "sync", at: store.updatedAt });
@@ -520,8 +523,9 @@ export async function syncX1WithPlayFabCloud(activeRoomCode?: string | null): Pr
     Permission: "Public",
   });
 
-  if (activeRoomCode && store.rooms[activeRoomCode]) {
-    const roomGroupId = `X1_ROOM_${activeRoomCode}`;
+  if (activeRoomCode) {
+    const cleanCode = activeRoomCode.trim().toUpperCase();
+    const roomGroupId = `x1_room_${cleanCode.toLowerCase()}`;
     const remoteRoomData = (await callPlayFabSharedGroup("GetSharedGroupData", {
       SharedGroupId: roomGroupId,
     })) as { Data?: Record<string, { Value: string }> } | null;
@@ -529,17 +533,19 @@ export async function syncX1WithPlayFabCloud(activeRoomCode?: string | null): Pr
     if (remoteRoomData?.Data?.Room?.Value) {
       try {
         const remoteRoom = JSON.parse(remoteRoomData.Data.Room.Value) as X1Room;
-        const localRoom = store.rooms[activeRoomCode];
+        const localRoom = store.rooms[cleanCode];
         const remoteUpdated = Math.max(
           remoteRoom.host.updatedAt,
           remoteRoom.guest?.updatedAt ?? 0,
         );
-        const localUpdated = Math.max(
-          localRoom.host.updatedAt,
-          localRoom.guest?.updatedAt ?? 0,
-        );
-        if (remoteUpdated > localUpdated) {
-          store.rooms[activeRoomCode] = remoteRoom;
+        const localUpdated = localRoom
+          ? Math.max(
+              localRoom.host.updatedAt,
+              localRoom.guest?.updatedAt ?? 0,
+            )
+          : 0;
+        if (!localRoom || remoteUpdated >= localUpdated) {
+          store.rooms[cleanCode] = remoteRoom;
           changed = true;
         }
       } catch {
@@ -555,7 +561,7 @@ export async function syncX1WithPlayFabCloud(activeRoomCode?: string | null): Pr
 
 async function pushRoomToPlayFab(room: X1Room) {
   if (!isPlayFabConfigured()) return;
-  const roomGroupId = `X1_ROOM_${room.code}`;
+  const roomGroupId = `x1_room_${room.code.toLowerCase()}`;
   await callPlayFabSharedGroup("CreateSharedGroup", { SharedGroupId: roomGroupId });
   await callPlayFabSharedGroup("UpdateSharedGroupData", {
     SharedGroupId: roomGroupId,
@@ -733,6 +739,63 @@ export function joinX1Room(args: {
   void pushRoomToPlayFab(room);
 
   return { room, error: null };
+}
+
+/**
+ * Procura e baixa o estado atualizado de uma sala na nuvem PlayFab (por código).
+ */
+export async function fetchX1RoomFromCloud(code: string): Promise<X1Room | null> {
+  const clean = code.trim().toUpperCase();
+  if (!clean || !isPlayFabConfigured()) return null;
+
+  const store = loadStore();
+  const roomGroupId = `x1_room_${clean.toLowerCase()}`;
+
+  // 1. Consulta o SharedGroup direto da sala
+  try {
+    const remoteRoomData = (await callPlayFabSharedGroup("GetSharedGroupData", {
+      SharedGroupId: roomGroupId,
+    })) as { Data?: Record<string, { Value: string }> } | null;
+
+    if (remoteRoomData?.Data?.Room?.Value) {
+      const remoteRoom = JSON.parse(remoteRoomData.Data.Room.Value) as X1Room;
+      store.rooms[clean] = remoteRoom;
+      saveStore(store);
+      return remoteRoom;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // 2. Consulta o snapshot geral do Lobby da nuvem
+  await syncX1WithPlayFabCloud(clean);
+  const refreshed = loadStore();
+  return refreshed.rooms[clean] ?? null;
+}
+
+/**
+ * Entra na sala por código com busca assíncrona garantida na nuvem PlayFab.
+ */
+export async function joinX1RoomAsync(args: {
+  code: string;
+  guest: { playerId: string; nick: string; school: string; level: number; isBot?: boolean };
+}): Promise<{ room: X1Room | null; error: string | null }> {
+  const clean = args.code.trim().toUpperCase();
+  if (clean.length !== 4) {
+    return { room: null, error: "O código da sala deve ter exatamente 4 dígitos numéricos." };
+  }
+
+  // 1. Tenta encontrar e entrar se a sala já estiver na memória local
+  const immediate = joinX1Room(args);
+  if (immediate.room) {
+    return immediate;
+  }
+
+  // 2. Se não estiver local, busca a sala instantaneamente na nuvem PlayFab
+  await fetchX1RoomFromCloud(clean);
+
+  // 3. Tenta entrar novamente após a sincronização da nuvem
+  return joinX1Room(args);
 }
 
 /**

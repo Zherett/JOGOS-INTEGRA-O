@@ -2115,8 +2115,18 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
           ]) {
             if (!Array.isArray(srcMedals)) continue;
             for (const m of srcMedals) {
-              if (m && m.medalId && !medalMap.has(m.medalId)) {
-                medalMap.set(m.medalId, m);
+              if (m && m.medalId) {
+                const prev = medalMap.get(m.medalId);
+                if (!prev) {
+                  medalMap.set(m.medalId, { ...m, count: m.count ?? 1 });
+                } else {
+                  const maxCount = Math.max(prev.count ?? 1, m.count ?? 1);
+                  medalMap.set(m.medalId, {
+                    ...prev,
+                    count: maxCount,
+                    lastUnlockedAt: m.lastUnlockedAt || prev.lastUnlockedAt,
+                  });
+                }
               }
             }
           }
@@ -3018,7 +3028,10 @@ export async function playfabRecordMatch(args: {
       safeScore,
       ...acc.stats.filter((s) => s.game_id === args.gameId).map((s) => s.best_score),
     );
-    const medalsTotal = acc.profile.unlockedMedals?.length ?? 0;
+    const medalsTotal = (acc.profile.unlockedMedals ?? []).reduce(
+      (sum, m) => sum + (m.count ?? 1),
+      0,
+    );
     const statistics = [
       { StatisticName: "XP_Total", Value: acc.profile.xp },
       { StatisticName: "Medals_Total", Value: medalsTotal },
@@ -3219,7 +3232,10 @@ export async function fetchLeaderboard(
       playfabStatByPlayer.get(p.nick.toLowerCase()) ??
       0;
 
-    const medalsCount = p.unlockedMedals?.length ?? 0;
+    const medalsCount = (p.unlockedMedals ?? []).reduce(
+      (sum, m) => sum + (m.count ?? 1),
+      0,
+    );
     const xpValue = p.seasonXp ?? p.xp;
 
     let value = 0;
@@ -3424,13 +3440,29 @@ export async function grantPlayerMedalManually(
     return { success: false, error: "Aluno não encontrado no registro." };
   }
 
-  const unlocked = acc.profile.unlockedMedals ?? [];
-  if (unlocked.some((m) => m.medalId === medal.id)) {
-    return { success: true }; // already unlocked
+  const unlocked = [...(acc.profile.unlockedMedals ?? [])];
+  const existingIdx = unlocked.findIndex((m) => m.medalId === medal.id);
+  const nowIso = new Date().toISOString();
+
+  if (existingIdx >= 0) {
+    if (!medal.isStackable) {
+      return { success: true }; // already unlocked and not stackable
+    }
+    const currentCount = unlocked[existingIdx].count ?? 1;
+    unlocked[existingIdx] = {
+      ...unlocked[existingIdx],
+      count: currentCount + 1,
+      lastUnlockedAt: nowIso,
+    };
+  } else {
+    unlocked.push({
+      medalId: medal.id,
+      unlockedAt: nowIso,
+      count: 1,
+      lastUnlockedAt: nowIso,
+    });
   }
 
-  const nowIso = new Date().toISOString();
-  unlocked.push({ medalId: medal.id, unlockedAt: nowIso });
   acc.profile.unlockedMedals = unlocked;
   acc.updatedAt = nowIso;
 

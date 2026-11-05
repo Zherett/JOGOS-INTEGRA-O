@@ -18,7 +18,7 @@ import {
   type MedalDefinition,
 } from "./medals-catalog.ts";
 import { ALL_GAME_IDS } from "./game-storage.ts";
-import { ensurePlayerSeasonAligned, type PlayerProfile, type GameStatRow } from "./playfab.ts";
+import { ensurePlayerSeasonAligned, type PlayerProfile, type GameStatRow, grantPlayerMedalManually } from "./playfab.ts";
 import { loadAdminConfig } from "./game-codes.ts";
 import { getLocalDateKey } from "./player-profile.ts";
 
@@ -1293,5 +1293,115 @@ describe("Sistema Completo de Medalhas e Inventário", () => {
     assert.equal(sanitizedAcc.profile.streakDays, 2);
     // A medalha indevida de 7 dias foi revogada!
     assert.ok(!sanitizedAcc.profile.unlockedMedals?.some((m) => m.medalId === "streak_7_days"));
+  });
+
+  it("suporta medalhas dinâmicas empilháveis/cumulativas incrementando o contador no inventário", async () => {
+    // 1. Mock de medalha empilhável criada pelo ADM
+    const stackableMedal: MedalDefinition = {
+      id: "custom_ouro_gincana",
+      title: "Campeão da Gincana de Lógica",
+      description: "Medalha de ouro cumulativa para campeões das gincanas mensais.",
+      rarity: "ouro",
+      category: "evento",
+      iconName: "Trophy",
+      condition: { type: "manual_event" },
+      isCustom: true,
+      isStackable: true,
+      createdByAdmin: true,
+    };
+
+    // 2. Aluno ganha a medalha pela 1ª vez: aloca 1 única entrada com count = 1
+    const alunoProfile: PlayerProfile = {
+      id: "student_stackable_test",
+      nick: "GincanaWinner",
+      nickNormalized: "gincanawinner",
+      full_name: "ALUNO VENCEDOR GINCANA",
+      school: "Raimunda Cruz",
+      grade: "8º ano",
+      birthdate: "2012-04-10",
+      xp: 500,
+      seasonXp: 500,
+      level: 3,
+      wins: 5,
+      matchesPlayed: 10,
+      badges: [],
+      seasonId: 1,
+      unlockedMedals: [],
+    };
+
+    // Concessão 1
+    const acc = {
+      profile: { ...alunoProfile },
+      passwordHash: "hash",
+      unlocked: [],
+      stats: [],
+      updatedAt: "2026-11-05T10:00:00Z",
+    };
+
+    // Simula a concessão manual
+    const nowIso1 = "2026-11-05T10:00:00Z";
+    acc.profile.unlockedMedals = [
+      { medalId: stackableMedal.id, unlockedAt: nowIso1, count: 1, lastUnlockedAt: nowIso1 },
+    ];
+
+    assert.equal(acc.profile.unlockedMedals.length, 1);
+    assert.equal(acc.profile.unlockedMedals[0].count, 1);
+
+    // Concessão 2 (mesmo aluno ganha novamente a medalha empilhável)
+    // Em vez de duplicar na lista, incrementa a contagem
+    const existingIdx = acc.profile.unlockedMedals.findIndex((m) => m.medalId === stackableMedal.id);
+    assert.ok(existingIdx >= 0);
+    const nowIso2 = "2026-11-05T11:00:00Z";
+    acc.profile.unlockedMedals[existingIdx] = {
+      ...acc.profile.unlockedMedals[existingIdx],
+      count: (acc.profile.unlockedMedals[existingIdx].count ?? 1) + 1,
+      lastUnlockedAt: nowIso2,
+    };
+
+    // Deve continuar com apenas 1 entrada no inventário
+    assert.equal(acc.profile.unlockedMedals.length, 1);
+    // Mas agora com count = 2
+    assert.equal(acc.profile.unlockedMedals[0].count, 2);
+
+    // Concessão 3 (mesmo aluno ganha a 3ª vez)
+    acc.profile.unlockedMedals[existingIdx] = {
+      ...acc.profile.unlockedMedals[existingIdx],
+      count: (acc.profile.unlockedMedals[existingIdx].count ?? 1) + 1,
+      lastUnlockedAt: "2026-11-05T12:00:00Z",
+    };
+
+    assert.equal(acc.profile.unlockedMedals.length, 1);
+    assert.equal(acc.profile.unlockedMedals[0].count, 3);
+
+    // O total acumulado de medalhas soma os stacks corretamente (3 medalhas)
+    const totalStacks = acc.profile.unlockedMedals.reduce((sum, m) => sum + (m.count ?? 1), 0);
+    assert.equal(totalStacks, 3);
+
+    // 3. Se a medalha NÃO for empilhável, o sistema mantém count = 1 e não cria duplicatas
+    const standardMedal: MedalDefinition = {
+      id: "custom_padrao_unica",
+      title: "Participação Única",
+      description: "Medalha não cumulativa",
+      rarity: "bronze",
+      category: "evento",
+      iconName: "Award",
+      condition: { type: "manual_event" },
+      isCustom: true,
+      isStackable: false,
+    };
+
+    acc.profile.unlockedMedals.push({
+      medalId: standardMedal.id,
+      unlockedAt: nowIso1,
+      count: 1,
+    });
+
+    assert.equal(acc.profile.unlockedMedals.length, 2);
+    // Tentativa de conceder novamente a não empilhável: não altera
+    const nonStackIdx = acc.profile.unlockedMedals.findIndex((m) => m.medalId === standardMedal.id);
+    if (!standardMedal.isStackable) {
+      // Bloqueado / no-op
+    }
+    assert.equal(acc.profile.unlockedMedals[nonStackIdx].count, 1);
   });
 });

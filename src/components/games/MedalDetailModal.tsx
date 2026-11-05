@@ -35,6 +35,8 @@ export function MedalDetailModal({
   const isUnlocked = Boolean(unlockedInfo);
   const isSecretLocked = Boolean(medal.isSecret && !isUnlocked);
   const rarity = RARITY_INFO[medal.rarity];
+  const stackCount = unlockedInfo?.count ?? 1;
+  const showStackBadge = isUnlocked && (medal.isStackable || stackCount > 1);
 
   let formattedDate: string | null = null;
   if (unlockedInfo?.unlockedAt) {
@@ -80,9 +82,18 @@ export function MedalDetailModal({
               />
             )}
             {isUnlocked && (
-              <span className="absolute -top-1.5 -right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md">
-                <CheckCircle className="h-4 w-4" />
-              </span>
+              showStackBadge ? (
+                <span
+                  className="absolute -top-2.5 -right-2.5 flex h-8 min-w-8 px-2 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-zinc-950 font-mono text-xs font-black border-2 border-background shadow-lg"
+                  title={`${stackCount}x conquistada`}
+                >
+                  {stackCount}
+                </span>
+              ) : (
+                <span className="absolute -top-1.5 -right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md">
+                  <CheckCircle className="h-4 w-4" />
+                </span>
+              )
             )}
           </div>
 
@@ -99,6 +110,11 @@ export function MedalDetailModal({
             <span className="rounded-full bg-secondary/70 px-2.5 py-0.5 text-[11px] font-semibold text-muted-foreground">
               {isSecretLocked ? "SECRETA" : medal.category.replace("_", " ").toUpperCase()}
             </span>
+            {medal.isStackable && (
+              <span className="rounded-full bg-amber-500/15 border border-amber-500/40 px-2.5 py-0.5 text-[11px] font-black text-amber-600 dark:text-amber-400">
+                EMPILHÁVEL
+              </span>
+            )}
           </div>
 
           {/* Title */}
@@ -117,9 +133,16 @@ export function MedalDetailModal({
           <div className="mt-5 w-full rounded-2xl border bg-secondary/30 p-3.5 text-left">
             {isUnlocked ? (
               <div className="space-y-1.5">
-                <div className="flex items-center gap-2 text-xs font-extrabold text-emerald-500 dark:text-emerald-400">
-                  <Sparkles className="h-4 w-4 shrink-0" />
-                  <span>Medalha Desbloqueada e Conquistada!</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-extrabold text-emerald-500 dark:text-emerald-400">
+                    <Sparkles className="h-4 w-4 shrink-0" />
+                    <span>Medalha Desbloqueada e Conquistada!</span>
+                  </div>
+                  {showStackBadge && (
+                    <span className="rounded-full bg-amber-500/20 border border-amber-500/40 px-2 py-0.5 font-mono text-xs font-black text-amber-600 dark:text-amber-400">
+                      {stackCount}x no inventário
+                    </span>
+                  )}
                 </div>
                 {formattedDate && (
                   <p className="flex items-center gap-1.5 text-xs text-muted-foreground">

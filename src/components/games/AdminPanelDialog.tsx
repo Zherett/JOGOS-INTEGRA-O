@@ -203,6 +203,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [evNewMedalScope, setEvNewMedalScope] = useState<"todos" | GameId>("todos");
   const [evNewMedalThreshold, setEvNewMedalThreshold] = useState<number>(5);
   const [evNewMedalMinScore, setEvNewMedalMinScore] = useState<number>(30);
+  const [evNewMedalIsStackable, setEvNewMedalIsStackable] = useState<boolean>(true);
   const [evSelectedExistingMedalId, setEvSelectedExistingMedalId] = useState("");
 
   // Eventos Sub-Abas: "criacao" e "recorrentes"
@@ -276,6 +277,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [newMedalReqType, setNewMedalReqType] = useState<EventRequirementType>("event_matches");
   const [newMedalScope, setNewMedalScope] = useState<"todos" | GameId>("todos");
   const [newMedalThreshold, setNewMedalThreshold] = useState<number>(5);
+  const [newMedalIsStackable, setNewMedalIsStackable] = useState<boolean>(true);
 
   // Manual Grant Modal state
   const [grantMedalTarget, setGrantMedalTarget] = useState<MedalDefinition | null>(null);
@@ -2266,6 +2268,25 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                     })}
                                   </div>
 
+                                  <div className="flex items-center justify-between rounded-xl border bg-card p-2.5">
+                                    <div>
+                                      <Label className="text-xs font-bold flex items-center gap-1.5 cursor-pointer" htmlFor="ev-medal-stackable">
+                                        <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                                        Medalha Empilhável / Cumulativa
+                                      </Label>
+                                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                                        Alunos podem acumular esta medalha múltiplas vezes com contador no canto superior direito.
+                                      </p>
+                                    </div>
+                                    <input
+                                      id="ev-medal-stackable"
+                                      type="checkbox"
+                                      checked={evNewMedalIsStackable}
+                                      onChange={(e) => setEvNewMedalIsStackable(e.target.checked)}
+                                      className="h-4 w-4 rounded accent-primary cursor-pointer"
+                                    />
+                                  </div>
+
                                   <div className="flex justify-end gap-2">
                                     <Button
                                       type="button"
@@ -2294,6 +2315,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                             gameId: req.gameId,
                                           },
                                           isCustom: true,
+                                          isStackable: evNewMedalIsStackable,
                                           createdByAdmin: true,
                                           eventName: evTitle.trim() || "Evento Especial",
                                           eventRequirement: req,
@@ -2954,6 +2976,25 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                     })}
                                   </div>
 
+                                  <div className="flex items-center justify-between rounded-xl border bg-card p-2.5">
+                                    <div>
+                                      <Label className="text-xs font-bold flex items-center gap-1.5 cursor-pointer" htmlFor="ev-medal-stackable">
+                                        <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                                        Medalha Empilhável / Cumulativa
+                                      </Label>
+                                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                                        Alunos podem acumular esta medalha múltiplas vezes com contador no canto superior direito.
+                                      </p>
+                                    </div>
+                                    <input
+                                      id="ev-medal-stackable"
+                                      type="checkbox"
+                                      checked={evNewMedalIsStackable}
+                                      onChange={(e) => setEvNewMedalIsStackable(e.target.checked)}
+                                      className="h-4 w-4 rounded accent-primary cursor-pointer"
+                                    />
+                                  </div>
+
                                   <div className="flex justify-end gap-2">
                                     <Button
                                       type="button"
@@ -2982,6 +3023,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                             gameId: req.gameId,
                                           },
                                           isCustom: true,
+                                          isStackable: evNewMedalIsStackable,
                                           createdByAdmin: true,
                                           eventName: recTitle.trim() || "Evento Recorrente",
                                           eventRequirement: req,
@@ -4415,6 +4457,26 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                         </div>
                       </div>
 
+                      {/* Opção Medalha Empilhável / Cumulativa */}
+                      <div className="flex items-center justify-between rounded-xl border bg-card p-3 shadow-xs">
+                        <div>
+                          <Label className="text-xs font-bold flex items-center gap-1.5 cursor-pointer" htmlFor="new-medal-stackable">
+                            <Sparkles className="h-4 w-4 text-amber-500" />
+                            Medalha Empilhável / Cumulativa
+                          </Label>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            Permite ao aluno conquistar esta medalha múltiplas vezes. Ficará alocada em um único card com contador circular no canto superior direito.
+                          </p>
+                        </div>
+                        <input
+                          id="new-medal-stackable"
+                          type="checkbox"
+                          checked={newMedalIsStackable}
+                          onChange={(e) => setNewMedalIsStackable(e.target.checked)}
+                          className="h-5 w-5 rounded accent-primary cursor-pointer"
+                        />
+                      </div>
+
                       <Button
                         type="button"
                         onClick={async () => {
@@ -4451,6 +4513,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                 }
                               : { type: "manual_event" },
                             isCustom: true,
+                            isStackable: newMedalIsStackable,
                             createdByAdmin: true,
                             eventRequirement: eventReq,
                           };
@@ -4507,6 +4570,11 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                 {m.isCustom && (
                                   <span className="rounded bg-primary/20 px-1 text-[9px] font-black uppercase text-primary">
                                     ADM
+                                  </span>
+                                )}
+                                {m.isStackable && (
+                                  <span className="rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40 px-1 text-[9px] font-black uppercase">
+                                    Empilhável
                                   </span>
                                 )}
                               </div>
@@ -4583,6 +4651,32 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                         ))}
                       </select>
                     </div>
+
+                    {(() => {
+                      const st = registeredStudents.find((s) => s.id === selectedStudentForGrant) || players.find((p) => p.id === selectedStudentForGrant);
+                      const existing = st?.unlockedMedals?.find((um) => um.medalId === grantMedalTarget.id);
+                      if (existing) {
+                        const curCount = existing.count ?? 1;
+                        return (
+                          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-300">
+                            <p className="font-bold flex items-center gap-1.5">
+                              <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                              O aluno já possui esta medalha ({curCount}x conquistada).
+                            </p>
+                            <p className="text-[11px] opacity-90 mt-0.5">
+                              {grantMedalTarget.isStackable
+                                ? `Como esta medalha é empilhável, confirmar a concessão aumentará a contagem para ${curCount + 1}x no inventário.`
+                                : "Como esta medalha é de concessão única, seu contador permanecerá em 1x."}
+                            </p>
+                          </div>
+                        );
+                      }
+                      return (
+                        <p className="text-[11px] text-muted-foreground">
+                          O aluno ainda não possui esta medalha. Ela será adicionada com contador inicial 1x.
+                        </p>
+                      );
+                    })()}
 
                     <Button
                       type="button"

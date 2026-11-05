@@ -198,6 +198,8 @@ export function PlayerMedalsInventory({
                 {showcase.map((m, idx) => {
                   const rarity = RARITY_INFO[m.rarity];
                   const unlocked = unlockedMap.get(m.id);
+                  const stackCount = unlocked?.count ?? 1;
+                  const showStackBadge = Boolean(unlocked) && (m.isStackable || stackCount > 1);
                   return (
                     <div
                       key={m.id}
@@ -210,6 +212,14 @@ export function PlayerMedalsInventory({
                       <span className="absolute -top-2 left-3 rounded-full bg-primary px-2 py-0.5 text-[9px] font-black uppercase text-primary-foreground">
                         #{idx + 1} Vitrine
                       </span>
+                      {showStackBadge && (
+                        <span
+                          className="absolute -top-2.5 -right-2.5 flex h-6 min-w-6 px-1.5 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-zinc-950 font-mono text-[11px] font-black border-2 border-background shadow-lg z-10"
+                          title={`${stackCount}x medalha(s) conquistada(s)`}
+                        >
+                          {stackCount}
+                        </span>
+                      )}
                       <div className={`mb-2 mt-1 ${rarity.textColor}`}>
                         <MedalIcon name={m.iconName} className="h-8 w-8" />
                       </div>
@@ -346,6 +356,8 @@ export function PlayerMedalsInventory({
               const isUnlocked = Boolean(unlocked);
               const isSecretLocked = Boolean(m.isSecret && !isUnlocked);
               const rarity = RARITY_INFO[m.rarity];
+              const stackCount = unlocked?.count ?? 1;
+              const showStackBadge = isUnlocked && (m.isStackable || stackCount > 1);
 
               return (
                 <div
@@ -361,6 +373,16 @@ export function PlayerMedalsInventory({
                   role="button"
                   tabIndex={0}
                 >
+                  {/* Bolinha travada no canto superior direito sobre a borda da medalha */}
+                  {showStackBadge && (
+                    <span
+                      className="absolute -top-2.5 -right-2.5 flex h-6 min-w-6 px-1.5 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-zinc-950 font-mono text-[11px] font-black border-2 border-background shadow-md z-10"
+                      title={`${stackCount}x medalha(s) conquistada(s)`}
+                    >
+                      {stackCount}
+                    </span>
+                  )}
+
                   <div className="flex items-start gap-2.5">
                     <div
                       className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl border ${
@@ -393,7 +415,8 @@ export function PlayerMedalsInventory({
                         </span>
                         {isUnlocked ? (
                           <span className="flex items-center gap-1 text-[9px] font-extrabold text-emerald-500">
-                            <CheckCircle className="h-3 w-3" /> Obtida
+                            <CheckCircle className="h-3 w-3" />
+                            {showStackBadge ? `${stackCount}x Obtida` : "Obtida"}
                           </span>
                         ) : isSecretLocked ? (
                           <span className="text-[10px] font-black text-amber-500">
