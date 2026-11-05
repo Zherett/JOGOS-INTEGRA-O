@@ -1183,6 +1183,14 @@ export function getDistinctFlawlessGames(
     if (!enabledSet.has(gId)) continue;
     const row = byGame.get(gId);
     if (row && row.flawless_wins >= 1 && row.best_score >= 30) {
+      // Se a partida recém-finalizada for desse jogo e teve erros, desconsidera
+      if (lastMatch && lastMatch.gameId === gId && (lastMatch.wrong ?? 0) > 0) {
+        continue;
+      }
+      // Se a única partida registrada teve erros, não pode ser contada como sem erros
+      if (row.plays === 1 && (row.last_wrong ?? 0) > 0) {
+        continue;
+      }
       flawlessSet.add(gId);
     }
   }
@@ -1555,11 +1563,17 @@ export function evaluatePlayerMedals(
         if (cond.gameId && enabledSet.has(cond.gameId)) {
           const minScore = cond.threshold ?? 30;
           const row = statsMap.get(cond.gameId);
-          if (
-            (ctx.lastMatch &&
-              ctx.lastMatch.gameId === cond.gameId &&
-              isFlawlessMatch(ctx.lastMatch, minScore)) ||
-            (row && row.flawless_wins >= 1 && row.best_score >= minScore)
+          // Se estamos avaliando o encerramento de uma partida deste jogo:
+          // Se a partida teve qualquer erro (wrong > 0), JAMAIS concede a medalha de zero erros!
+          if (ctx.lastMatch && ctx.lastMatch.gameId === cond.gameId) {
+            if ((ctx.lastMatch.wrong ?? 0) === 0 && isFlawlessMatch(ctx.lastMatch, minScore)) {
+              earned = true;
+            }
+          } else if (
+            row &&
+            row.flawless_wins >= 1 &&
+            row.best_score >= minScore &&
+            !(row.plays === 1 && (row.last_wrong ?? 0) > 0)
           ) {
             earned = true;
           }
@@ -1587,7 +1601,12 @@ export function evaluatePlayerMedals(
         break;
 
       case "distinct_flawless_games":
-        if (flawlessGamesCount >= (cond.threshold ?? 3)) earned = true;
+        // Uma partida com erros (wrong > 0) JAMAIS pode ser o gatilho para conceder medalhas de zero erros
+        if (ctx.lastMatch && (ctx.lastMatch.wrong ?? 0) > 0) {
+          earned = false;
+        } else if (flawlessGamesCount >= (cond.threshold ?? 3)) {
+          earned = true;
+        }
         break;
 
       case "max_daily_xp":

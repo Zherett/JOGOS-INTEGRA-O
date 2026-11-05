@@ -1,8 +1,32 @@
 // Content generator for "Campo Minado Lógico" (8x8 board of hidden cards)
-import { SHAPES, ADVANCED_SHAPES, SHAPE_LABEL, type Shape } from "./shapes-content";
+import { type Shape } from "./shapes-content.ts";
 
-/** All geometric shapes that can appear on the board. */
-const BOARD_SHAPES: Shape[] = [...SHAPES, ...ADVANCED_SHAPES];
+/** Formas geométricas gerais (identificação básica sem sobreposição conceitual). */
+export const GENERAL_SHAPES: { shape: Shape; label: string }[] = [
+  { shape: "square", label: "Quadrado" },
+  { shape: "circle", label: "Círculo" },
+  { shape: "oval", label: "Oval" },
+  { shape: "triangle", label: "Triângulo" },
+  { shape: "rectH", label: "Retângulo" },
+  { shape: "diamond", label: "Losango" },
+  { shape: "pentagon", label: "Pentágono" },
+  { shape: "hexagon", label: "Hexágono" },
+  { shape: "trapezoid", label: "Trapézio" },
+];
+
+/** Classificações específicas de triângulos quanto aos lados. */
+export const TRIANGLE_CLASSIFICATIONS: { shape: Shape; label: string }[] = [
+  { shape: "triEquilateral", label: "Triângulo equilátero" },
+  { shape: "triIsosceles", label: "Triângulo isósceles" },
+  { shape: "triScalene", label: "Triângulo escaleno" },
+];
+
+export const TRIANGLE_OPTIONS = [
+  "Triângulo equilátero",
+  "Triângulo isósceles",
+  "Triângulo escaleno",
+  "Triângulo retângulo",
+] as const;
 
 export const COLS = ["A", "B", "C", "D", "E", "F", "G", "H"];
 export const ROWS = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -41,7 +65,7 @@ function shuffle<T>(a: T[]): T[] {
 }
 
 /* ---------- Verdadeiro ou Falso ---------- */
-function genTF(): QuestionCard {
+export function genTF(): QuestionCard {
   const style = ri(3);
   let prompt: string;
   let truth: boolean;
@@ -71,7 +95,7 @@ function genTF(): QuestionCard {
 }
 
 /* ---------- Conta misteriosa ---------- */
-function genMystery(): QuestionCard {
+export function genMystery(): QuestionCard {
   const style = ri(4);
   let prompt = "";
   let x = 0;
@@ -103,19 +127,34 @@ function genMystery(): QuestionCard {
 }
 
 /* ---------- Forma geométrica ---------- */
-function genShape(): QuestionCard {
-  const shape = rand(BOARD_SHAPES);
-  const others = shuffle(BOARD_SHAPES.filter((s) => s !== shape)).slice(0, 3);
+export function genShape(): QuestionCard {
+  // 30% de chance de pergunta específica de classificação de triângulos;
+  // 70% de identificação de formas geométricas gerais.
+  const isTriangleClassification = Math.random() < 0.3;
+
+  if (isTriangleClassification) {
+    const target = rand(TRIANGLE_CLASSIFICATIONS);
+    return {
+      kind: "shape",
+      prompt: "Quanto aos lados, que tipo de triângulo é este?",
+      options: shuffle([...TRIANGLE_OPTIONS]),
+      answer: target.label,
+      shape: target.shape,
+    };
+  }
+
+  const target = rand(GENERAL_SHAPES);
+  const others = shuffle(GENERAL_SHAPES.filter((s) => s.shape !== target.shape)).slice(0, 3);
   return {
     kind: "shape",
     prompt: "Qual é o nome desta forma?",
-    options: shuffle([shape, ...others]).map((s) => SHAPE_LABEL[s]),
-    answer: SHAPE_LABEL[shape],
-    shape,
+    options: shuffle([target.label, ...others.map((s) => s.label)]),
+    answer: target.label,
+    shape: target.shape,
   };
 }
 
-function genBonus(): BonusCard {
+export function genBonus(): BonusCard {
   const magnitude = 1 + ri(3);
   const positive = Math.random() < 0.6;
   return { kind: "bonus", points: positive ? magnitude : -magnitude };

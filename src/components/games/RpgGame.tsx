@@ -28,7 +28,9 @@ import {
   type RobotBossDef,
   type RobotShapeTheme,
 } from "@/lib/rpg-content";
-import { grantSpecialRobotMedal } from "@/lib/playfab";
+import { MedalIcon } from "./MedalIcon";
+import type { MedalDefinition } from "@/lib/medals-catalog";
+import { usePlayerAuth } from "@/lib/player-auth";
 
 interface Props {
   onExit: () => void;
@@ -38,9 +40,11 @@ interface Props {
 const MAX_PLAYER_LIVES = 3;
 
 export function RpgGame({ onExit, onStatsChange }: Props) {
+  const auth = usePlayerAuth();
   const [phase, setPhase] = useState<"countdown" | "playing" | "victory" | "gameover">("countdown");
   const [stage, setStage] = useState(1);
   const [boss, setBoss] = useState<RobotBossDef>(() => getRobotBoss(1, false));
+  const [unlockedSpecialMedal, setUnlockedSpecialMedal] = useState<MedalDefinition | null>(null);
 
   const [enemyHp, setEnemyHp] = useState(boss.maxHp);
   const [playerLives, setPlayerLives] = useState(MAX_PLAYER_LIVES);
@@ -137,6 +141,12 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
     let frameId = 0;
 
     const loop = (now: number) => {
+      if (unlockedSpecialMedal) {
+        lastTime = now;
+        frameId = requestAnimationFrame(loop);
+        return;
+      }
+
       const dt = Math.min(0.1, (now - lastTime) / 1000);
       lastTime = now;
 
@@ -252,13 +262,18 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
       const nextScore = Math.max(0, score + outcome.scoreDelta + comboBonus);
 
       if (outcome.enemyDefeated) {
-        // Concede medalha platina se derrotou robô especial
+        // Concede medalha platina se derrotou robô especial e dispara celebração visual
         if (currentBoss.isSpecial) {
-          if (currentBoss.specialType === "ametista") {
-            void grantSpecialRobotMedal("m_rpg_ametista");
-          } else if (currentBoss.specialType === "carmesim") {
-            void grantSpecialRobotMedal("m_rpg_carmesim");
-          }
+          const medalId = currentBoss.specialType === "carmesim" ? "m_rpg_carmesim" : "m_rpg_ametista";
+          void auth.awardSpecialRobotMedal(medalId).then((res) => {
+            if (res.success && res.medal) {
+              setUnlockedSpecialMedal(res.medal);
+              playTone(523, 0.12, "triangle");
+              window.setTimeout(() => playTone(659, 0.12, "triangle"), 120);
+              window.setTimeout(() => playTone(784, 0.16, "triangle"), 240);
+              window.setTimeout(() => playTone(1046, 0.35, "sine"), 360);
+            }
+          });
         }
 
         const stageClearScore = nextScore + currentBoss.rewardPoints;
@@ -690,6 +705,42 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
             onReplay={() => setPhase("countdown")}
             onMenu={onExit}
           />
+        </div>
+      )}
+
+      {/* Modal Celebratório de Conquista de Medalha Especial Platina */}
+      {unlockedSpecialMedal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md animate-fade-in">
+          <div className="relative w-full max-w-md rounded-3xl border-2 border-purple-400/80 bg-gradient-to-b from-slate-900 via-purple-950/40 to-slate-950 p-6 sm:p-7 text-center shadow-2xl animate-pop-in">
+            <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-3xl border-2 border-purple-400 bg-purple-500/20 text-purple-300 shadow-xl shadow-purple-500/30">
+              <MedalIcon
+                iconName={unlockedSpecialMedal.iconName}
+                rarity={unlockedSpecialMedal.rarity}
+                className="h-12 w-12 text-purple-300"
+              />
+            </div>
+
+            <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-purple-500/20 border border-purple-500/40 px-3.5 py-1 text-xs font-black uppercase tracking-wider text-purple-300">
+              <Sparkles className="h-3.5 w-3.5 text-amber-400" /> Medalha Platina Conquistada!
+            </div>
+
+            <h3 className="mt-2.5 font-display text-2xl font-black text-white">
+              {unlockedSpecialMedal.title}
+            </h3>
+            <p className="mt-1.5 text-sm text-slate-300 leading-relaxed">
+              {unlockedSpecialMedal.description}
+            </p>
+
+            <div className="mt-6">
+              <Button
+                size="lg"
+                className="w-full h-12 text-base font-bold bg-gradient-to-r from-purple-500 via-indigo-500 to-purple-600 hover:from-purple-600 hover:to-indigo-600 text-white shadow-lg shadow-purple-500/25"
+                onClick={() => setUnlockedSpecialMedal(null)}
+              >
+                Continuar Batalha ⚔️
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

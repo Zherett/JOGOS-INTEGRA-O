@@ -192,8 +192,24 @@ export function MinefieldGame({ onExit, onStatsChange, isRanked }: Props) {
     nextTeam();
   }
 
-  const allDone = board.length > 0 && revealed.size >= board.length;
-  useEffect(() => { if (allDone && !finished) setFinished(true); }, [allDone, finished]);
+  const allDone =
+    board.length > 0 &&
+    revealed.size >= board.length &&
+    !openCard &&
+    !flipping &&
+    opening.current.size === 0;
+
+  useEffect(() => {
+    if (allDone && !finished) {
+      // Se for uma carta bônus com toast visível, aguarda 2.2s para o jogador ler a pontuação.
+      // Se foi uma questão recém-respondida e fechada, aguarda 1.2s para contemplar o tabuleiro completo.
+      const delay = toast ? 2200 : 1200;
+      const timer = window.setTimeout(() => {
+        setFinished(true);
+      }, delay);
+      return () => window.clearTimeout(timer);
+    }
+  }, [allDone, finished, toast]);
 
   function replayWithCountdown() {
     setFinished(false);

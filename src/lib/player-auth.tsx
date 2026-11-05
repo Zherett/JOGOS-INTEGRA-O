@@ -28,10 +28,12 @@ import {
   pushAdminConfigToPlayFab,
   setAdminUnlockedSession,
   syncAdminConfigFromPlayFab,
+  grantSpecialRobotMedal,
   type GameStatRow,
   type PlayerProfile,
   type SignUpData,
 } from "./playfab";
+import type { MedalDefinition } from "./medals-catalog";
 
 export type { PlayerProfile, GameStatRow, SignUpData };
 
@@ -76,6 +78,9 @@ interface AuthValue {
     tournamentPoints?: number;
     tournamentRankId?: string;
   }) => Promise<void>;
+  awardSpecialRobotMedal: (
+    medalId: "m_rpg_ametista" | "m_rpg_carmesim",
+  ) => Promise<{ success: boolean; medal?: MedalDefinition; profile?: PlayerProfile }>;
   updateAdminConfig: (next: PlatformAdminConfig) => Promise<void>;
   triggerReset: (options: {
     clearXp: boolean;
@@ -264,7 +269,18 @@ export function PlayerAuthProvider({ children }: { children: ReactNode }) {
     return () => onMatchSaved(null);
   }, [profile, recordMatch]);
 
-  const updateAdminConfig = useCallback(async (next: PlatformAdminConfig) => {
+    const awardSpecialRobotMedal = useCallback(
+      async (medalId: "m_rpg_ametista" | "m_rpg_carmesim") => {
+        const res = await grantSpecialRobotMedal(medalId);
+        if (res.success && res.profile) {
+          setProfile({ ...res.profile });
+        }
+        return res;
+      },
+      [],
+    );
+
+    const updateAdminConfig = useCallback(async (next: PlatformAdminConfig) => {
     const saved = await pushAdminConfigToPlayFab(next);
     setAdminConfig(saved);
   }, []);
@@ -320,6 +336,7 @@ export function PlayerAuthProvider({ children }: { children: ReactNode }) {
       signOut,
       unlockGames,
       recordMatch,
+      awardSpecialRobotMedal,
       updateAdminConfig,
       triggerReset,
       unlockAdminWithPin,
@@ -339,6 +356,7 @@ export function PlayerAuthProvider({ children }: { children: ReactNode }) {
       signOut,
       unlockGames,
       recordMatch,
+      awardSpecialRobotMedal,
       updateAdminConfig,
       triggerReset,
       unlockAdminWithPin,

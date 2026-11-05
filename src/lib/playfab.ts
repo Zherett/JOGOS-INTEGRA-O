@@ -1098,7 +1098,12 @@ export function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdmin
           if (!cond.gameId || cfg.enabledGames[cond.gameId] === false) return false;
           const row = statsMap.get(cond.gameId);
           const minScore = cond.threshold ?? 30;
-          return Boolean(row && row.flawless_wins >= 1 && row.best_score >= minScore);
+          return Boolean(
+            row &&
+              row.flawless_wins >= 1 &&
+              row.best_score >= minScore &&
+              !(row.plays === 1 && (row.last_wrong ?? 0) > 0),
+          );
         }
 
         case "game_match_count": {
@@ -1182,6 +1187,19 @@ export function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdmin
         }
       }
       acc.profile.unlockedMedals = unlocked;
+    }
+
+    // Concessão para o jogador ZHERET que comprovadamente derrotou o Robô Ametista na Batalha de Robôs
+    if (acc.profile.nickNormalized === "zheret") {
+      const unlocked = acc.profile.unlockedMedals ?? [];
+      if (!unlocked.some((u) => u.medalId === "m_rpg_ametista")) {
+        unlocked.push({
+          medalId: "m_rpg_ametista",
+          unlockedAt: new Date().toISOString(),
+          count: 1,
+        });
+        acc.profile.unlockedMedals = unlocked;
+      }
     }
   }
 
@@ -2922,11 +2940,13 @@ export async function playfabRecordMatch(args: {
   const nowIso = new Date().toISOString();
   if (existingIdx >= 0) {
     const cur = acc.stats[existingIdx];
+    const prevFlawless =
+      cur.plays === 1 && (cur.last_wrong ?? 0) > 0 ? 0 : (cur.flawless_wins ?? 0);
     acc.stats[existingIdx] = {
       ...cur,
       plays: cur.plays + 1,
       wins: (cur.wins ?? 0) + (won ? 1 : 0),
-      flawless_wins: (cur.flawless_wins ?? 0) + (flawless ? 1 : 0),
+      flawless_wins: prevFlawless + (flawless ? 1 : 0),
       last_wrong: wrong,
       best_score: Math.max(cur.best_score, safeScore),
       best_level: Math.max(cur.best_level, safeLevel),
@@ -4009,10 +4029,17 @@ export async function grantPlayerMedalManually(
   saveAdminConfig(cfg);
 
   reg[acc.profile.nickNormalized] = acc;
+  if (acc.profile.id) reg[acc.profile.id] = acc;
   saveRegistry(reg);
 
   const session = loadStoredSession();
-  if (session?.sessionTicket && isPlayFabConfigured() && acc.profile.id === session.playerId) {
+  if (
+    session?.sessionTicket &&
+    isPlayFabConfigured() &&
+    (acc.profile.id === session.playerId ||
+      acc.profile.nickNormalized === session.playerId ||
+      (session.playfabId && acc.profile.playfabId === session.playfabId))
+  ) {
     await pushProfileToPlayFab(acc, session.sessionTicket);
   }
 
@@ -4024,15 +4051,16 @@ export async function grantPlayerMedalManually(
  */
 export async function grantSpecialRobotMedal(
   medalId: "m_rpg_ametista" | "m_rpg_carmesim",
-): Promise<boolean> {
+): Promise<{ success: boolean; medal?: MedalDefinition; profile?: PlayerProfile }> {
   const session = loadStoredSession();
-  if (!session) return false;
+  if (!session) return { success: false };
   const cfg = loadAdminConfig();
   const allMedals = getAllAvailableMedals(cfg.customMedals);
   const def = allMedals.find((m) => m.id === medalId);
-  if (!def) return false;
+  if (!def) return { success: false };
   const res = await grantPlayerMedalManually(session.playerId, def);
-  return res.success;
+  const active = getActiveAccount();
+  return { success: res.success, medal: def, profile: active?.profile };
 }
 
 /**

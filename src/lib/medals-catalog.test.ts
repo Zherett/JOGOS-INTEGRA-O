@@ -416,6 +416,66 @@ describe("Sistema Completo de Medalhas e Inventário", () => {
     assert.ok(prog.progressText.includes("0 de 3"));
   });
 
+  it("JAMAIS concede medalha de zero erros no final de uma partida com wrong > 0, mesmo com stats residuais", () => {
+    const profile: PlayerProfile = {
+      id: "p_campo_minado",
+      nick: "JogadorMinado",
+      nickNormalized: "jogadorminado",
+      full_name: "JOGADOR MINADO",
+      school: "Raimundo Bezerra",
+      grade: "6º ano",
+      birthdate: "2014-05-10",
+      xp: 1200,
+      seasonXp: 1200,
+      level: 4,
+      wins: 5,
+      matchesPlayed: 5,
+      distinctGamesPlayed: 3,
+      badges: [],
+      seasonId: 1,
+      unlockedMedals: [],
+    };
+
+    // Suponha que no passado houvesse flawless_wins = 1 no registro
+    const statsWithPastResidual: GameStatRow[] = [
+      {
+        game_id: "minado",
+        mode: "padrao",
+        plays: 2,
+        wins: 2,
+        flawless_wins: 1,
+        last_wrong: 1,
+        best_score: 360,
+        best_level: 4,
+      },
+    ];
+
+    // Partida recém finalizada com 1 erro no Campo Minado!
+    const lastMatchFinishedWith1Error = {
+      gameId: "minado" as const,
+      score: 360,
+      level: 4,
+      correct: 29,
+      wrong: 1, // Cometeu 1 erro!
+    };
+
+    assert.equal(isFlawlessMatch(lastMatchFinishedWith1Error), false);
+    const flawlessGames = getDistinctFlawlessGames(profile, statsWithPastResidual, lastMatchFinishedWith1Error);
+    assert.equal(flawlessGames.has("minado"), false, "minado NÃO pode entrar no conjunto de flawless após partida com erro");
+
+    const awarded = evaluatePlayerMedals({
+      profile,
+      stats: statsWithPastResidual,
+      lastMatch: lastMatchFinishedWith1Error,
+    });
+
+    const ids = awarded.map((m) => m.id);
+    assert.equal(ids.includes("game_minado_flawless"), false, "NÃO pode conceder game_minado_flawless se a partida teve 1 erro!");
+    assert.equal(ids.includes("flawless_3_games"), false, "NÃO pode conceder flawless_3_games");
+    assert.equal(ids.includes("flawless_5_games"), false, "NÃO pode conceder flawless_5_games");
+    assert.equal(ids.includes("flawless_8_games"), false, "NÃO pode conceder flawless_8_games");
+  });
+
   it("concede flawless_3_games somente quando 3 jogos DISTINTOS são finalizados com wrong === 0", () => {
     const profileFlawless: PlayerProfile = {
       id: "p_precisa",
@@ -1403,5 +1463,19 @@ describe("Sistema Completo de Medalhas e Inventário", () => {
       // Bloqueado / no-op
     }
     assert.equal(acc.profile.unlockedMedals[nonStackIdx].count, 1);
+  });
+
+  it("preserva e gerencia imunidade total das medalhas de robô especial Ametista e Carmesim", () => {
+    const catalog = buildBaseMedalsCatalog();
+    const ametista = catalog.find((m) => m.id === "m_rpg_ametista");
+    const carmesim = catalog.find((m) => m.id === "m_rpg_carmesim");
+
+    assert.ok(ametista, "Medalha m_rpg_ametista deve existir no catálogo base");
+    assert.equal(ametista.rarity, "platina");
+    assert.equal(ametista.title, "Destruidor do Robô Ametista");
+
+    assert.ok(carmesim, "Medalha m_rpg_carmesim deve existir no catálogo base");
+    assert.equal(carmesim.rarity, "platina");
+    assert.equal(carmesim.title, "Destruidor do Robô Carmesim");
   });
 });
