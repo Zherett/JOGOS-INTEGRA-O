@@ -65,10 +65,15 @@ export function WeeklyTournamentDialog({
   useEffect(() => {
     if (!open) return;
     void syncWeeklyTournamentWithPlayFab().then(() => setTick((t) => t + 1));
+    const handleUpdate = () => setTick((t) => t + 1);
+    window.addEventListener("desafios:weekly-tournament-updated", handleUpdate);
     const id = window.setInterval(() => {
       void syncWeeklyTournamentWithPlayFab().then(() => setTick((t) => t + 1));
     }, 5000);
-    return () => window.clearInterval(id);
+    return () => {
+      window.removeEventListener("desafios:weekly-tournament-updated", handleUpdate);
+      window.clearInterval(id);
+    };
   }, [open]);
 
   if (!profile) {
@@ -224,6 +229,22 @@ export function WeeklyTournamentDialog({
                   Vença partidas para subir de divisão, desbloquear medalhas de maestria e figurar no Top 5!
                 </p>
               </div>
+
+              {snap.myStanding && snap.myStanding.rank <= 5 && (
+                <div className="rounded-2xl border border-amber-500/40 bg-amber-500/15 p-3 text-xs flex items-center gap-2.5 text-amber-800 dark:text-amber-300 shadow-2xs">
+                  <span className="text-xl shrink-0">
+                    {snap.myStanding.rank === 1 ? "🥇" : snap.myStanding.rank === 2 ? "🥈" : snap.myStanding.rank === 3 ? "🥉" : "🏅"}
+                  </span>
+                  <div>
+                    <span className="font-display font-extrabold block">
+                      Projeção Atual: Top {snap.myStanding.rank} da {snap.playerStage.shortLabel}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      Mantenha sua posição até o encerramento no <b>domingo às 23:59</b> para consolidar e faturar a medalha definitiva!
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* PROGRESSO DO RANK DO TORNEIO (Diretamente acima do botão de jogar) */}
               <div className="rounded-2xl border bg-card/95 p-4 space-y-3 shadow-xs">

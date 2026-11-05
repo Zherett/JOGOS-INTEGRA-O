@@ -131,7 +131,7 @@ function Index() {
         score: Math.max(10, score),
         achievedAt: Date.now(),
       });
-      await recordWeeklyTournamentAttempt({
+      const attemptRes = await recordWeeklyTournamentAttempt({
         profile: auth.profile,
         score: Math.max(10, score),
         correct,
@@ -144,6 +144,8 @@ function Index() {
         level,
         correct,
         wrong,
+        tournamentPoints: attemptRes.newTournamentPoints,
+        tournamentRankId: attemptRes.currentRank.id,
       });
     }
     refreshLocal();

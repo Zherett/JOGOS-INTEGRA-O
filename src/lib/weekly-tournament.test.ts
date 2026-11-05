@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   computeTop5HoldMetrics,
   evaluateTournamentStandings,
+  finalizeWeeklyTournamentSeason,
   getTournamentRank,
   getWeekInfo,
   recordWeeklyTournamentAttempt,
@@ -19,7 +20,7 @@ import {
   X1_MIN_LEVEL,
 } from "./player-profile.ts";
 import { evaluatePlayerMedals } from "./medals-catalog.ts";
-import { accumulateTournamentMedal } from "./playfab.ts";
+import { accumulateTournamentMedal, ensurePlayerSeasonAligned } from "./playfab.ts";
 
 describe("Torneio Semanal Ranqueado (Nível 3+) e Regras da Arena X1 (Nível 5+, 07h–19h)", () => {
   it("valida os requisitos de nível e limites de XP extra diário (100 XP X1 + 100 XP Ranqueada em 10 entradas)", () => {
@@ -314,5 +315,60 @@ describe("Torneio Semanal Ranqueado (Nível 3+) e Regras da Arena X1 (Nível 5+,
     assert.equal(updated.length, 1);
     assert.equal(updated[0].count, 2);
     assert.equal(updated[0].heldMinutes, 60);
+  });
+
+  it("NÃO concede medalha permanente no meio da semana (apenas projeção temporária com prefixo projected_)", async () => {
+    const student = {
+      id: "aluno_top1_quarta",
+      nick: "AlunoQuarta",
+      full_name: "ALUNA QUARTA",
+      school: "Escola Centro",
+      birthdate: "2015-05-10",
+      level: 4,
+      xp: 400,
+      tournamentPoints: 0,
+      tournamentMedals: [],
+    };
+
+    const res = await recordWeeklyTournamentAttempt({
+      profile: student as any,
+      score: 100,
+      correct: 10,
+      wrong: 0,
+    });
+
+    // A medalha projetada gerada possui o prefixo projected_ e NÃO é gravada permanentemente no perfil durante a semana
+    assert.ok(res.awardedMedal, "Deve retornar projeção de medalha para o Top 1");
+    assert.ok(res.awardedMedal.id.startsWith("projected_"), "Medalha deve ser apenas projeção temporária durante a semana");
+  });
+
+  it("ensurePlayerSeasonAligned remove medalhas prematuras da semana corrente que ainda está em disputa", () => {
+    const { weekKey } = getWeekInfo();
+    const mockAccount: any = {
+      profile: {
+        id: "aluna_com_medalha_prematura",
+        tournamentWeekKey: weekKey,
+        tournamentMedals: [
+          {
+            id: `medal_${weekKey}_etapa_1_r1`,
+            weekKey: weekKey, // Medalha indevida emitida na semana em andamento
+            rank: 1,
+            label: "🥇 Top 1 1ª Etapa (Memória das Cores)",
+          },
+          {
+            id: "medal_2026-W40_etapa_1_r1",
+            weekKey: "2026-W40", // Medalha legítima de semana já encerrada
+            rank: 1,
+            label: "🥇 Top 1 1ª Etapa (Semana 40)",
+          },
+        ],
+      },
+      stats: [],
+    };
+
+    const aligned = ensurePlayerSeasonAligned(mockAccount, {} as any);
+    // A medalha da semana corrente deve ter sido removida!
+    assert.equal(aligned.profile.tournamentMedals?.length, 1);
+    assert.equal(aligned.profile.tournamentMedals?.[0].weekKey, "2026-W40");
   });
 });

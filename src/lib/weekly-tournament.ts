@@ -708,6 +708,39 @@ export function evaluateTournamentStandings(
 
 /* --------------------- Local & PlayFab Persistence --------------------- */
 
+/**
+ * Conclui e consolida a temporada da semana anterior ao virar o domingo (23:59 -> segunda 00:00).
+ * Avalia o ranking final oficial de cada etapa e concede as medalhas legítimas aos Top 5 vencedores.
+ */
+export async function finalizeWeeklyTournamentSeason(pastStore: WeeklyTournamentStore): Promise<void> {
+  if (!pastStore || !pastStore.records || Object.keys(pastStore.records).length === 0) return;
+  const stages: AgeStageId[] = ["etapa_1", "etapa_2", "etapa_3"];
+
+  for (const st of stages) {
+    const evaluated = evaluateTournamentStandings(pastStore.records, pastStore.updatedAt, st);
+    for (const row of evaluated.top5) {
+      if (row.rank <= 5) {
+        const medal: TournamentMedal = {
+          id: `medal_${pastStore.weekKey}_${st}_r${row.rank}`,
+          weekKey: pastStore.weekKey,
+          gameId: pastStore.gameId,
+          rank: row.rank,
+          tier: row.projectedMedal.tier,
+          label: `${row.projectedMedal.emoji} Top ${row.rank} ${row.stageLabel} (${GAME_NAMES[pastStore.gameId]})`,
+          heldMinutes: row.holdMinutes,
+          bonusXpAwarded: row.rank === 1 ? 150 : row.rank === 2 ? 100 : row.rank === 3 ? 75 : 50,
+          earnedAt: new Date(pastStore.updatedAt).toISOString(),
+        };
+        try {
+          await grantPlayerTournamentMedal(medal);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+}
+
 function loadTournamentStore(now = new Date()): WeeklyTournamentStore {
   const cfg = loadAdminConfig();
   const { weekKey, weekIndex } = getWeekInfo(now);
@@ -730,6 +763,9 @@ function loadTournamentStore(now = new Date()): WeeklyTournamentStore {
     if (!raw) return empty;
     const parsed = JSON.parse(raw) as Partial<WeeklyTournamentStore>;
     if (parsed.weekKey !== weekKey) {
+      if (parsed.weekKey && parsed.records && Object.keys(parsed.records).length > 0) {
+        void finalizeWeeklyTournamentSeason(parsed as WeeklyTournamentStore);
+      }
       return empty;
     }
     return {
@@ -755,15 +791,22 @@ function saveTournamentStore(store: WeeklyTournamentStore) {
 
 export async function syncWeeklyTournamentWithPlayFab(): Promise<void> {
   if (!isPlayFabConfigured()) return;
-  const session = loadStoredSession();
   const titleId = getPlayFabTitleId();
-  const ticket = (await getAdminPlayFabTicket()) ?? session?.sessionTicket;
-  if (!ticket || !titleId) return;
+  if (!titleId) return;
+
+  // Prioriza o ticket administrativo de serviço para ter permissão global no SharedGroupData
+  let ticket = await getAdminPlayFabTicket();
+  if (!ticket) {
+    const session = loadStoredSession();
+    ticket = session?.sessionTicket ?? null;
+  }
+  if (!ticket) return;
 
   const store = loadTournamentStore();
   const groupId = `TOURNAMENT_${store.weekKey.replace(/[^A-Z0-9_]/gi, "_")}`;
 
   try {
+    // 1. Assegura que o grupo compartilhado existe (ignora se já criado)
     await fetch(`https://${titleId}.playfabapi.com/Client/CreateSharedGroup`, {
       method: "POST",
       headers: {
@@ -773,6 +816,7 @@ export async function syncWeeklyTournamentWithPlayFab(): Promise<void> {
       body: JSON.stringify({ TitleId: titleId, SharedGroupId: groupId }),
     });
 
+    // 2. Busca os competidores remotos na nuvem PlayFab
     const getRes = await fetch(`https://${titleId}.playfabapi.com/Client/GetSharedGroupData`, {
       method: "POST",
       headers: {
@@ -785,6 +829,7 @@ export async function syncWeeklyTournamentWithPlayFab(): Promise<void> {
       data?: { Data?: Record<string, { Value: string }> };
     };
 
+    let changed = false;
     if (json.data?.Data?.Standings?.Value) {
       const remoteRecords = JSON.parse(json.data.Data.Standings.Value) as Record<
         string,
@@ -799,6 +844,7 @@ export async function syncWeeklyTournamentWithPlayFab(): Promise<void> {
           r.updatedAt > local.updatedAt
         ) {
           store.records[id] = r;
+          changed = true;
         }
       }
     }
@@ -807,6 +853,7 @@ export async function syncWeeklyTournamentWithPlayFab(): Promise<void> {
     store.records = evaluated.updatedRecords;
     saveTournamentStore(store);
 
+    // 3. Atualiza na nuvem com os dados mesclados
     await fetch(`https://${titleId}.playfabapi.com/Client/UpdateSharedGroupData`, {
       method: "POST",
       headers: {
@@ -820,6 +867,13 @@ export async function syncWeeklyTournamentWithPlayFab(): Promise<void> {
         Permission: "Public",
       }),
     });
+
+    // 4. Notifica todas as abas e componentes da tela em tempo real
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("desafios:weekly-tournament-updated", { detail: store }),
+      );
+    }
   } catch {
     /* ignore network errors */
   }
@@ -985,10 +1039,11 @@ export async function recordWeeklyTournamentAttempt(args: {
   const myRow = evaluated.allStandings.find((s) => s.playerId === args.profile.id) ?? null;
   let awardedMedal: TournamentMedal | null = null;
 
-  // Se o aluno está no Top 5 de sua Etapa, atualiza/concede a medalha semanal Top 5 de forma acumulativa
+  // Projeção do Top 5 da etapa durante a semana em andamento:
+  // A concessão e gravação oficial da medalha no perfil ocorre exclusivamente no encerramento de temporada aos domingos às 23:59.
   if (myRow && myRow.rank <= 5) {
-    const medal: TournamentMedal = {
-      id: `medal_${store.weekKey}_${pStage.id}_r${myRow.rank}`,
+    awardedMedal = {
+      id: `projected_${store.weekKey}_${pStage.id}_r${myRow.rank}`,
       weekKey: store.weekKey,
       gameId: store.gameId,
       rank: myRow.rank,
@@ -998,8 +1053,6 @@ export async function recordWeeklyTournamentAttempt(args: {
       bonusXpAwarded: 0,
       earnedAt: new Date(nowMs).toISOString(),
     };
-    await grantPlayerTournamentMedal(medal);
-    awardedMedal = medal;
   }
 
   // Atualiza pontos do torneio no perfil local

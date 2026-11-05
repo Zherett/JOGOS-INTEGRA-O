@@ -837,6 +837,20 @@ export function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdmin
     acc.profile.tournamentWeekKey = currentWeekKey;
   }
 
+  // As medalhas do Torneio Semanal são prêmios exclusivos concedidos no encerramento de ciclo (domingo às 23:59).
+  // Remove qualquer medalha indevida emitida antes do término da semana corrente:
+  if (Array.isArray(acc.profile.tournamentMedals)) {
+    acc.profile.tournamentMedals = acc.profile.tournamentMedals
+      .map((m) => {
+        if (Array.isArray(m.historyWeeks)) {
+          m.historyWeeks = m.historyWeeks.filter((w) => w !== currentWeekKey);
+          m.count = Math.max(1, m.historyWeeks.length);
+        }
+        return m;
+      })
+      .filter((m) => m.weekKey !== currentWeekKey);
+  }
+
   const isAdminAcc = isSpecialAdminAccount(acc.profile);
 
   // Filter out invalid, synthetic tournament, or disabled games from student stats
@@ -2515,6 +2529,8 @@ export async function playfabRecordMatch(args: {
   level: number;
   correct: number;
   wrong?: number;
+  tournamentPoints?: number;
+  tournamentRankId?: string;
 }): Promise<StoredAccount | null> {
   const cfg = checkAndApplyScheduledReset();
   const session = loadStoredSession();
@@ -2539,6 +2555,21 @@ export async function playfabRecordMatch(args: {
   const rawEarnedXp = xpFromMatch(safeScore, args.correct, wrong, safeLevel);
   const todayKey = getLocalDateKey();
   const currentWeekKey = getCurrentWeekKey();
+
+  // Persiste pontos e patente do torneio semanal ranqueado no perfil do PlayFab
+  if (typeof args.tournamentPoints === "number") {
+    acc.profile.tournamentPoints = Math.max(0, Math.floor(args.tournamentPoints));
+    acc.profile.bestTournamentPoints = Math.max(
+      acc.profile.bestTournamentPoints ?? 0,
+      acc.profile.tournamentPoints,
+    );
+  }
+  if (args.tournamentRankId) {
+    acc.profile.tournamentRankId = args.tournamentRankId;
+  }
+  if (mode === "torneio_semanal" || typeof args.tournamentPoints === "number") {
+    acc.profile.tournamentWeekKey = currentWeekKey;
+  }
 
   // Update consecutive daily activity streak and activeDates
   const activeDatesSet = new Set<string>(

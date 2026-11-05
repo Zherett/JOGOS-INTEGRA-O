@@ -68,10 +68,13 @@ interface AuthValue {
     gameId: GameId;
     mode?: string;
     won?: boolean;
+    isTeam?: boolean;
     score: number;
     level: number;
     correct: number;
     wrong?: number;
+    tournamentPoints?: number;
+    tournamentRankId?: string;
   }) => Promise<void>;
   updateAdminConfig: (next: PlatformAdminConfig) => Promise<void>;
   triggerReset: (options: {
@@ -210,6 +213,8 @@ export function PlayerAuthProvider({ children }: { children: ReactNode }) {
       level: number;
       correct: number;
       wrong?: number;
+      tournamentPoints?: number;
+      tournamentRankId?: string;
     }) => {
       const updated = await playfabRecordMatch(args);
       if (updated) {
