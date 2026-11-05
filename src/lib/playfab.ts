@@ -2765,8 +2765,11 @@ export async function playfabRecordMatch(args: {
   } else {
     // Normal match XP: default capped at 20 XP per match (can be raised by special event matchXpCap)
     const bonuses = getActiveEventBonuses(args.gameId, cfg.dailyXpCap, 20);
+    const effectiveMatchCap = bonuses.matchXpCap > 20
+      ? bonuses.matchXpCap
+      : Math.round(20 * bonuses.multiplier);
     const multipliedRawXp = Math.round(rawEarnedXp * bonuses.multiplier);
-    let cappedMatchXp = Math.min(multipliedRawXp, bonuses.matchXpCap);
+    let cappedMatchXp = Math.min(multipliedRawXp, effectiveMatchCap);
 
     // Quando em equipes (disputas em grupo), o XP ganho é reduzido em 4X (ex: 20 XP vira 5 XP)
     const isTeamMode = Boolean(args.isTeam || mode === "equipes");

@@ -313,6 +313,8 @@ export function ColorMemoryGame({ onExit, onStatsChange, isRanked }: Props) {
       <div className="space-y-4">
         <GameTopBar title="Memória das Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
         <ResultPanel
+          gameId="memoria"
+          isTeam={team.activeSession}
           score={score} correct={correct} wrong={wrong} level={level}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />

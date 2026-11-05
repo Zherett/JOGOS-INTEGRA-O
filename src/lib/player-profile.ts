@@ -1,5 +1,12 @@
 // Player profile helpers: schools, age, XP, levels (1..10), mission gates, daily XP cap, titles and badges.
 
+import { type GameId } from "./game-storage.ts";
+import {
+  getActiveEventBonuses,
+  type SpecialEvent,
+  type RecurringEvent,
+} from "./custom-events.ts";
+
 export const SCHOOLS = [
   { name: "Nenhuma", slug: "nenhuma", range: "", needsGrade: false },
   { name: "Raimundo Bezerra", slug: "raimundo_bezerra", range: "6º ao 9º", needsGrade: true },
@@ -1411,4 +1418,160 @@ export function computeBadges(args: {
   if (level >= 10) grant("nivel_10", "🌟 Lenda da Lógica (Nível 10)");
 
   return Array.from(map.values());
+}
+
+export interface MatchXpBreakdown {
+  finalXp: number;
+  baseXp: number;
+  multiplier: number;
+  isTeam: boolean;
+  atDailyCap: boolean;
+  formulaText?: string;
+  displayLabel: string;
+}
+
+/**
+ * Calcula o XP obtido em uma partida e a fórmula explicativa entre parênteses
+ * quando há bônus de evento (ex: 2x) ou redução de modo (equipes).
+ */
+export function computeMatchDisplayXp(args: {
+  score: number;
+  correct: number;
+  wrong?: number;
+  level?: number;
+  gameId?: GameId;
+  mode?: string;
+  isTeam?: boolean;
+  won?: boolean;
+  currentDailyXp?: number;
+  dailyXpCap?: number;
+  dailyXpDate?: string;
+  now?: Date;
+  activeEvents?: SpecialEvent[];
+  recurringEvents?: RecurringEvent[];
+}): MatchXpBreakdown {
+  const safeScore = Math.max(0, args.score);
+  const safeCorrect = Math.max(0, args.correct);
+  const safeWrong = Math.max(0, args.wrong ?? 0);
+  const safeLevel = Math.max(1, args.level ?? 1);
+  const mode = args.mode ?? "padrao";
+  const isTeam = Boolean(args.isTeam || mode === "equipes");
+  const won = typeof args.won === "boolean" ? args.won : isMatchVictory(safeScore, safeCorrect, safeWrong);
+  const now = args.now ?? new Date();
+
+  // Caso especial: Arena X1 Online
+  if (mode === "x1_online") {
+    const rawXp = won ? 25 : 10;
+    const atCap = (args.currentDailyXp ?? 0) >= (args.dailyXpCap ?? 100);
+    if (atCap) {
+      return {
+        finalXp: 0,
+        baseXp: rawXp,
+        multiplier: 1,
+        isTeam: false,
+        atDailyCap: true,
+        formulaText: "(Limite diário)",
+        displayLabel: "0 XP (Limite diário)",
+      };
+    }
+    return {
+      finalXp: rawXp,
+      baseXp: rawXp,
+      multiplier: 1,
+      isTeam: false,
+      atDailyCap: false,
+      displayLabel: `${rawXp} XP`,
+    };
+  }
+
+  // Caso especial: Torneio Semanal Ranqueado
+  if (mode === "torneio_semanal") {
+    const rawXp = 10;
+    const atCap = (args.currentDailyXp ?? 0) >= (args.dailyXpCap ?? 100);
+    if (atCap) {
+      return {
+        finalXp: 0,
+        baseXp: rawXp,
+        multiplier: 1,
+        isTeam: false,
+        atDailyCap: true,
+        formulaText: "(Limite diário)",
+        displayLabel: "0 XP (Limite diário)",
+      };
+    }
+    return {
+      finalXp: rawXp,
+      baseXp: rawXp,
+      multiplier: 1,
+      isTeam: false,
+      atDailyCap: false,
+      displayLabel: `${rawXp} XP`,
+    };
+  }
+
+  // Partida padrão dos jogos
+  const rawEarnedXp = xpFromMatch(safeScore, safeCorrect, safeWrong, safeLevel);
+  // Base padrão limitada em 20 XP por partida
+  const baseXp = Math.min(rawEarnedXp, 20);
+
+  // Multiplicadores e bônus de eventos ativos
+  const bonuses = getActiveEventBonuses(
+    args.gameId ?? ("todos" as GameId),
+    args.dailyXpCap ?? 1000,
+    20,
+    args.activeEvents,
+    now,
+    args.recurringEvents,
+  );
+
+  const multiplier = bonuses.multiplier;
+  let calculatedXp = Math.round(baseXp * multiplier);
+
+  // Redução 4x em equipes
+  if (isTeam) {
+    calculatedXp = adjustXpForGameMode(calculatedXp, true);
+  }
+
+  // Checa limite diário
+  const todayKey = getLocalDateKey(now);
+  const isToday = args.dailyXpDate === todayKey;
+  const currentDaily = isToday ? (args.currentDailyXp ?? 0) : 0;
+  const dailyCap = bonuses.dailyXpCap;
+  const remainingDaily = Math.max(0, dailyCap - currentDaily);
+
+  if (isToday && currentDaily >= dailyCap) {
+    return {
+      finalXp: 0,
+      baseXp,
+      multiplier,
+      isTeam,
+      atDailyCap: true,
+      formulaText: "(Limite diário)",
+      displayLabel: "0 XP (Limite diário)",
+    };
+  }
+
+  const finalXp = remainingDaily > 0 ? Math.min(calculatedXp, remainingDaily) : calculatedXp;
+
+  // Monta a fórmula da operação se houver bônus ou redução
+  let formulaText: string | undefined;
+  if (multiplier > 1 && isTeam) {
+    formulaText = `(${baseXp} x ${multiplier} ÷ 4)`;
+  } else if (multiplier > 1) {
+    formulaText = `(${baseXp} x ${multiplier})`;
+  } else if (isTeam) {
+    formulaText = `(${baseXp} ÷ 4)`;
+  }
+
+  const displayLabel = formulaText ? `${finalXp} XP ${formulaText}` : `${finalXp} XP`;
+
+  return {
+    finalXp,
+    baseXp,
+    multiplier,
+    isTeam,
+    atDailyCap: false,
+    formulaText,
+    displayLabel,
+  };
 }

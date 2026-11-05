@@ -260,6 +260,8 @@ export function LogicGame({ onExit, onStatsChange, isRanked }: Props) {
       <div className="space-y-4">
         <GameTopBar title="Lógica Matemática" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
         <ResultPanel
+          gameId="logica"
+          isTeam={team.activeSession}
           score={score} correct={correct} wrong={wrong} level={level}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />

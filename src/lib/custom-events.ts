@@ -130,6 +130,7 @@ export function getActiveEventBonuses(
   baseMatchCap = 20,
   activeEvents = getActiveSpecialEvents(),
   now = new Date(),
+  recurringEvents = getActiveRecurringEvents(undefined, now),
 ): ActiveEventBonuses {
   let extraMultiplier = 0;
   let extraMatch = 0;
@@ -138,7 +139,7 @@ export function getActiveEventBonuses(
 
   const allActive = [
     ...activeEvents.filter((e) => isEventActive(e, now)),
-    ...getActiveRecurringEvents(undefined, now),
+    ...recurringEvents.filter((e) => isRecurringEventActive(e, now)),
   ];
 
   for (const ev of allActive) {

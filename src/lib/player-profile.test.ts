@@ -6,6 +6,7 @@ import {
   applyDailyXpCap,
   calculatePlayerLevel,
   computeBadges,
+  computeMatchDisplayXp,
   DEFAULT_DAILY_XP_CAP,
   evaluateLeaderboardRankChanges,
   formatFullNameUpper,
@@ -685,5 +686,92 @@ describe("Perfil do Jogador, Escolas, Trava de Níveis (1..10) e Limite Diário 
       updatedAt: "2026-11-05T10:00:00Z",
     };
     assert.equal(isSpecialAdminAccount(adminAcc.profile), true, "Conta ADM protegida identificada");
+  });
+
+  it("calcula o XP da partida e formata a fórmula entre parênteses quando há bônus ou redução", () => {
+    // 1. Partida normal sem bônus (1x)
+    const normal = computeMatchDisplayXp({
+      score: 360,
+      correct: 29,
+      wrong: 0,
+      level: 6,
+      now: new Date("2026-11-04T12:00:00Z"), // quarta-feira sem evento
+    });
+    assert.equal(normal.baseXp, 20);
+    assert.equal(normal.finalXp, 20);
+    assert.equal(normal.formulaText, undefined);
+    assert.equal(normal.displayLabel, "20 XP");
+
+    // 2. Partida em modo equipes (redução 4x)
+    const teamMatch = computeMatchDisplayXp({
+      score: 360,
+      correct: 29,
+      wrong: 0,
+      level: 6,
+      isTeam: true,
+      now: new Date("2026-11-04T12:00:00Z"),
+    });
+    assert.equal(teamMatch.baseXp, 20);
+    assert.equal(teamMatch.finalXp, 5); // 20 / 4 = 5
+    assert.equal(teamMatch.formulaText, "(20 ÷ 4)");
+    assert.equal(teamMatch.displayLabel, "5 XP (20 ÷ 4)");
+
+    // 3. Partida com evento 2x XP ativo
+    const event2x = {
+      id: "ev_double",
+      title: "Fim de Semana Turbinado 2x",
+      description: "",
+      scope: "todos" as const,
+      bonusType: "dobro_xp" as const,
+      xpMultiplier: 2,
+      startsAt: "2026-10-31T00:00:00Z",
+      endsAt: "2026-11-01T23:59:59Z",
+      active: true,
+      createdAt: "2026-10-31T00:00:00Z",
+    };
+
+    const weekendMatch = computeMatchDisplayXp({
+      score: 360,
+      correct: 29,
+      wrong: 0,
+      level: 6,
+      activeEvents: [event2x],
+      now: new Date("2026-10-31T12:00:00Z"),
+    });
+    assert.equal(weekendMatch.baseXp, 20);
+    assert.equal(weekendMatch.multiplier, 2);
+    assert.equal(weekendMatch.finalXp, 40); // 20 * 2 = 40
+    assert.equal(weekendMatch.formulaText, "(20 x 2)");
+    assert.equal(weekendMatch.displayLabel, "40 XP (20 x 2)");
+
+    // 4. Partida com evento 2x XP + Modo equipes (40 ÷ 4 = 10)
+    const weekendTeam = computeMatchDisplayXp({
+      score: 360,
+      correct: 29,
+      wrong: 0,
+      level: 6,
+      isTeam: true,
+      activeEvents: [event2x],
+      now: new Date("2026-10-31T12:00:00Z"),
+    });
+    assert.equal(weekendTeam.finalXp, 10);
+    assert.equal(weekendTeam.formulaText, "(20 x 2 ÷ 4)");
+    assert.equal(weekendTeam.displayLabel, "10 XP (20 x 2 ÷ 4)");
+
+    // 5. Partida quando o limite diário de XP já foi alcançado
+    const atDailyCap = computeMatchDisplayXp({
+      score: 360,
+      correct: 29,
+      wrong: 0,
+      level: 6,
+      currentDailyXp: 1000,
+      dailyXpCap: 1000,
+      dailyXpDate: "2026-11-05",
+      now: new Date("2026-11-05T12:00:00"),
+    });
+    assert.equal(atDailyCap.finalXp, 0);
+    assert.equal(atDailyCap.atDailyCap, true);
+    assert.equal(atDailyCap.formulaText, "(Limite diário)");
+    assert.equal(atDailyCap.displayLabel, "0 XP (Limite diário)");
   });
 });

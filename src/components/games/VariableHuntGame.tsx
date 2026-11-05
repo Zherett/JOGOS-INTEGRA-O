@@ -283,6 +283,8 @@ export function VariableHuntGame({ onExit, onStatsChange, isRanked }: Props) {
       <div className="space-y-4">
         <GameTopBar title="Caça às Variáveis" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
         <ResultPanel
+          gameId="variaveis"
+          isTeam={team.activeSession}
           score={score} correct={correct} wrong={wrong} level={level}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup}
         />

@@ -682,6 +682,7 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
             </p>
           </div>
           <ResultPanel
+            gameId="rpg"
             score={score}
             correct={correctCount}
             wrong={wrongCount}

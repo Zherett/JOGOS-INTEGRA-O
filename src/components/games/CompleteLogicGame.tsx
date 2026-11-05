@@ -222,7 +222,10 @@ export function CompleteLogicGame({ onExit, onStatsChange, isRanked }: Props) {
     return (
       <div className="space-y-4">
         <GameTopBar title={TITLE} onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
-        <ResultPanel score={score} correct={correct} wrong={wrong} level={level}
+        <ResultPanel
+          gameId="completar"
+          isTeam={team.activeSession}
+          score={score} correct={correct} wrong={wrong} level={level}
           onReplay={replayWithCountdown} onMenu={onExit} onChangeSettings={backToSetup} />
         <TeamResults session={team} />
       </div>
