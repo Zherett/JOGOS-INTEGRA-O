@@ -16,10 +16,19 @@ import {
   Clock,
   Sparkles,
   Gamepad2,
+  Trash2,
+  AlertTriangle,
+  RotateCcw,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   getPlayerPublicProfile,
+  moveStudentToTrash,
+  restoreStudentFromTrash,
+  permanentlyDeleteStudent,
   playfabCompleteInitialSchoolSetup,
   syncStudentRosterFromPlayFab,
   updateStudentProfileByAdmin,
@@ -77,11 +86,22 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
   const [selfTurma, setSelfTurma] = useState<string>("");
   const [savingSelf, setSavingSelf] = useState(false);
 
+  // Estados para o fluxo de exclusão pelo Administrador (Lixeira de 7 dias)
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
+  const [confirmNickInput, setConfirmNickInput] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteFeedback, setDeleteFeedback] = useState<string | null>(null);
+
   useEffect(() => {
     if (open && playerId) {
       const found = getPlayerPublicProfile(playerId);
       setProfile(found);
       setIsEditing(false);
+      setIsDeleteModalOpen(false);
+      setDeleteStep(1);
+      setConfirmNickInput("");
+      setDeleteFeedback(null);
       if (found) {
         setSelfSchool(found.school || "Nenhuma");
         setSelfGrade(found.grade || RAIMUNDO_GRADES[0]);
@@ -760,8 +780,229 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
             stats={profile.stats ?? []}
             isOwner={isMe}
           />
+
+          {/* Zona de Exclusão / Mover para Lixeira pelo Administrador */}
+          {auth.isAdmin && !profile.isAdmin && (
+            <div className="mt-4 rounded-2xl border border-destructive/30 bg-destructive/5 p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2 font-display text-xs font-black text-destructive uppercase tracking-wider">
+                    <Trash2 className="h-4 w-4" /> Zona de Gestão de Perfil: Exclusão
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Ao mover para a lixeira, o perfil some de rankings, recordes e modos de jogo. Fica retido na Lixeira do ADM por 7 dias.
+                  </p>
+                </div>
+
+                {profile.deletedAt ? (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        const res = await restoreStudentFromTrash(profile.id);
+                        if (res.success) {
+                          onStudentUpdated?.();
+                          onOpenChange(false);
+                        }
+                      }}
+                      className="rounded-xl border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 font-bold text-xs"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                      Recuperar da Lixeira
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      onClick={async () => {
+                        if (
+                          confirm(
+                            `Excluir permanentemente agora o perfil de "${profile.nick}"? Esta ação não pode ser desfeita!`,
+                          )
+                        ) {
+                          const res = await permanentlyDeleteStudent(profile.id);
+                          if (res.success) {
+                            onStudentUpdated?.();
+                            onOpenChange(false);
+                          }
+                        }
+                      }}
+                      className="rounded-xl font-bold text-xs"
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1" />
+                      Excluir Definitivamente
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => {
+                      setIsDeleteModalOpen(true);
+                      setDeleteStep(1);
+                      setConfirmNickInput("");
+                      setDeleteFeedback(null);
+                    }}
+                    className="rounded-xl font-bold text-xs shadow-xs"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                    Excluir Aluno (Lixeira)
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </DialogContent>
+
+      {/* Modal de Confirmação em 2 Etapas para Excluir Aluno */}
+      <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
+        <DialogContent className="max-w-md rounded-3xl border bg-card p-6 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-black text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              {deleteStep === 1
+                ? "Deseja realmente excluir este perfil?"
+                : "Confirmação Obrigatória de Exclusão"}
+            </DialogTitle>
+          </DialogHeader>
+
+          {deleteStep === 1 && (
+            <div className="space-y-4 pt-2">
+              <p className="text-sm text-foreground">
+                Você solicitou a exclusão do perfil do aluno:
+              </p>
+              <div className="rounded-2xl border bg-secondary/30 p-3.5 text-center space-y-1">
+                <span className="font-display text-base font-black text-foreground block">
+                  {profile.nick}
+                </span>
+                <span className="text-xs text-muted-foreground block">
+                  {profile.full_name} • {profile.school} • Nv. {profile.level}
+                </span>
+              </div>
+
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300 space-y-1">
+                <p className="font-bold flex items-center gap-1.5">
+                  <Clock className="h-4 w-4" /> Retenção de 7 dias na Lixeira do ADM
+                </p>
+                <p className="text-[11px] opacity-90">
+                  O aluno será enviado para a <b>Lixeira</b> e sumirá de todos os rankings, recordes e modos de jogo. Durante 7 dias, apenas você (ADM) poderá visualizá-lo ou recuperá-lo. Após 7 dias, a exclusão será permanente.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsDeleteModalOpen(false)}
+                  className="rounded-xl font-bold text-xs"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => setDeleteStep(2)}
+                  className="rounded-xl font-bold text-xs"
+                >
+                  Sim, Desejo Excluir
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {deleteStep === 2 && (
+            <div className="space-y-4 pt-2">
+              <p className="text-xs text-muted-foreground">
+                Para confirmar a exclusão e evitar cliques acidentais, digite o nome de usuário (apelido) exatamente como exibido acima da caixa:
+              </p>
+
+              <div className="rounded-2xl border-2 border-destructive/40 bg-destructive/10 p-3.5 text-center space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground block">
+                  Nome do Usuário:
+                </span>
+                <span className="font-mono text-lg font-black text-destructive tracking-wider select-all block">
+                  {profile.nick}
+                </span>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold">Digite o nome do usuário para confirmar:</Label>
+                <Input
+                  value={confirmNickInput}
+                  onChange={(e) => setConfirmNickInput(e.target.value)}
+                  placeholder={`Digite "${profile.nick}" aqui...`}
+                  className="rounded-xl text-center font-mono font-bold text-sm h-10 border-destructive/50 focus-visible:ring-destructive"
+                  autoFocus
+                />
+              </div>
+
+              {deleteFeedback && (
+                <div className="rounded-xl bg-destructive/15 p-2.5 text-center text-xs font-bold text-destructive">
+                  {deleteFeedback}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setDeleteStep(1)}
+                  disabled={isDeleting}
+                  className="rounded-xl text-xs font-bold"
+                >
+                  ← Voltar
+                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsDeleteModalOpen(false)}
+                    disabled={isDeleting}
+                    className="rounded-xl text-xs font-bold"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={confirmNickInput.trim() !== profile.nick.trim() || isDeleting}
+                    onClick={async () => {
+                      setIsDeleting(true);
+                      setDeleteFeedback(null);
+                      const res = await moveStudentToTrash(profile.id);
+                      setIsDeleting(false);
+                      if (res.success) {
+                        setIsDeleteModalOpen(false);
+                        onStudentUpdated?.();
+                        onOpenChange(false);
+                      } else {
+                        setDeleteFeedback(res.error || "Erro ao mover para a lixeira.");
+                      }
+                    }}
+                    className="rounded-xl font-bold text-xs"
+                  >
+                    {isDeleting ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        Excluindo...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                        Confirmar e Mover para Lixeira
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

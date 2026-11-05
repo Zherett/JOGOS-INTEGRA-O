@@ -32,7 +32,12 @@ import {
   xpForLevel,
   xpFromMatch,
 } from "./player-profile.ts";
-import { isSpecialAdminAccount } from "./playfab.ts";
+import {
+  isSpecialAdminAccount,
+  purgeExpiredTrash,
+  STUDENT_TRASH_RETENTION_MS,
+  type StoredAccount,
+} from "./playfab.ts";
 
 describe("Perfil do Jogador, Escolas, Trava de Níveis (1..10) e Limite Diário de XP", () => {
   it("possui as opções de instituição com Nenhuma (padrão) no início, as 6 escolas oficiais da SEMED Coari (incluindo Raimundo Bezerra e Agenor Smith) e Outro por último", () => {
@@ -554,5 +559,131 @@ describe("Perfil do Jogador, Escolas, Trava de Níveis (1..10) e Limite Diário 
     assert.equal(nextGamesItem.current, 0);
     assert.equal(nextGamesItem.required, 4);
     assert.equal(nextGamesItem.met, false);
+  });
+
+  it("gerencia o ciclo de vida da Lixeira de Alunos por 7 dias com auto-expiração e restauração", () => {
+    // 1. Criação de mock de contas no registro
+    const mockRegistry: Record<string, StoredAccount> = {
+      aluno_ativo: {
+        profile: {
+          id: "p_aluno_ativo",
+          nick: "AlunoAtivo",
+          nickNormalized: "alunoativo",
+          full_name: "ALUNO ATIVO DA SILVA",
+          school: "Raimunda Cruz",
+          birthdate: "2013-04-10",
+          xp: 300,
+          level: 2,
+          wins: 3,
+          matchesPlayed: 5,
+          badges: [],
+          seasonId: 1,
+        },
+        passwordHash: "hash1",
+        unlocked: [],
+        stats: [],
+        updatedAt: "2026-11-05T10:00:00Z",
+      },
+      aluno_lixeira_recente: {
+        profile: {
+          id: "p_aluno_lixeira",
+          nick: "AlunoExcluido",
+          nickNormalized: "alunoexcluido",
+          full_name: "ALUNO EM LIXEIRA",
+          school: "Raimundo Bezerra",
+          birthdate: "2012-08-15",
+          xp: 150,
+          level: 1,
+          wins: 1,
+          matchesPlayed: 2,
+          badges: [],
+          seasonId: 1,
+          // Excluído há 2 dias
+          deletedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+          deleteScheduledPermanentAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        passwordHash: "hash2",
+        unlocked: [],
+        stats: [],
+        updatedAt: "2026-11-03T10:00:00Z",
+      },
+      aluno_lixeira_expirado: {
+        profile: {
+          id: "p_aluno_expirado",
+          nick: "AlunoExpirado",
+          nickNormalized: "alunoexpirado",
+          full_name: "ALUNO EXPIRADO NA LIXEIRA",
+          school: "Agenor Smith",
+          birthdate: "2011-01-20",
+          xp: 50,
+          level: 1,
+          wins: 0,
+          matchesPlayed: 1,
+          badges: [],
+          seasonId: 1,
+          // Excluído há mais de 7 dias (ex: 8 dias)
+          deletedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+          deleteScheduledPermanentAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        passwordHash: "hash3",
+        unlocked: [],
+        stats: [],
+        updatedAt: "2026-10-28T10:00:00Z",
+      },
+    };
+
+    // 2. purgeExpiredTrash remove alunos excluídos há mais de 7 dias e mantém os recentes
+    const changed = purgeExpiredTrash(mockRegistry);
+    assert.equal(changed, true, "Deve expurgar contas com mais de 7 dias na lixeira");
+    assert.ok(mockRegistry["aluno_ativo"], "Aluno ativo não é afetado");
+    assert.ok(mockRegistry["aluno_lixeira_recente"], "Aluno na lixeira há 2 dias permanece retido");
+    assert.equal(mockRegistry["aluno_lixeira_expirado"], undefined, "Aluno com 8 dias na lixeira foi apagado definitivamente");
+
+    // 3. Verificação de ocultação: Alunos na lixeira são excluídos de listas ativas
+    const activeProfiles = Object.values(mockRegistry)
+      .map((a) => a.profile)
+      .filter((p) => !p.deletedAt);
+    assert.equal(activeProfiles.length, 1);
+    assert.equal(activeProfiles[0].nick, "AlunoAtivo");
+
+    // 4. Lixeira do ADM: apenas perfis com deletedAt
+    const trashProfiles = Object.values(mockRegistry)
+      .map((a) => a.profile)
+      .filter((p) => Boolean(p.deletedAt));
+    assert.equal(trashProfiles.length, 1);
+    assert.equal(trashProfiles[0].nick, "AlunoExcluido");
+
+    // 5. Restauração da lixeira: removendo deletedAt devolve o aluno às listas ativas
+    delete mockRegistry["aluno_lixeira_recente"].profile.deletedAt;
+    delete mockRegistry["aluno_lixeira_recente"].profile.deleteScheduledPermanentAt;
+
+    const restoredActive = Object.values(mockRegistry)
+      .map((a) => a.profile)
+      .filter((p) => !p.deletedAt);
+    assert.equal(restoredActive.length, 2, "Agora ambos os alunos voltam a ser visíveis");
+
+    // 6. Proteção de contas administrativas: nunca podem ser deletadas
+    const adminAcc: StoredAccount = {
+      profile: {
+        id: "josiney",
+        nick: "JOSINEY",
+        nickNormalized: "josiney",
+        full_name: "JOSINEY - ADMINISTRAÇÃO SEMED",
+        school: "SEMED",
+        birthdate: "1990-01-01",
+        xp: 0,
+        level: 1,
+        wins: 0,
+        matchesPlayed: 0,
+        badges: [],
+        seasonId: 1,
+        isAdmin: true,
+      },
+      passwordHash: "adm",
+      unlocked: [],
+      stats: [],
+      updatedAt: "2026-11-05T10:00:00Z",
+    };
+    assert.equal(isSpecialAdminAccount(adminAcc.profile), true, "Conta ADM protegida identificada");
   });
 });

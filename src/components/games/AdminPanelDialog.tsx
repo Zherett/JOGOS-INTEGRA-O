@@ -59,6 +59,11 @@ import {
 } from "@/lib/player-profile";
 import {
   getAllRegisteredPlayers,
+  getTrashPlayers,
+  moveStudentToTrash,
+  restoreStudentFromTrash,
+  permanentlyDeleteStudent,
+  emptyStudentTrash,
   getLastAdminCloudSyncError,
   getPlayFabTitleId,
   grantPlayerMedalManually,
@@ -133,7 +138,7 @@ interface Props {
   onConfigSaved?: () => void;
 }
 
-type AdminTab = "jogos" | "arena_x1" | "torneio" | "eventos" | "avisos" | "medalhas" | "turmas" | "resets" | "sistema";
+type AdminTab = "jogos" | "arena_x1" | "torneio" | "eventos" | "avisos" | "medalhas" | "turmas" | "resets" | "sistema" | "lixeira";
 
 function randomGameCode(prefix: string): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -247,7 +252,13 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [selectedAdminSchool, setSelectedAdminSchool] = useState<string>("TODAS");
   const [selectedAdminTurma, setSelectedAdminTurma] = useState<TurmaCode | "TODAS">("TODAS");
   const [registeredStudents, setRegisteredStudents] = useState<PlayerProfile[]>([]);
+  const [trashPlayers, setTrashPlayers] = useState<PlayerProfile[]>([]);
   const [turmaRequests, setTurmaRequests] = useState<TurmaChangeRequest[]>([]);
+
+  const refreshRoster = () => {
+    setRegisteredStudents(getAllRegisteredPlayers());
+    setTrashPlayers(getTrashPlayers());
+  };
 
   // Reset schedule states
   const [scheduleInput, setScheduleInput] = useState("");
@@ -352,13 +363,13 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     setRecurringEvents(loadRecurringEvents());
     setX1History(loadX1MatchHistory());
     setTurmaRequests(loadTurmaRequests());
-    setRegisteredStudents(getAllRegisteredPlayers());
+    refreshRoster();
 
     // Automatically sync cloud student roster and presence from PlayFab when opening ADM
     setSyncingRoster(true);
     void syncPresenceFromPlayFab(true);
     void syncStudentRosterFromPlayFab()
-      .then((players) => setRegisteredStudents(players))
+      .then(() => refreshRoster())
       .finally(() => setSyncingRoster(false));
 
     const onPresenceChange = () => {
@@ -938,6 +949,25 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                   }`}
                 >
                   <Cloud className="h-4 w-4" /> PlayFab
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTab("lixeira");
+                    refreshRoster();
+                  }}
+                  className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition-colors ${
+                    tab === "lixeira"
+                      ? "bg-card text-destructive shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Trash2 className="h-4 w-4 text-destructive" /> Lixeira
+                  {trashPlayers.length > 0 && (
+                    <span className="rounded-full bg-destructive text-destructive-foreground px-1.5 py-0.2 text-[10px] font-black">
+                      {trashPlayers.length}
+                    </span>
+                  )}
                 </button>
               </div>
             </div>
@@ -4858,6 +4888,151 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                 </div>
               </div>
             )}
+
+            {/* TAB LIXEIRA: GERENCIAMENTO DE PERFIS EXCLUÍDOS / RETENÇÃO DE 7 DIAS */}
+            {tab === "lixeira" && (
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 font-display text-base font-extrabold text-destructive">
+                        <Trash2 className="h-5 w-5" /> Lixeira de Perfis de Alunos ({trashPlayers.length})
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-relaxed max-w-xl">
+                        Os perfis nesta lixeira estão <b>invisíveis</b> em todos os rankings, recordes e modos de jogo. Eles serão <b>excluídos definitivamente de forma automática após 7 dias</b> da data de exclusão. Você pode recuperá-los ou excluí-los permanentemente a qualquer momento.
+                      </p>
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      disabled={trashPlayers.length === 0}
+                      onClick={async () => {
+                        if (
+                          confirm(
+                            `Tem certeza de que deseja esvaziar a lixeira e apagar DEFINITIVAMENTE todos os ${trashPlayers.length} aluno(s)? Esta ação é irreversível!`,
+                          )
+                        ) {
+                          const res = await emptyStudentTrash();
+                          flashSaved(
+                            `Lixeira esvaziada: ${res.count} perfil(is) excluído(s) permanentemente.`,
+                          );
+                          refreshRoster();
+                        }
+                      }}
+                      className="rounded-xl font-bold text-xs"
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1" />
+                      Esvaziar Lixeira
+                    </Button>
+                  </div>
+                </div>
+
+                {trashPlayers.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed p-8 text-center space-y-2">
+                    <Trash2 className="mx-auto h-8 w-8 text-muted-foreground/40" />
+                    <p className="font-bold text-sm text-foreground">A lixeira está vazia</p>
+                    <p className="text-xs text-muted-foreground">
+                      Nenhum perfil de aluno foi movido para a lixeira nos últimos 7 dias.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {trashPlayers.map((st) => {
+                      const msLeft = st.deleteScheduledPermanentAt
+                        ? new Date(st.deleteScheduledPermanentAt).getTime() - Date.now()
+                        : 0;
+                      const daysLeft = Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
+                      const delDateStr = st.deletedAt
+                        ? new Date(st.deletedAt).toLocaleString("pt-BR", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : "Data desconhecida";
+
+                      return (
+                        <div
+                          key={st.id}
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-3.5 shadow-xs transition-all hover:border-destructive/40"
+                        >
+                          <div
+                            className="min-w-0 cursor-pointer flex-1"
+                            onClick={() => setInspectStudentId(st.id)}
+                            title="Clique para inspecionar os detalhes deste perfil"
+                          >
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-display text-sm font-black text-foreground">
+                                {st.nick}
+                              </span>
+                              <span className="text-xs text-muted-foreground truncate">
+                                ({st.full_name})
+                              </span>
+                              <span className="rounded-full bg-destructive/15 border border-destructive/30 px-2 py-0.5 font-mono text-[10px] font-black text-destructive">
+                                {daysLeft <= 0 ? "Expira hoje" : `Expira em ${daysLeft} dia(s)`}
+                              </span>
+                            </div>
+
+                            <div className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1.5 flex-wrap">
+                              <span>{st.school}</span>
+                              {st.grade && <span>• {st.grade}</span>}
+                              {st.turma && <span>Turma {st.turma}</span>}
+                              <span>• Nv. {st.level} ({st.xp} XP)</span>
+                              <span className="text-destructive font-medium">• Excluído em: {delDateStr}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={async () => {
+                                const res = await restoreStudentFromTrash(st.id);
+                                if (res.success) {
+                                  flashSaved(`Perfil de "${st.nick}" recuperado com sucesso!`);
+                                  refreshRoster();
+                                }
+                              }}
+                              className="rounded-xl border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 font-bold text-xs h-8"
+                            >
+                              <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                              Recuperar
+                            </Button>
+
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={async () => {
+                                if (
+                                  confirm(
+                                    `Deseja apagar DEFINITIVAMENTE o perfil de "${st.nick}" agora? Esta ação não pode ser desfeita.`,
+                                  )
+                                ) {
+                                  const res = await permanentlyDeleteStudent(st.id);
+                                  if (res.success) {
+                                    flashSaved(`Perfil de "${st.nick}" excluído permanentemente.`);
+                                    refreshRoster();
+                                  }
+                                }
+                              }}
+                              className="h-8 w-8 p-0 text-destructive hover:bg-destructive/10 rounded-xl"
+                              title="Excluir permanentemente agora"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
             </div>
           </div>
         )}
@@ -4868,10 +5043,10 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
           onOpenChange={(v) => {
             if (!v) {
               setInspectStudentId(null);
-              setRegisteredStudents(getAllRegisteredPlayers());
+              refreshRoster();
             }
           }}
-          onStudentUpdated={() => setRegisteredStudents(getAllRegisteredPlayers())}
+          onStudentUpdated={() => refreshRoster()}
         />
       </DialogContent>
     </Dialog>

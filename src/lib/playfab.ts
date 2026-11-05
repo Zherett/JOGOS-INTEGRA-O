@@ -90,6 +90,10 @@ import {
   type MedalDefinition,
   type AdminMedalNotification,
 } from "./medals-catalog.ts";
+import {
+  removePlayerFromGameRecords,
+  seedRecordsFromRegistry,
+} from "./game-records.ts";
 
 const SESSION_KEY = "desafios-playfab-session-v1";
 const REGISTRY_KEY = "desafios-playfab-registry-v1";
@@ -159,6 +163,8 @@ export interface PlayerProfile {
   badges: Badge[];
   isAdmin?: boolean;
   seasonId: number;
+  deletedAt?: string;
+  deleteScheduledPermanentAt?: string;
 }
 
 export interface GameStatRow {
@@ -366,12 +372,33 @@ export function setAdminUnlockedSession(unlocked: boolean) {
 
 /* --------------------- Local Registry / Offline Mirror --------------------- */
 
+export const STUDENT_TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function purgeExpiredTrash(reg: Record<string, StoredAccount>): boolean {
+  let changed = false;
+  const now = Date.now();
+  for (const [key, acc] of Object.entries(reg)) {
+    if (acc?.profile?.deletedAt) {
+      const delTime = new Date(acc.profile.deletedAt).getTime();
+      if (!isNaN(delTime) && now - delTime >= STUDENT_TRASH_RETENTION_MS) {
+        delete reg[key];
+        changed = true;
+      }
+    }
+  }
+  return changed;
+}
+
 export function loadRegistry(): Record<string, StoredAccount> {
   if (typeof window === "undefined") return {};
   try {
     const raw = window.localStorage.getItem(REGISTRY_KEY);
     if (!raw) return {};
-    return JSON.parse(raw) as Record<string, StoredAccount>;
+    const parsed = JSON.parse(raw) as Record<string, StoredAccount>;
+    if (purgeExpiredTrash(parsed)) {
+      saveRegistry(parsed);
+    }
+    return parsed;
   } catch {
     return {};
   }
@@ -1604,6 +1631,17 @@ export async function playfabSignIn(
           normalizedPassword,
           cfg,
         );
+        if (
+          account.profile.deletedAt &&
+          !account.profile.isAdmin &&
+          !isSpecialAdminAccount(account.profile)
+        ) {
+          return {
+            account: null,
+            error:
+              "Esta conta foi suspensa e movida para a lixeira pelo administrador. Procure a coordenação escolar.",
+          };
+        }
         reg[account.profile.nickNormalized] = account;
         saveRegistry(reg);
         saveStoredSession({
@@ -1675,6 +1713,18 @@ export async function playfabSignIn(
       error:
         "Apelido ou senha não encontrados. Digite seu Nome Completo e selecione sua Data de Nascimento abaixo para recuperar e entrar automaticamente!",
       needsRecovery: true,
+    };
+  }
+
+  if (
+    targetAcc.profile.deletedAt &&
+    !targetAcc.profile.isAdmin &&
+    !isSpecialAdminAccount(targetAcc.profile)
+  ) {
+    return {
+      account: null,
+      error:
+        "Esta conta foi suspensa e movida para a lixeira pelo administrador. Procure a coordenação escolar.",
     };
   }
 
@@ -3219,8 +3269,8 @@ export async function fetchLeaderboard(
 
   for (const acc of localAccounts) {
     const p = acc.profile;
-    // Admins are excluded from competitive student leaderboards
-    if (isSpecialAdminAccount(p)) continue;
+    // Admins and profiles in trash are excluded from competitive student leaderboards
+    if (isSpecialAdminAccount(p) || p.deletedAt) continue;
 
     if (!matchesRankingCategory(p, filter.stage)) continue;
     if (filter.kind === "school" && p.school !== filter.school) continue;
@@ -3342,15 +3392,226 @@ export function getSchoolStandings(): {
   }).sort((a, b) => b.totalXp - a.totalXp || b.totalWins - a.totalWins);
 }
 
-/** Returns all registered players for the Admin Panel overview. */
-export function getAllRegisteredPlayers(): PlayerProfile[] {
+/** Returns all registered players for the Admin Panel overview (excludes trash by default). */
+export function getAllRegisteredPlayers(includeDeleted = false): PlayerProfile[] {
   const cfg = checkAndApplyScheduledReset();
   const reg = loadRegistry();
   const list = Object.values(reg)
     .map((a) => ensurePlayerSeasonAligned(a, cfg).profile)
+    .filter((p) => includeDeleted || !p.deletedAt)
     .sort((a, b) => b.xp - a.xp);
   saveRegistry(reg);
   return list;
+}
+
+/** Returns all student profiles currently in the Admin Recycle Bin (trash). */
+export function getTrashPlayers(): PlayerProfile[] {
+  const cfg = checkAndApplyScheduledReset();
+  const reg = loadRegistry();
+  const list = Object.values(reg)
+    .map((a) => ensurePlayerSeasonAligned(a, cfg).profile)
+    .filter((p) => Boolean(p.deletedAt))
+    .sort((a, b) => {
+      const timeA = a.deletedAt ? new Date(a.deletedAt).getTime() : 0;
+      const timeB = b.deletedAt ? new Date(b.deletedAt).getTime() : 0;
+      return timeB - timeA;
+    });
+  return list;
+}
+
+/**
+ * Moves a student profile to the trash for 7 days.
+ * The profile immediately disappears from rankings, records, and active student lists.
+ */
+export async function moveStudentToTrash(
+  playerId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const reg = loadRegistry();
+  const targetAcc =
+    reg[playerId] ||
+    Object.values(reg).find(
+      (a) => a.profile.id === playerId || a.profile.nickNormalized === playerId,
+    );
+
+  if (!targetAcc) {
+    return { success: false, error: "Aluno não encontrado no registro." };
+  }
+
+  if (targetAcc.profile.isAdmin || isSpecialAdminAccount(targetAcc.profile)) {
+    return {
+      success: false,
+      error: "Contas de administrador não podem ser movidas para a lixeira.",
+    };
+  }
+
+  const nowIso = new Date().toISOString();
+  const permIso = new Date(Date.now() + STUDENT_TRASH_RETENTION_MS).toISOString();
+
+  targetAcc.profile.deletedAt = nowIso;
+  targetAcc.profile.deleteScheduledPermanentAt = permIso;
+  targetAcc.updatedAt = nowIso;
+
+  // Save to registry under all keys referencing this student
+  reg[targetAcc.profile.nickNormalized] = targetAcc;
+  if (targetAcc.profile.id && targetAcc.profile.id !== targetAcc.profile.nickNormalized) {
+    reg[targetAcc.profile.id] = targetAcc;
+  }
+  saveRegistry(reg);
+
+  // Remove student from records
+  try {
+    removePlayerFromGameRecords(targetAcc.profile.id, targetAcc.profile.nick);
+  } catch {
+    /* ignore */
+  }
+
+  // If this student is currently logged in on this browser, disconnect them
+  const currentSession = loadStoredSession();
+  if (
+    currentSession?.playerId === targetAcc.profile.id ||
+    currentSession?.playerId === targetAcc.profile.nickNormalized
+  ) {
+    playfabSignOut();
+  }
+
+  // Update cloud UserData / roster if configured
+  if (isPlayFabConfigured()) {
+    try {
+      const session = loadStoredSession();
+      if (session?.sessionTicket) {
+        await pushProfileToPlayFab(targetAcc, session.sessionTicket);
+      }
+    } catch {
+      /* ignore cloud failure */
+    }
+  }
+
+  return { success: true };
+}
+
+/**
+ * Restores a student profile from the trash, making them active again in rankings and records.
+ */
+export async function restoreStudentFromTrash(
+  playerId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const reg = loadRegistry();
+  const targetAcc =
+    reg[playerId] ||
+    Object.values(reg).find(
+      (a) => a.profile.id === playerId || a.profile.nickNormalized === playerId,
+    );
+
+  if (!targetAcc) {
+    return { success: false, error: "Aluno não encontrado na lixeira." };
+  }
+
+  delete targetAcc.profile.deletedAt;
+  delete targetAcc.profile.deleteScheduledPermanentAt;
+  targetAcc.updatedAt = new Date().toISOString();
+
+  reg[targetAcc.profile.nickNormalized] = targetAcc;
+  if (targetAcc.profile.id && targetAcc.profile.id !== targetAcc.profile.nickNormalized) {
+    reg[targetAcc.profile.id] = targetAcc;
+  }
+  saveRegistry(reg);
+
+  // Reseed records with restored student's scores
+  try {
+    seedRecordsFromRegistry();
+  } catch {
+    /* ignore */
+  }
+
+  if (isPlayFabConfigured()) {
+    try {
+      const session = loadStoredSession();
+      if (session?.sessionTicket) {
+        await pushProfileToPlayFab(targetAcc, session.sessionTicket);
+      }
+    } catch {
+      /* ignore cloud failure */
+    }
+  }
+
+  return { success: true };
+}
+
+/**
+ * Permanently deletes a student profile from the registry, records, and cloud immediately.
+ */
+export async function permanentlyDeleteStudent(
+  playerId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const reg = loadRegistry();
+  const targetAcc =
+    reg[playerId] ||
+    Object.values(reg).find(
+      (a) => a.profile.id === playerId || a.profile.nickNormalized === playerId,
+    );
+
+  if (!targetAcc) {
+    return { success: false, error: "Aluno não encontrado." };
+  }
+
+  if (targetAcc.profile.isAdmin || isSpecialAdminAccount(targetAcc.profile)) {
+    return { success: false, error: "Contas de administrador não podem ser excluídas." };
+  }
+
+  const pId = targetAcc.profile.id;
+  const pNick = targetAcc.profile.nick;
+  const pNorm = targetAcc.profile.nickNormalized;
+
+  delete reg[pNorm];
+  if (pId) delete reg[pId];
+  // Clean any remaining matching entries
+  for (const [k, v] of Object.entries(reg)) {
+    if (v.profile.id === pId || v.profile.nickNormalized === pNorm) {
+      delete reg[k];
+    }
+  }
+  saveRegistry(reg);
+
+  // Remove from game records
+  try {
+    removePlayerFromGameRecords(pId, pNick);
+  } catch {
+    /* ignore */
+  }
+
+  // If current session belongs to this deleted player, sign out
+  const currentSession = loadStoredSession();
+  if (currentSession?.playerId === pId || currentSession?.playerId === pNorm) {
+    playfabSignOut();
+  }
+
+  return { success: true };
+}
+
+/**
+ * Empties all student profiles currently in the recycle bin permanently.
+ */
+export async function emptyStudentTrash(): Promise<{ success: boolean; count: number }> {
+  const reg = loadRegistry();
+  let count = 0;
+
+  for (const [k, acc] of Object.entries(reg)) {
+    if (acc?.profile?.deletedAt && !acc.profile.isAdmin && !isSpecialAdminAccount(acc.profile)) {
+      try {
+        removePlayerFromGameRecords(acc.profile.id, acc.profile.nick);
+      } catch {
+        /* ignore */
+      }
+      delete reg[k];
+      count++;
+    }
+  }
+
+  if (count > 0) {
+    saveRegistry(reg);
+  }
+
+  return { success: true, count };
 }
 
 /**

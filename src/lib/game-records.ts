@@ -196,10 +196,65 @@ export function getGameStageRecord(
   const store = records ?? loadGameRecords();
   const key = getRecordKey(gameId, stage);
   const rec = store[key];
-  if (!rec || rec.score <= 0 || rec.holders.length === 0) {
+  if (!rec || rec.score <= 0 || !Array.isArray(rec.holders) || rec.holders.length === 0) {
     return null;
   }
-  return rec;
+
+  // Hide record holders who are currently in trash
+  const reg = loadRegistry();
+  const activeHolders = rec.holders.filter((h) => {
+    const acc =
+      reg[h.playerId] ||
+      Object.values(reg).find(
+        (a) =>
+          a.profile.id === h.playerId ||
+          a.profile.nick.toLowerCase() === h.nick.toLowerCase(),
+      );
+    return !acc?.profile?.deletedAt;
+  });
+
+  if (activeHolders.length === 0) {
+    return null;
+  }
+
+  return { ...rec, holders: activeHolders };
+}
+
+/**
+ * Removes a player from all records (called when moved to trash or permanently deleted).
+ */
+export function removePlayerFromGameRecords(
+  playerId: string,
+  playerNick?: string,
+): AllGameRecords {
+  const store = loadGameRecords();
+  let changed = false;
+  const normNick = playerNick?.trim().toLowerCase();
+
+  for (const key of Object.keys(store)) {
+    const rec = store[key];
+    if (!rec || !Array.isArray(rec.holders)) continue;
+    const initialLen = rec.holders.length;
+    const filtered = rec.holders.filter(
+      (h) =>
+        h.playerId !== playerId &&
+        (!normNick || h.nick.trim().toLowerCase() !== normNick),
+    );
+    if (filtered.length !== initialLen) {
+      changed = true;
+      if (filtered.length === 0) {
+        delete store[key];
+      } else {
+        rec.holders = filtered;
+      }
+    }
+  }
+
+  if (changed) {
+    saveGameRecords(store);
+    return seedRecordsFromRegistry();
+  }
+  return store;
 }
 
 /**
@@ -211,7 +266,7 @@ export function seedRecordsFromRegistry(): AllGameRecords {
   let changed = false;
 
   for (const acc of Object.values(reg)) {
-    if (!acc.profile || !acc.stats) continue;
+    if (!acc.profile || !acc.stats || acc.profile.deletedAt) continue;
     const p = acc.profile;
     const stage = stageFromBirthdate(p.birthdate, new Date(), p.school).id;
 
