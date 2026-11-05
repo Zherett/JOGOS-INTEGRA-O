@@ -42,18 +42,18 @@ export const PresenceDot: React.FC<PresenceDotProps> = ({
   }[size];
 
   // Cores do Usuário:
-  // Verde = Online
-  // Cinza = Inativo
-  // Vermelho = Offline
+  // Verde = Online (< 2 min com interação)
+  // Amarelo/Âmbar = Inativo (2 a 10 min de inatividade com aba aberta)
+  // Vermelho = Offline (> 10 min ou aba fechada)
   const colorClasses = {
     online: "bg-emerald-500 ring-emerald-500/40 shadow-[0_0_6px_rgba(16,185,129,0.8)]",
-    idle: "bg-slate-400 dark:bg-slate-500 ring-slate-400/30",
+    idle: "bg-amber-400 dark:bg-amber-400 ring-amber-400/40 shadow-[0_0_6px_rgba(251,191,36,0.6)]",
     offline: "bg-rose-500 ring-rose-500/30",
   }[status];
 
   const badgeBgClasses = {
     online: "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400",
-    idle: "bg-slate-400/10 border-slate-400/30 text-slate-600 dark:text-slate-400",
+    idle: "bg-amber-400/15 border-amber-400/40 text-amber-600 dark:text-amber-400",
     offline: "bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400",
   }[status];
 

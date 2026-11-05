@@ -919,10 +919,8 @@ export function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdmin
     cfg.enabledGames,
   );
   const trueFlawlessCount = trueFlawlessSet.size;
-  const gamesWith2Plays = Math.max(
-    aggregatedRows.filter((s) => s.plays >= 2).length,
-    distinctGames >= 4 && totalMatchesCount >= 8 ? Math.min(distinctGames, Math.floor(totalMatchesCount / 2)) : 0,
-  );
+  // Contagem estrita de jogos com 2+ partidas concluídas (sem heurística)
+  const gamesWith2Plays = aggregatedRows.filter((s) => s.plays >= 2).length;
   const gamesWith10Plays = aggregatedRows.filter((s) => s.plays >= 10).length;
 
   // Always verify and clamp streakDays to legitimate verified daily activity

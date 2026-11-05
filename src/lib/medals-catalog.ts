@@ -1502,10 +1502,8 @@ export function evaluatePlayerMedals(
     effProg.matchesPlayed,
     aggregatedRows.reduce((acc, s) => acc + s.plays, 0),
   );
-  const gamesWith2Plays = Math.max(
-    aggregatedRows.filter((s) => s.plays >= 2).length,
-    distinctGames >= 4 && totalCompletedPlays >= 8 ? Math.min(distinctGames, Math.floor(totalCompletedPlays / 2)) : 0,
-  );
+  // Contagem estrita de jogos distintos onde o aluno realmente finalizou 2+ partidas
+  const gamesWith2Plays = aggregatedRows.filter((s) => s.plays >= 2).length;
   const gamesWith10Plays = aggregatedRows.filter((s) => s.plays >= 10).length;
   const isBetaActive = isBetaTesterPeriodActive(now);
   const effectiveStreakDays = getPlayerStreakDays({

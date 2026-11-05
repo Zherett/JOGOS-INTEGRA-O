@@ -28,15 +28,15 @@ describe("Player Presence System (computePresenceStatus)", () => {
     assert.equal(computePresenceStatus(record, BASE_NOW), "offline");
   });
 
-  it("returns online (green) when user interacted within 5 minutes and heartbeat is alive", () => {
-    // Interacted 2 minutes ago, heartbeat 10 seconds ago
+  it("returns online (green) when user interacted within 2 minutes and heartbeat is alive", () => {
+    // Interacted 1 minute ago, heartbeat 10 seconds ago
     const record = {
       lastSeenAt: BASE_NOW - 10_000,
-      lastActiveAt: BASE_NOW - 2 * 60 * 1000,
+      lastActiveAt: BASE_NOW - 60 * 1000,
     };
     assert.equal(computePresenceStatus(record, BASE_NOW), "online");
 
-    // Exactly at 5 minute threshold
+    // Exactly at 2 minute threshold
     const boundaryRecord = {
       lastSeenAt: BASE_NOW - 5_000,
       lastActiveAt: BASE_NOW - PRESENCE_ONLINE_MAX_AGE_MS,
@@ -44,7 +44,7 @@ describe("Player Presence System (computePresenceStatus)", () => {
     assert.equal(computePresenceStatus(boundaryRecord, BASE_NOW), "online");
   });
 
-  it("returns idle (gray) when user is connected but has had no interaction between 5 and 10 minutes", () => {
+  it("returns idle (yellow/amber) when user is connected but has had no interaction between 2 and 10 minutes", () => {
     // Interacted 6 minutes ago, heartbeat 15 seconds ago
     const record = {
       lastSeenAt: BASE_NOW - 15_000,

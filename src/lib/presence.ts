@@ -30,9 +30,9 @@ export interface PresenceStore {
 }
 
 // Limiares de tempo especificados:
-export const PRESENCE_ONLINE_MAX_AGE_MS = 5 * 60 * 1000;   // 5 minutos
-export const PRESENCE_IDLE_MAX_AGE_MS = 10 * 60 * 1000;    // 10 minutos
-export const PRESENCE_DISCONNECT_MAX_AGE_MS = 2 * 60 * 1000; // 2 minutos sem heartbeat = aba fechada
+export const PRESENCE_ONLINE_MAX_AGE_MS = 2 * 60 * 1000;   // 2 minutos com atividade do aluno (Verde)
+export const PRESENCE_IDLE_MAX_AGE_MS = 10 * 60 * 1000;    // 10 minutos conectado sem interação (Amarelo/Âmbar)
+export const PRESENCE_DISCONNECT_MAX_AGE_MS = 2 * 60 * 1000; // 2 minutos sem heartbeat = aba fechada/suspensa (Vermelho)
 
 const PRESENCE_STORAGE_KEY = "desafios-presence-store-v1";
 const LOCAL_LAST_ACTIVE_KEY = "desafios-local-last-active-v1";
@@ -41,8 +41,8 @@ export const PRESENCE_UPDATED_EVENT = "desafios:presence-updated";
 
 /**
  * Avalia de forma pura e deterministica o status de presenca de um jogador.
- * - Verde ("online"): fez interacao ha menos de 5 minutos (com heartbeat ativo).
- * - Cinza ("idle"): sem interacao entre 5 e 10 minutos (aba continua aberta).
+ * - Verde ("online"): fez interacao ha menos de 2 minutos (com heartbeat ativo).
+ * - Amarelo/Âmbar ("idle"): sem interacao entre 2 e 10 minutos (aba continua aberta conectada).
  * - Vermelho ("offline"): mais de 10 minutos sem interacao OU sem heartbeat recente (aba fechada).
  */
 export function computePresenceStatus(
@@ -99,11 +99,11 @@ export function formatPresenceTimeAgo(
     return "Online agora";
   }
 
-  // Se estiver conectado mas inativo (5 a 10 min)
+  // Se estiver conectado mas inativo (2 a 10 min)
   if (status === "idle") {
     const lastActive = record.lastActiveAt && record.lastActiveAt > 0 ? record.lastActiveAt : record.lastSeenAt;
-    const diffMs = lastActive ? Math.max(0, now - lastActive) : 5 * 60 * 1000;
-    const mins = Math.max(5, Math.floor(diffMs / 60000));
+    const diffMs = lastActive ? Math.max(0, now - lastActive) : 2 * 60 * 1000;
+    const mins = Math.max(2, Math.floor(diffMs / 60000));
     return `Inativo há ${mins} min (conectado)`;
   }
 
@@ -299,10 +299,34 @@ export function recordPlayerHeartbeat(
 let presenceGroupCreated = false;
 let lastPresenceCloudSyncAt = 0;
 let inFlightPresenceSync: Promise<void> | null = null;
-const observedRemotePulses = new Map<
-  string,
-  { remoteSeenAt: number; observedLocalAt: number }
->();
+let serverClockOffsetMs: number | null = null;
+let lastServerClockSyncAt = 0;
+
+/**
+ * Obtém o horário oficial UTC do PlayFab (GetTime) para calibrar a diferença
+ * de relógio entre o dispositivo do usuário e o servidor, garantindo precisão em LastUpdated.
+ */
+export async function syncServerClockOffset(): Promise<number> {
+  const now = Date.now();
+  if (serverClockOffsetMs !== null && now - lastServerClockSyncAt < 5 * 60 * 1000) {
+    return serverClockOffsetMs;
+  }
+  try {
+    const res = await callPresencePlayFab("GetTime", {});
+    const timeStr = (res?.data as { Time?: string } | undefined)?.Time;
+    if (timeStr) {
+      const serverMs = Date.parse(timeStr);
+      if (!Number.isNaN(serverMs)) {
+        serverClockOffsetMs = serverMs - Date.now();
+        lastServerClockSyncAt = Date.now();
+        return serverClockOffsetMs;
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return serverClockOffsetMs ?? 0;
+}
 
 async function callPresencePlayFab(
   endpoint: string,
@@ -413,7 +437,6 @@ export async function syncPresenceFromPlayFab(force = false): Promise<void> {
         SharedGroupId: PRESENCE_SHARED_GROUP_ID,
       });
 
-      const serverNow = res?.serverDate ? Date.parse(res.serverDate) : null;
       const resData = res?.data as {
         Data?: Record<string, { Value: string; LastUpdated?: string }>;
       } | undefined;
@@ -424,6 +447,12 @@ export async function syncPresenceFromPlayFab(force = false): Promise<void> {
       const localSessionId = loadStoredSession()?.playerId;
       const syncNow = Date.now();
       let changed = false;
+
+      // Mantém calibração de horário com o servidor PlayFab
+      if (serverClockOffsetMs === null || syncNow - lastServerClockSyncAt > 5 * 60 * 1000) {
+        void syncServerClockOffset();
+      }
+      const curServerNow = syncNow + (serverClockOffsetMs ?? 0);
 
       for (const [key, entry] of Object.entries(resData.Data)) {
         if (!entry?.Value) continue;
@@ -466,28 +495,14 @@ export async function syncPresenceFromPlayFab(force = false): Promise<void> {
             continue;
           }
 
-          // Calcula há quanto tempo o pulso foi enviado sem depender do fuso/relógio local do dispositivo do aluno:
-          // 1. Usa a diferença entre o timestamp do servidor PlayFab (Date header) e LastUpdated do registro
-          // 2. Caso ausente, rastreia quando o pulso foi observado localmente neste dispositivo
-          const obsKey = slug || pId;
-          const prevObs = observedRemotePulses.get(obsKey);
-          if (!prevObs || prevObs.remoteSeenAt !== remote.lastSeenAt) {
-            observedRemotePulses.set(obsKey, {
-              remoteSeenAt: remote.lastSeenAt,
-              observedLocalAt: syncNow,
-            });
-          }
-
+          // Calcula a idade do pulso usando o timestamp LastUpdated gravado pelo servidor PlayFab.
+          // Isso é 100% imune a reload da página (F5) e discrepâncias de relógio entre celular e PC.
           let seenAgeMs = Math.max(0, syncNow - remote.lastSeenAt);
-          if (entry.LastUpdated && serverNow && !Number.isNaN(serverNow)) {
+          if (entry.LastUpdated) {
             const entryMs = Date.parse(entry.LastUpdated);
             if (!Number.isNaN(entryMs)) {
-              seenAgeMs = Math.max(0, serverNow - entryMs);
+              seenAgeMs = Math.max(0, curServerNow - entryMs);
             }
-          } else if (prevObs && prevObs.remoteSeenAt !== remote.lastSeenAt) {
-            seenAgeMs = 0;
-          } else if (prevObs) {
-            seenAgeMs = Math.max(0, syncNow - prevObs.observedLocalAt);
           }
 
           const remoteIdleMs =

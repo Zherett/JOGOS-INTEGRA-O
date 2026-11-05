@@ -293,6 +293,37 @@ describe("Sistema Completo de Medalhas e Inventário", () => {
     assert.equal(heroiMedal?.rarity, "heroi");
     assert.equal(RARITY_INFO.heroi.glowHex, "#ef4444");
     assert.equal(RARITY_INFO.heroi.label, "Herói");
+
+    // Jogador que jogou 4 partidas em 1 jogo e apenas 1 partida nos outros 7 jogos (total 11 partidas)
+    // NÃO deve ganhar Beta Tester Platina nem Beta Tester Prata/Ouro!
+    const statsApenas1JogoCom2: GameStatRow[] = ALL_GAME_IDS.map((gId, idx) => ({
+      player_id: "p_aluna_beta",
+      game_id: gId,
+      plays: idx === 0 ? 4 : 1,
+      wins: 1,
+      best_score: 100,
+      best_level: 2,
+      updated_at: "2026-11-03T12:00:00Z",
+    }));
+
+    const profileAlunaBeta: PlayerProfile = {
+      ...profileBronze,
+      matchesPlayed: 11,
+      distinctGamesPlayed: ALL_GAME_IDS.length,
+    };
+
+    const awardedAluna = evaluatePlayerMedals(
+      { profile: profileAlunaBeta, stats: statsApenas1JogoCom2 },
+      undefined,
+      nov3,
+    );
+
+    const alunaMedalIds = awardedAluna.map((m) => m.id);
+    assert.ok(alunaMedalIds.includes("beta_tester_bronze"), "Deve ter Bronze por ter finalizado ao menos 1 partida");
+    assert.ok(!alunaMedalIds.includes("beta_tester_prata"), "NÃO deve ter Prata (apenas 1 jogo tem 2+ partidas)");
+    assert.ok(!alunaMedalIds.includes("beta_tester_ouro"), "NÃO deve ter Ouro (apenas 1 jogo tem 2+ partidas)");
+    assert.ok(!alunaMedalIds.includes("beta_tester_platina"), "NÃO deve ter Platina (nem todos os jogos têm 2+ partidas)");
+    assert.ok(!alunaMedalIds.includes("beta_tester_heroi"), "NÃO deve ter Herói");
   });
 
   it("NÃO concede medalha de zero erros (individual ou 3 jogos) se a aluna teve 1 ou mais erros no final do jogo", () => {
