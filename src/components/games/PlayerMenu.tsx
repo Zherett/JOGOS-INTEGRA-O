@@ -20,6 +20,7 @@ import {
   ChevronUp,
   Sparkles,
   Send,
+  RotateCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -107,10 +108,10 @@ export function PlayerMenu({ onConfigChanged }: Props) {
   const [rankingOpen, setRankingOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
 
-  // Accordion collapsible states
+  // Accordion collapsible states & 3D Card Flip state
   const [levelExpanded, setLevelExpanded] = useState(false);
-  const [medalsExpanded, setMedalsExpanded] = useState(false);
   const [gamesExpanded, setGamesExpanded] = useState(true);
+  const [cardFlipped, setCardFlipped] = useState(false);
 
   // Turma change request dialog state
   const [turmaModalOpen, setTurmaModalOpen] = useState(false);
@@ -170,6 +171,7 @@ export function PlayerMenu({ onConfigChanged }: Props) {
   // Retrieve player's ranking position in their competing series (Medalhas tab by default)
   useEffect(() => {
     if (!profileOpen || !profile) return;
+    setCardFlipped(false);
     setInitialSchool(profile.school || "Nenhuma");
     setInitialGrade(profile.grade || RAIMUNDO_GRADES[0]);
     setInitialTurma(profile.turma || "");
@@ -333,86 +335,314 @@ export function PlayerMenu({ onConfigChanged }: Props) {
 
           {profile && progress && (
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-              {/* Bloco de Informações do Jogador com Nível no Lugar do Ícone */}
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 rounded-3xl border bg-secondary/30 p-4">
-                {/* O nível do jogador aparece destacado no local onde estava o ícone */}
-                <div className="relative grid h-20 w-20 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-primary via-primary/95 to-primary/80 text-primary-foreground shadow-lg border-2 border-primary/50">
-                  <div className="flex flex-col items-center justify-center leading-none text-center">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-primary-foreground/80">
-                      NÍVEL
-                    </span>
-                    <span className="font-display text-3xl font-black">
-                      {progress.level}
-                    </span>
-                  </div>
-                  <span className="absolute -bottom-2 rounded-full bg-card px-2 py-0.5 text-[9px] font-black text-primary border shadow-sm truncate max-w-[4.8rem]">
-                    {progress.title.split(" ")[0]}
-                  </span>
-                </div>
+              {/* CARTÃO UNIFICADO DO JOGADOR COM EFEITO DE GIRO 3D (FRENTE / VERSO) */}
+              <div className="w-full perspective-1000">
+                <div
+                  className={`relative w-full transition-transform duration-700 preserve-3d ${
+                    cardFlipped ? "rotate-y-180" : ""
+                  }`}
+                >
+                  {/* ══════════════════════════════════════════════════════════════════
+                      FRENTE DO CARTÃO (IDENTIDADE + NÍVEL & PROGRESSO UNIFICADOS)
+                     ══════════════════════════════════════════════════════════════════ */}
+                  <div
+                    className={`w-full rounded-3xl border bg-card p-4 sm:p-5 shadow-sm space-y-3.5 backface-hidden transition-all ${
+                      cardFlipped ? "pointer-events-none invisible absolute inset-0" : "relative"
+                    }`}
+                  >
+                    {/* Topo: Ícone do Nível à esquerda e Dados Pessoais à direita no Mobile */}
+                    <div className="flex flex-row items-center gap-3.5 sm:gap-4">
+                      {/* Selo Grande do Nível */}
+                      <div className="relative grid h-18 w-18 sm:h-20 sm:w-20 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-primary via-primary/95 to-primary/80 text-primary-foreground shadow-md border-2 border-primary/50">
+                        <div className="flex flex-col items-center justify-center leading-none text-center">
+                          <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-primary-foreground/80">
+                            NÍVEL
+                          </span>
+                          <span className="font-display text-2xl sm:text-3xl font-black">
+                            {progress.level}
+                          </span>
+                        </div>
+                        <span className="absolute -bottom-2 rounded-full bg-card px-2 py-0.5 text-[8.5px] sm:text-[9px] font-black text-primary border shadow-xs truncate max-w-[4.6rem] sm:max-w-[4.8rem]">
+                          {progress.title.split(" ")[0]}
+                        </span>
+                      </div>
 
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="truncate font-display text-2xl font-black text-foreground">
-                      {profile.nick}
-                    </h2>
-                    <PresenceDot playerId={profile.id} size="sm" />
-                    {/* Tag Fixa da Turma (Quando já selecionada) */}
-                    {profile.turma && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 border border-primary/30 px-2.5 py-0.5 text-xs font-bold text-primary">
-                        <Lock className="h-3 w-3" /> Turma {profile.turma}
+                      {/* Informações Pessoais à Direita */}
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <div className="flex items-center gap-1.5 truncate">
+                            <h2 className="truncate font-display text-xl sm:text-2xl font-black text-foreground">
+                              {profile.nick}
+                            </h2>
+                            <PresenceDot playerId={profile.id} size="sm" />
+                            {profile.turma && (
+                              <span className="inline-flex items-center gap-0.5 rounded-full bg-primary/15 border border-primary/30 px-2 py-0.5 text-[10px] sm:text-xs font-bold text-primary shrink-0">
+                                <Lock className="h-2.5 w-2.5" /> Turma {profile.turma}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Botão Sutil de Giro no Topo */}
+                          <button
+                            type="button"
+                            onClick={() => setCardFlipped(true)}
+                            title="Girar para o Inventário de Medalhas"
+                            className="shrink-0 flex items-center gap-1 rounded-xl border border-accent/40 bg-accent/10 hover:bg-accent/20 px-2 py-1 text-[10px] sm:text-[11px] font-extrabold text-accent transition-all active:scale-95"
+                          >
+                            <RotateCw className="h-3 w-3" />
+                            <span className="hidden sm:inline">Medalhas</span>
+                          </button>
+                        </div>
+
+                        <p className="truncate text-[11px] sm:text-xs font-semibold uppercase text-muted-foreground">
+                          {profile.full_name}
+                        </p>
+
+                        <p className="text-[11px] sm:text-xs text-muted-foreground flex flex-wrap items-center gap-1">
+                          <span>
+                            {profile.school}
+                            {profile.grade ? ` • ${profile.grade}` : ""} • {age} anos
+                          </span>
+                          {profile.school && profile.school !== "Nenhuma" && (
+                            <span className="inline-flex items-center gap-0.5 rounded-md bg-secondary px-1.5 py-0.5 text-[9px] font-bold text-muted-foreground" title="Escola e série fixadas no perfil. Somente o ADM pode alterar.">
+                              <Lock className="h-2 w-2" /> Fixado
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Badges de Informações Compactas (Rank, Medalhas, Colocação) subindo e bem encaixadas */}
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 pt-0.5">
+                      <TournamentRankBadge
+                        points={profile.tournamentPoints ?? 0}
+                        size="sm"
+                        showLabel
+                        showPoints
+                      />
+
+                      <span
+                        title="Total de medalhas e troféus desbloqueados em partidas, níveis e desafios."
+                        className="inline-flex items-center rounded-full bg-amber-500/15 border border-amber-500/30 px-2.5 py-0.5 text-[10.5px] sm:text-[11px] font-extrabold text-amber-500 dark:text-amber-400"
+                      >
+                        🏅 {profile.unlockedMedals?.length ?? 0} Medalhas
                       </span>
-                    )}
-                  </div>
 
-                  <p className="truncate text-xs font-semibold uppercase text-muted-foreground">
-                    {profile.full_name}
-                  </p>
-
-                  <p className="text-xs text-muted-foreground flex flex-wrap items-center gap-1.5">
-                    <span>
-                      {profile.school}
-                      {profile.grade ? ` • ${profile.grade}` : ""} • {age} anos
-                    </span>
-                    {profile.school && profile.school !== "Nenhuma" && (
-                      <span className="inline-flex items-center gap-1 rounded-md bg-secondary px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground" title="Escola e série já fixadas no perfil. Somente o Administrador pode alterar.">
-                        <Lock className="h-2.5 w-2.5" /> Fixado (Só ADM altera)
+                      <span
+                        title="Sua colocação oficial na temporada atual do Torneio Semanal da sua Etapa."
+                        className="inline-flex items-center rounded-full bg-primary/15 border border-primary/30 px-2.5 py-0.5 text-[10.5px] sm:text-[11px] font-extrabold text-primary"
+                      >
+                        🏆 {playerRank ? `#${playerRank} no Ranking` : "Sem colocação"}
                       </span>
+                    </div>
+
+                    {/* Aviso de solicitação de turma pendente */}
+                    {profile.pendingTurmaRequest && (
+                      <p className="text-[10px] sm:text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                        ⏳ Solicitação para mudar para a <b>Turma {profile.pendingTurmaRequest}</b> enviada ao Administrador.
+                      </p>
                     )}
-                  </p>
 
-                  {/* Badges de Informações Simplificadas */}
-                  <div className="flex flex-wrap items-center gap-2 pt-1">
-                    {/* Rank Ranqueado Oficial */}
-                    <TournamentRankBadge
-                      points={profile.tournamentPoints ?? 0}
-                      size="sm"
-                      showLabel
-                      showPoints
-                    />
+                    {/* Divisória Interna Elegante para a Seção de Nível e Requisitos */}
+                    <div className="border-t border-border/60 pt-3 space-y-2.5">
+                      <div className="flex items-center justify-between text-xs sm:text-sm font-bold">
+                        <span className="flex items-center gap-1.5">
+                          <Star className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-accent" />
+                          Nível {progress.level}/{MAX_LEVEL} — {progress.title}
+                        </span>
+                        <span className="text-primary font-mono font-black">{profile.xp} XP</span>
+                      </div>
 
-                    {/* Quantidade de Medalhas */}
-                    <span
-                      title="Total de medalhas e troféus desbloqueados em partidas, níveis e desafios."
-                      className="inline-flex items-center rounded-full bg-amber-500/15 border border-amber-500/30 px-2.5 py-0.5 text-[11px] font-extrabold text-amber-500 dark:text-amber-400"
+                      <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-primary transition-all duration-300"
+                          style={{ width: `${progress.percent}%` }}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] sm:text-xs text-muted-foreground">
+                        <span>
+                          {progress.current}/{progress.needed} XP na faixa atual
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setLevelExpanded(!levelExpanded)}
+                          className="inline-flex items-center gap-1 font-display font-extrabold text-primary hover:underline"
+                        >
+                          {levelExpanded ? (
+                            <>
+                              Ocultar Detalhes <ChevronUp className="h-3.5 w-3.5" />
+                            </>
+                          ) : (
+                            <>
+                              Ver Detalhes do Nível & Requisitos <ChevronDown className="h-3.5 w-3.5" />
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Conteúdo Expansível do Nível */}
+                      {levelExpanded && (
+                        <div className="mt-3 space-y-3 border-t pt-3 animate-in fade-in-50 duration-200">
+                          {/* Barra de Limite Diário de XP */}
+                          <div className="rounded-2xl border bg-secondary/30 p-3 space-y-2">
+                            <div className="flex items-center justify-between text-xs font-bold">
+                              <span className="flex items-center gap-1.5">
+                                <Zap className="h-3.5 w-3.5 text-accent" /> XP Diário de Hoje
+                                <HelpTip text="Limite diário de XP comum para garantir ritmo saudável de estudos." />
+                              </span>
+                              <span className={isDailyCapped ? "text-accent" : "text-foreground"}>
+                                {dailyXp} / {dailyCap} XP
+                              </span>
+                            </div>
+                            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+                                  isDailyCapped ? "bg-accent" : "bg-success"
+                                }`}
+                                style={{ width: `${dailyPercent}%` }}
+                              />
+                            </div>
+                            <p className="text-[11px] text-muted-foreground">
+                              {isDailyCapped
+                                ? `Limite diário de ${dailyCap} XP atingido hoje. O limite renova amanhã!`
+                                : `Você ainda pode ganhar até ${dailyCap - dailyXp} XP hoje.`}
+                            </p>
+
+                            {/* Bônus extras diários: Torneio & X1 */}
+                            <div className="grid grid-cols-1 gap-1.5 border-t pt-2 text-[11px] sm:grid-cols-2">
+                              <div className="rounded-xl bg-background/80 p-2">
+                                <div className="font-bold text-primary">
+                                  🏆 XP Extra Torneio: {dailyTournamentXp}/{TOURNAMENT_DAILY_EXTRA_XP_CAP} XP
+                                </div>
+                                <div className="text-muted-foreground">
+                                  Entradas hoje: <b>{dailyTournamentEntries}/{TOURNAMENT_DAILY_ENTRIES_LIMIT}</b>
+                                </div>
+                              </div>
+                              <div className="rounded-xl bg-background/80 p-2">
+                                <div className="font-bold text-accent">
+                                  ⚔️ XP Extra Arena X1: {dailyX1Xp}/{X1_DAILY_EXTRA_XP_CAP} XP
+                                </div>
+                                <div className="text-muted-foreground">
+                                  Partidas ilimitadas (Nível 5+)
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Requisitos para o Próximo Nível */}
+                          {!progress.isMaxLevel && progress.nextRequirement && (
+                            <div className="rounded-2xl border bg-background p-3 space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="flex items-center gap-1.5 font-display text-xs font-extrabold uppercase tracking-wider text-primary">
+                                  <Lock className="h-3.5 w-3.5" /> Requisitos para o Nível{" "}
+                                  {progress.nextRequirement.level} ({progress.nextRequirement.emoji}{" "}
+                                  {progress.nextRequirement.title})
+                                </span>
+                              </div>
+
+                              {progress.isLockedByMissions && (
+                                <div className="rounded-xl bg-accent/15 px-2.5 py-1.5 text-[11px] font-semibold text-foreground">
+                                  🔒 Você já tem o XP necessário! Conclua os requisitos pendentes abaixo para
+                                  destravar o Nível {progress.nextRequirement.level}.
+                                </div>
+                              )}
+
+                              <ul className="space-y-1.5 text-xs">
+                                {progress.checklist.map((item) => (
+                                  <li
+                                    key={item.key}
+                                    className="flex items-center justify-between gap-2 rounded-xl bg-secondary/40 px-2.5 py-1.5"
+                                  >
+                                    <span className="flex items-center gap-1.5 font-medium">
+                                      {item.met ? (
+                                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
+                                      ) : (
+                                        <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                      )}
+                                      {item.label}
+                                    </span>
+                                    <span
+                                      className={`font-display font-bold ${
+                                        item.met ? "text-success" : "text-muted-foreground"
+                                      }`}
+                                    >
+                                      {item.current} / {item.required}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Botão de Giro Prominente para o Verso (Medalhas) */}
+                    <button
+                      type="button"
+                      onClick={() => setCardFlipped(true)}
+                      className="w-full flex items-center justify-center gap-2 rounded-2xl bg-primary/10 hover:bg-primary/20 border border-primary/30 py-3 px-4 font-display text-xs font-black text-primary transition-all active:scale-95 shadow-xs"
                     >
-                      🏅 {profile.unlockedMedals?.length ?? 0} Medalhas
-                    </span>
-
-                    {/* Colocação no Ranking */}
-                    <span
-                      title="Sua colocação oficial na temporada atual do Torneio Semanal da sua Etapa."
-                      className="inline-flex items-center rounded-full bg-primary/15 border border-primary/30 px-2.5 py-0.5 text-[11px] font-extrabold text-primary"
-                    >
-                      🏆 {playerRank ? `#${playerRank} no Ranking` : "Sem colocação no Ranking"}
-                    </span>
+                      <RotateCw className="h-4 w-4 text-primary" />
+                      <span>Ver Inventário de Medalhas (Girar Cartão)</span>
+                      <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] text-primary-foreground font-extrabold">
+                        {profile.unlockedMedals?.length ?? 0} obtidas
+                      </span>
+                    </button>
                   </div>
 
-                  {/* Aviso de solicitação de turma pendente */}
-                  {profile.pendingTurmaRequest && (
-                    <p className="pt-1 text-[11px] font-bold text-amber-600 dark:text-amber-400">
-                      ⏳ Solicitação para mudar para a <b>Turma {profile.pendingTurmaRequest}</b> enviada ao Administrador (aguardando aprovação).
-                    </p>
-                  )}
+                  {/* ══════════════════════════════════════════════════════════════════
+                      VERSO DO CARTÃO (INVENTÁRIO COMPLETO & CATÁLOGO DE MEDALHAS)
+                     ══════════════════════════════════════════════════════════════════ */}
+                  <div
+                    className={`w-full rounded-3xl border bg-card p-4 sm:p-5 shadow-sm space-y-4 backface-hidden rotate-y-180 transition-all ${
+                      !cardFlipped ? "pointer-events-none invisible absolute inset-0" : "relative"
+                    }`}
+                  >
+                    {/* Cabeçalho do Verso */}
+                    <div className="flex items-center justify-between pb-3 border-b border-border/60">
+                      <div className="flex items-center gap-2 font-display text-sm sm:text-base font-extrabold text-foreground">
+                        <Award className="h-5 w-5 text-accent" />
+                        <span>Inventário de Medalhas</span>
+                        <span className="rounded-full bg-accent/15 border border-accent/30 px-2 py-0.5 text-xs font-black text-accent">
+                          {profile.unlockedMedals?.length ?? 0} obtidas
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setCardFlipped(false)}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-3 py-1.5 font-display text-xs font-black text-primary hover:bg-primary/20 transition-all active:scale-95"
+                      >
+                        <RotateCw className="h-3.5 w-3.5" />
+                        <span>Voltar ao Perfil</span>
+                      </button>
+                    </div>
+
+                    {/* Catálogo de Medalhas com Rolagem Interna Suave */}
+                    <div className="pt-1 max-h-[60vh] sm:max-h-[65vh] overflow-y-auto pr-1">
+                      <PlayerMedalsInventory
+                        unlockedMedals={profile.unlockedMedals}
+                        customMedals={auth.adminConfig.customMedals}
+                        profile={profile}
+                        stats={auth.stats}
+                        isOwner={true}
+                      />
+                    </div>
+
+                    {/* Rodapé do Verso */}
+                    <div className="pt-2 border-t border-border/60">
+                      <button
+                        type="button"
+                        onClick={() => setCardFlipped(false)}
+                        className="w-full flex items-center justify-center gap-2 rounded-2xl bg-secondary hover:bg-secondary/80 border py-2.5 px-4 font-display text-xs font-black text-foreground transition-all active:scale-95"
+                      >
+                        <RotateCw className="h-4 w-4 text-muted-foreground" />
+                        <span>Voltar para a Frente do Cartão</span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -570,182 +800,6 @@ export function PlayerMenu({ onConfigChanged }: Props) {
                   </div>
                 );
               })()}
-
-              {/* ABA EXPANSÍVEL: NÍVEL & PROGRESSO */}
-              <div className="rounded-3xl border bg-card p-4 space-y-3 transition-all">
-                <div className="flex items-center justify-between text-sm font-bold">
-                  <span className="flex items-center gap-2">
-                    <Star className="h-4 w-4 text-accent" />
-                    Nível {progress.level}/{MAX_LEVEL} — {progress.title}
-                  </span>
-                  <span className="text-primary font-mono">{profile.xp} XP</span>
-                </div>
-
-                <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary transition-all duration-300"
-                    style={{ width: `${progress.percent}%` }}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>
-                    {progress.current}/{progress.needed} XP na faixa atual
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setLevelExpanded(!levelExpanded)}
-                    className="inline-flex items-center gap-1 font-display font-extrabold text-primary hover:underline"
-                  >
-                    {levelExpanded ? (
-                      <>
-                        Ocultar Detalhes <ChevronUp className="h-3.5 w-3.5" />
-                      </>
-                    ) : (
-                      <>
-                        Ver Detalhes do Nível & Requisitos <ChevronDown className="h-3.5 w-3.5" />
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {/* Conteúdo Expansível do Nível */}
-                {levelExpanded && (
-                  <div className="mt-3 space-y-3 border-t pt-3 animate-in fade-in-50 duration-200">
-                    {/* Barra de Limite Diário de XP */}
-                    <div className="rounded-2xl border bg-secondary/30 p-3 space-y-2">
-                      <div className="flex items-center justify-between text-xs font-bold">
-                        <span className="flex items-center gap-1.5">
-                          <Zap className="h-3.5 w-3.5 text-accent" /> XP Diário de Hoje
-                          <HelpTip text="Limite diário de XP comum para garantir ritmo saudável de estudos." />
-                        </span>
-                        <span className={isDailyCapped ? "text-accent" : "text-foreground"}>
-                          {dailyXp} / {dailyCap} XP
-                        </span>
-                      </div>
-                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                        <div
-                          className={`h-full rounded-full transition-all ${
-                            isDailyCapped ? "bg-accent" : "bg-success"
-                          }`}
-                          style={{ width: `${dailyPercent}%` }}
-                        />
-                      </div>
-                      <p className="text-[11px] text-muted-foreground">
-                        {isDailyCapped
-                          ? `Limite diário de ${dailyCap} XP atingido hoje. O limite renova amanhã!`
-                          : `Você ainda pode ganhar até ${dailyCap - dailyXp} XP hoje.`}
-                      </p>
-
-                      {/* Bônus extras diários: Torneio & X1 */}
-                      <div className="grid grid-cols-1 gap-1.5 border-t pt-2 text-[11px] sm:grid-cols-2">
-                        <div className="rounded-xl bg-background/80 p-2">
-                          <div className="font-bold text-primary">
-                            🏆 XP Extra Torneio: {dailyTournamentXp}/{TOURNAMENT_DAILY_EXTRA_XP_CAP} XP
-                          </div>
-                          <div className="text-muted-foreground">
-                            Entradas hoje: <b>{dailyTournamentEntries}/{TOURNAMENT_DAILY_ENTRIES_LIMIT}</b>
-                          </div>
-                        </div>
-                        <div className="rounded-xl bg-background/80 p-2">
-                          <div className="font-bold text-accent">
-                            ⚔️ XP Extra Arena X1: {dailyX1Xp}/{X1_DAILY_EXTRA_XP_CAP} XP
-                          </div>
-                          <div className="text-muted-foreground">
-                            Partidas ilimitadas (Nível 5+)
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Requisitos para o Próximo Nível */}
-                    {!progress.isMaxLevel && progress.nextRequirement && (
-                      <div className="rounded-2xl border bg-background p-3 space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="flex items-center gap-1.5 font-display text-xs font-extrabold uppercase tracking-wider text-primary">
-                            <Lock className="h-3.5 w-3.5" /> Requisitos para o Nível{" "}
-                            {progress.nextRequirement.level} ({progress.nextRequirement.emoji}{" "}
-                            {progress.nextRequirement.title})
-                          </span>
-                        </div>
-
-                        {progress.isLockedByMissions && (
-                          <div className="rounded-xl bg-accent/15 px-2.5 py-1.5 text-[11px] font-semibold text-foreground">
-                            🔒 Você já tem o XP necessário! Conclua os requisitos pendentes abaixo para
-                            destravar o Nível {progress.nextRequirement.level}.
-                          </div>
-                        )}
-
-                        <ul className="space-y-1.5 text-xs">
-                          {progress.checklist.map((item) => (
-                            <li
-                              key={item.key}
-                              className="flex items-center justify-between gap-2 rounded-xl bg-secondary/40 px-2.5 py-1.5"
-                            >
-                              <span className="flex items-center gap-1.5 font-medium">
-                                {item.met ? (
-                                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
-                                ) : (
-                                  <Clock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                )}
-                                {item.label}
-                              </span>
-                              <span
-                                className={`font-display font-bold ${
-                                  item.met ? "text-success" : "text-muted-foreground"
-                                }`}
-                              >
-                                {item.current} / {item.required}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* ABA EXPANSÍVEL: INVENTÁRIO & CATÁLOGO DE MEDALHAS */}
-              <div className="rounded-3xl border bg-card p-4 space-y-3 transition-all">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 font-display text-base font-extrabold text-foreground">
-                    <Award className="h-5 w-5 text-accent" />
-                    <span>Inventário de Medalhas</span>
-                    <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-bold text-muted-foreground">
-                      {profile.unlockedMedals?.length ?? 0} obtidas
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setMedalsExpanded(!medalsExpanded)}
-                    className="inline-flex items-center gap-1 font-display text-xs font-extrabold text-primary hover:underline"
-                  >
-                    {medalsExpanded ? (
-                      <>
-                        Recolher Inventário <ChevronUp className="h-3.5 w-3.5" />
-                      </>
-                    ) : (
-                      <>
-                        Abrir Catálogo de Medalhas <ChevronDown className="h-3.5 w-3.5" />
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {medalsExpanded && (
-                  <div className="border-t pt-3 animate-in fade-in-50 duration-200">
-                    <PlayerMedalsInventory
-                      unlockedMedals={profile.unlockedMedals}
-                      customMedals={auth.adminConfig.customMedals}
-                      profile={profile}
-                      stats={auth.stats}
-                      isOwner={true}
-                    />
-                  </div>
-                )}
-              </div>
 
               {/* ABA EXPANSÍVEL: LISTA DE JOGOS & PARTIDAS JOGADAS */}
               <div className="rounded-3xl border bg-card p-4 space-y-3 transition-all">
