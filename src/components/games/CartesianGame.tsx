@@ -240,7 +240,6 @@ export function CartesianGame({ onExit, onStatsChange, isRanked }: Props) {
     <div className="space-y-4">
       <GameTopBar title="Plano Cartesiano" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
       <GameHud time={clock.time} score={score} level={level} streak={streak} />
-      <BonusTimeToggle value={bonusOn} onChange={setBonusOn} earned={clock.bonus} />
       <TeamScoreBar key={runId} session={team} score={score} />
 
       <div className="relative rounded-3xl border bg-card p-4 sm:p-6 shadow-lg overflow-hidden">

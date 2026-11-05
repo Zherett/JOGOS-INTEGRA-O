@@ -299,7 +299,6 @@ export function VariableHuntGame({ onExit, onStatsChange, isRanked }: Props) {
     <div className="space-y-4">
       <GameTopBar title="Caça às Variáveis" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
       <HudBar time={clock.time} score={score} level={level} lives={lives} streak={streak} />
-      <BonusTimeToggle value={bonusOn} onChange={setBonusOn} earned={clock.bonus} />
       <TeamScoreBar key={runId} session={team} score={score} />
       <PlayArea
         question={question!}
@@ -320,17 +319,17 @@ function HudBar({ time, score, level, lives, streak }: {
   time: number; score: number; level: number; lives: number; streak: number;
 }) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-      <Stat icon={<Clock className="h-5 w-5" />} label="Tempo" value={formatTime(time)} tone="primary" />
-      <Stat icon={<Trophy className="h-5 w-5" />} label="Pontos" value={String(score)} tone="accent" />
-      <Stat icon={<Star className="h-5 w-5" />} label="Nível" value={String(level)} tone="primary" />
+    <div className="grid grid-cols-5 gap-1 sm:gap-2.5 select-none">
+      <Stat icon={<Clock className="h-3.5 w-3.5 sm:h-5 sm:w-5" />} label="Tempo" value={formatTime(time)} tone="primary" />
+      <Stat icon={<Trophy className="h-3.5 w-3.5 sm:h-5 sm:w-5" />} label="Pontos" value={String(score)} tone="accent" />
+      <Stat icon={<Star className="h-3.5 w-3.5 sm:h-5 sm:w-5" />} label="Nível" value={String(level)} tone="primary" />
       <Stat
-        icon={<Heart className="h-5 w-5" />}
+        icon={<Heart className="h-3.5 w-3.5 sm:h-5 sm:w-5" />}
         label="Vidas"
-        value={"♥".repeat(lives) + "♡".repeat(Math.max(0, 5 - lives))}
+        value={"♥".repeat(lives)}
         tone="destructive"
       />
-      <Stat icon={<Flame className="h-5 w-5" />} label="Sequência" value={String(streak)} tone="accent" />
+      <Stat icon={<Flame className="h-3.5 w-3.5 sm:h-5 sm:w-5" />} label="Streak" value={String(streak)} tone="accent" />
     </div>
   );
 }
@@ -343,11 +342,11 @@ function Stat({ icon, label, value, tone }: {
     : tone === "accent" ? "bg-accent/15 text-accent"
     : "bg-destructive/15 text-destructive";
   return (
-    <div className="flex items-center gap-3 rounded-2xl border bg-card p-3 shadow-sm">
-      <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${bg}`}>{icon}</div>
-      <div className="min-w-0">
-        <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
-        <div className="truncate text-lg font-bold font-display">{value}</div>
+    <div className="flex items-center gap-1 sm:gap-2.5 rounded-xl sm:rounded-2xl border bg-card p-1 sm:p-2.5 shadow-2xs min-w-0">
+      <div className={`grid h-6 w-6 sm:h-9 sm:w-9 shrink-0 place-items-center rounded-lg sm:rounded-xl ${bg}`}>{icon}</div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[8px] sm:text-[11px] uppercase tracking-wide text-muted-foreground truncate font-semibold leading-tight">{label}</div>
+        <div className="truncate text-xs sm:text-base font-black font-display text-foreground leading-tight">{value}</div>
       </div>
     </div>
   );

@@ -9,76 +9,58 @@ interface Props {
 const LABELS: Record<BarVariant, string> = {
   bateria: "Bateria",
   carregamento: "Carregando",
-  tanque: "Tanque",
+  tanque: "Tanque / Nível",
   medidor: "Medidor",
-  barra: "Barra",
+  barra: "Barra de Energia",
 };
 
 /**
- * Visual percentage representation split into equal segments (no numbers).
- * Segments have a FIXED size so 4-part and 10-part bars never look squeezed,
- * and empty segments keep a visible outline (silhouette).
+ * Representação visual percentual padronizada na horizontal (formato fixo de bateria/medidor).
+ * O container externo possui dimensões rigorosamente fixas e responsivas para celular,
+ * garantindo que barras de 2, 4, 5 ou 10 partes tenham exatamente o mesmo tamanho físico externo
+ * e nunca vazem da tela.
  */
 export function PercentBar({ variant, parts, filled }: Props) {
-  const vertical = variant === "tanque";
   const segments = Array.from({ length: parts }, (_, i) => i < filled);
 
   const fillClass =
     variant === "bateria"
-      ? "bg-emerald-500"
+      ? "bg-emerald-500 shadow-xs"
       : variant === "tanque"
-        ? "bg-sky-500"
+        ? "bg-sky-500 shadow-xs"
         : variant === "medidor"
-          ? "bg-accent"
-          : "bg-primary";
+          ? "bg-accent shadow-xs"
+          : "bg-primary shadow-xs";
 
-  const emptyClass = "bg-muted/50 border-2 border-dashed border-foreground/35";
-
-  // Fixed geometry keeps every bar visually consistent.
-  const SEG = 34; // px per segment (horizontal width / vertical height)
-  const GAP = 6;
-  const trackLength = parts * SEG + (parts - 1) * GAP;
+  const emptyClass = "bg-muted/30 border-2 border-dashed border-foreground/30";
 
   return (
-    <div className="flex flex-col items-center gap-3">
-      <div className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-        {LABELS[variant]}
+    <div className="flex flex-col items-center gap-2 w-full max-w-[320px] mx-auto select-none">
+      <div className="flex items-center justify-between w-full px-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+        <span>{LABELS[variant]}</span>
+        <span className="text-foreground/80 font-mono font-extrabold">{parts} partes iguais</span>
       </div>
 
-      {vertical ? (
-        <div
-          className="flex w-28 flex-col-reverse rounded-2xl border-4 border-foreground/70 bg-background p-2 shadow-inner"
-          style={{ height: trackLength + 16, gap: GAP }}
-        >
+      {/* Container horizontal padronizado com terminal de bateria */}
+      <div className="flex items-center justify-center w-full px-1">
+        <div className="flex-1 flex h-14 sm:h-16 items-stretch rounded-2xl border-4 border-foreground/70 bg-background p-1.5 shadow-inner gap-1.5 min-w-0">
           {segments.map((on, i) => (
             <div
               key={i}
-              style={{ height: SEG }}
-              className={`shrink-0 rounded-md transition-all duration-300 ${on ? fillClass : emptyClass}`}
+              className={`flex-1 min-w-0 rounded-lg transition-all duration-300 ${
+                on ? fillClass : emptyClass
+              }`}
             />
           ))}
         </div>
-      ) : (
-        <div className="flex max-w-full items-center gap-2 overflow-x-auto px-1">
-          <div
-            className="flex h-20 shrink-0 items-stretch rounded-2xl border-4 border-foreground/70 bg-background p-2 shadow-inner"
-            style={{ width: trackLength + 16, gap: GAP }}
-          >
-            {segments.map((on, i) => (
-              <div
-                key={i}
-                style={{ width: SEG }}
-                className={`shrink-0 rounded-md transition-all duration-300 ${on ? fillClass : emptyClass}`}
-              />
-            ))}
-          </div>
-          {variant === "bateria" && (
-            <div className="h-8 w-3 shrink-0 rounded-r-md bg-foreground/70" />
-          )}
-        </div>
-      )}
+        {/* Terminal positivo da bateria/medidor */}
+        <div className="h-6 w-2.5 sm:w-3 shrink-0 rounded-r-md bg-foreground/70 -ml-0.5" />
+      </div>
 
-      <div className="text-xs text-muted-foreground">{parts} partes iguais</div>
+      <div className="text-[11px] text-muted-foreground font-medium">
+        <span className="font-bold text-foreground">{filled}</span> de{" "}
+        <span className="font-bold text-foreground">{parts}</span> partes preenchidas
+      </div>
     </div>
   );
 }

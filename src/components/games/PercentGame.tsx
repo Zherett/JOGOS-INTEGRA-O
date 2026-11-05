@@ -375,7 +375,6 @@ export function PercentGame({ onExit, onStatsChange }: Props) {
     <div className="space-y-3">
       <GameTopBar title={TITLE} onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
       <GameHud time={clock.time} score={score} level={level} streak={streak} />
-      <BonusTimeToggle value={bonusOn} onChange={setBonusOn} earned={clock.bonus} label="Tempo extra +10s a cada 5 acertos seguidos" />
       <TeamScoreBar key={runId} session={team} score={score} />
 
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border bg-card px-4 py-2 text-sm shadow-sm">

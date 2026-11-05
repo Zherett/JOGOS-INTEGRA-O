@@ -332,7 +332,6 @@ export function ColorMemoryGame({ onExit, onStatsChange, isRanked }: Props) {
     <div className="space-y-4">
       <GameTopBar title="Memória das Cores" onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
       <GameHud time={clock.time} score={score} level={level} streak={bestStreak} />
-      <BonusTimeToggle value={bonusOn} onChange={setBonusOn} earned={clock.bonus} />
       <TeamScoreBar key={runId} session={team} score={score} />
 
       <div className={`relative rounded-3xl border bg-card p-3 sm:p-5 shadow-lg ${shake ? "animate-shake-x" : ""}`}>

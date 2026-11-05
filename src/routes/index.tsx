@@ -386,23 +386,16 @@ function Index() {
         const GameComponent = reg.component;
         const personalBest = displayStats[view]?.bestScore ?? 0;
         return (
-          <div className="space-y-4">
-            <GameRecordBanner
-              gameId={view}
-              profile={auth.profile}
-              personalBest={personalBest}
-            />
-            <GameComponent
-              onExit={handleExitGame}
-              onStatsChange={() => {
-                refreshLocal();
-                if (activeRankedGameId && view === activeRankedGameId) {
-                  void finishRankedEntry(false);
-                }
-              }}
-              isRanked={Boolean(activeRankedGameId && view === activeRankedGameId)}
-            />
-          </div>
+          <GameComponent
+            onExit={handleExitGame}
+            onStatsChange={() => {
+              refreshLocal();
+              if (activeRankedGameId && view === activeRankedGameId) {
+                void finishRankedEntry(false);
+              }
+            }}
+            isRanked={Boolean(activeRankedGameId && view === activeRankedGameId)}
+          />
         );
       })()}
 

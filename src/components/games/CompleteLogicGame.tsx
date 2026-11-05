@@ -236,7 +236,6 @@ export function CompleteLogicGame({ onExit, onStatsChange }: Props) {
     <div className="space-y-4">
       <GameTopBar title={TITLE} onExit={onExit} sessionActive={team.activeSession} onFinishSession={sessionEnd.request} />
       <GameHud time={clock.time} score={score} level={level} streak={streak} />
-      <BonusTimeToggle value={bonusOn} onChange={setBonusOn} earned={clock.bonus} />
       <TeamScoreBar key={runId} session={team} score={score} />
 
       <div className={`relative rounded-3xl border bg-card p-5 sm:p-8 shadow-lg overflow-hidden ${flashClass}`}>
