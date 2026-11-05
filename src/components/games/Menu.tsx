@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Trophy,
   Star,
@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import type { AllStats, GameId } from "@/lib/game-storage";
 import { GAME_NAMES } from "@/lib/game-storage";
-import { GAME_REGISTRY } from "@/lib/game-registry";
+import { GAME_REGISTRY, type GameRegistration } from "@/lib/game-registry";
 import { TOURNAMENT_MIN_LEVEL, X1_MIN_LEVEL } from "@/lib/player-profile";
 import {
   getAllActiveEvents,
@@ -40,6 +40,7 @@ import {
 } from "@/lib/game-records";
 import type { PlatformNoticeSlide } from "@/lib/game-codes";
 import { NoticeBoard } from "./NoticeBoard";
+import { GameDetailDialog } from "./GameDetailDialog";
 
 interface Props {
   stats: AllStats;
@@ -113,6 +114,7 @@ export function Menu({
   );
   const [currentEventIndex, setCurrentEventIndex] = useState(0);
   const [eventsPanelOpen, setEventsPanelOpen] = useState(false);
+  const [selectedGameForDetail, setSelectedGameForDetail] = useState<GameRegistration | null>(null);
 
   useEffect(() => {
     const update = () => {
@@ -290,9 +292,9 @@ export function Menu({
                   </div>
                 )}
 
-                {/* Faixa de Eventos da Semana (Carrossel Compacto Integrado) */}
+                {/* Faixa de Eventos da Semana com Altura Mínima Estável (Zero Oscilação) */}
                 {currentEv && (
-                  <div className="relative overflow-hidden rounded-xl border border-amber-400/60 bg-gradient-to-r from-amber-500/10 via-primary/5 to-amber-500/10 p-3 pl-8 pr-8">
+                  <div className="relative overflow-hidden rounded-xl border border-amber-400/60 bg-gradient-to-r from-amber-500/10 via-primary/5 to-amber-500/10 p-3 pl-8 pr-8 min-h-[105px] sm:min-h-[95px] flex flex-col justify-center">
                     {activeEvents.length > 1 && (
                       <>
                         <button
@@ -300,7 +302,7 @@ export function Menu({
                           onClick={handlePrev}
                           title="Evento anterior"
                           aria-label="Evento anterior"
-                          className="absolute left-1 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-neutral-900/70 text-white shadow-xs transition-all hover:bg-neutral-900"
+                          className="absolute left-1 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-neutral-900/70 text-white shadow-xs transition-all hover:bg-neutral-900 cursor-pointer"
                         >
                           <ChevronLeft className="h-3 w-3" />
                         </button>
@@ -309,7 +311,7 @@ export function Menu({
                           onClick={handleNext}
                           title="Próximo evento"
                           aria-label="Próximo evento"
-                          className="absolute right-1 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-neutral-900/70 text-white shadow-xs transition-all hover:bg-neutral-900"
+                          className="absolute right-1 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-neutral-900/70 text-white shadow-xs transition-all hover:bg-neutral-900 cursor-pointer"
                         >
                           <ChevronRight className="h-3 w-3" />
                         </button>
@@ -330,13 +332,18 @@ export function Menu({
                               <Calendar className="h-2.5 w-2.5 text-primary" /> {currentEv.activePeriodLabel}
                             </span>
                           )}
+                          {currentEv.linkedMedalId && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 border border-amber-400/40 px-2 py-0.5 text-[9px] font-bold text-amber-700 dark:text-amber-300">
+                              <Award className="h-2.5 w-2.5 text-amber-500" /> Recompensa: Medalha
+                            </span>
+                          )}
                         </div>
 
-                        <h3 className="font-display text-sm sm:text-base font-black text-foreground tracking-tight">
+                        <h3 className="font-display text-sm sm:text-base font-black text-foreground tracking-tight line-clamp-1">
                           {currentEv.title}
                         </h3>
 
-                        <p className="text-xs text-muted-foreground font-medium line-clamp-2">
+                        <p className="text-xs text-muted-foreground font-medium line-clamp-2 min-h-[32px]">
                           {currentEv.description}
                         </p>
                       </div>
@@ -370,16 +377,6 @@ export function Menu({
                         </div>
                       </div>
                     </div>
-
-                    {currentEv.linkedMedalId && (
-                      <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-card/80 border px-2.5 py-1 text-[10px]">
-                        <Award className="h-3 w-3 text-amber-500 shrink-0" />
-                        <span className="font-bold text-foreground">Medalha do Evento:</span>
-                        <span className="text-muted-foreground truncate">
-                          {currentEv.objectiveDescription || "Conclua os desafios do evento para desbloquear!"}
-                        </span>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -400,40 +397,40 @@ export function Menu({
         onOpenX1Arena={handleX1Click}
       />
 
-      {/* 4. Modos Competitivos Especiais: Torneio Semanal (Nv 3+) & Arena X1 (Nv 5+, 07h–19h) com Trava de Login */}
+      {/* 4. Modos Competitivos Especiais: Torneio Semanal (Nv 3+) & Arena X1 (Nv 5+, 07h–19h) com Cores Diferenciadas */}
       {(tournamentEnabled || x1Enabled) && (
         <div className="grid sm:grid-cols-2 gap-3.5 sm:gap-4">
           {tournamentEnabled && (
             <button
               type="button"
               onClick={handleTournamentClick}
-              className="group flex flex-col justify-between rounded-2xl border-2 border-primary/40 bg-gradient-to-br from-primary/10 via-card to-amber-500/10 p-4 sm:p-4.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md cursor-pointer"
+              className="group flex flex-col justify-between rounded-3xl border-2 border-sky-500/70 bg-gradient-to-br from-blue-950/80 via-slate-900/90 to-sky-950/60 p-4.5 sm:p-5 text-left shadow-[0_4px_25px_rgba(14,165,233,0.18)] transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_30px_rgba(14,165,233,0.3)] hover:border-sky-400 cursor-pointer min-h-[160px]"
             >
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-0.5 text-[10px] font-extrabold uppercase text-primary">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/20 border border-sky-400/40 px-2.5 py-0.5 text-[10px] font-black uppercase text-sky-300">
                     <Medal className="h-3 w-3" /> Nível {TOURNAMENT_MIN_LEVEL}+ • +100 XP Extra/Dia
                   </span>
                   {!playerProfile ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10px] font-extrabold text-amber-600 dark:text-amber-400">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/20 border border-amber-400/50 px-2 py-0.5 text-[10px] font-extrabold text-amber-300">
                       <Lock className="h-3 w-3" /> Requer Login
                     </span>
                   ) : !canTournament ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-800/80 border border-slate-700 px-2 py-0.5 text-[10px] font-bold text-slate-400">
                       <Lock className="h-3 w-3" /> Requer Nv. {TOURNAMENT_MIN_LEVEL}
                     </span>
                   ) : null}
                 </div>
-                <h2 className="font-display text-xl sm:text-2xl font-black flex items-center gap-2 text-foreground">
+                <h2 className="font-display text-xl sm:text-2xl font-black flex items-center gap-2 text-white">
                   🏆 Torneio Semanal Ranqueado
                 </h2>
-                <p className="text-xs text-muted-foreground leading-snug">
-                  Jogo da semana: <b className="text-foreground">{weeklyGameName}</b>. Você tem{" "}
-                  <b>10 entradas por dia</b> para subir de Rank e disputar o Top 5!
+                <p className="text-xs text-slate-300 leading-snug">
+                  Jogo da semana: <b className="text-white">{weeklyGameName}</b>. Você tem{" "}
+                  <b className="text-white">10 entradas por dia</b> para subir de Rank e disputar o Top 5!
                 </p>
               </div>
 
-              <div className="mt-3.5 inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-black text-primary-foreground shadow-sm w-fit group-hover:bg-primary/90">
+              <div className="mt-3.5 inline-flex items-center gap-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 px-4 py-2 text-xs font-black text-white shadow-md shadow-sky-500/30 w-fit group-hover:scale-[1.02] transition-transform">
                 {!playerProfile ? (
                   <>
                     <LogIn className="h-3.5 w-3.5" /> Entrar para Competir →
@@ -451,26 +448,26 @@ export function Menu({
             <button
               type="button"
               onClick={handleX1Click}
-              className="group flex flex-col justify-between rounded-2xl border-2 border-accent/40 bg-gradient-to-br from-sky-500/10 via-card to-rose-500/10 p-4 sm:p-4.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md cursor-pointer"
+              className="group flex flex-col justify-between rounded-3xl border-2 border-orange-500/70 bg-gradient-to-br from-orange-950/80 via-slate-900/90 to-amber-950/60 p-4.5 sm:p-5 text-left shadow-[0_4px_25px_rgba(249,115,22,0.18)] transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_30px_rgba(249,115,22,0.3)] hover:border-orange-400 cursor-pointer min-h-[160px]"
             >
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-accent/20 px-2.5 py-0.5 text-[10px] font-extrabold uppercase text-accent">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/20 border border-orange-400/40 px-2.5 py-0.5 text-[10px] font-black uppercase text-orange-300">
                     <Swords className="h-3 w-3" /> Nível {X1_MIN_LEVEL}+ • +100 XP Extra/Dia
                   </span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                    <Clock className="h-3 w-3" /> {x1HoursLabel}
+                  <span className="inline-flex items-center gap-1 rounded-full bg-black/40 border border-orange-500/30 px-2 py-0.5 text-[10px] font-bold text-orange-200">
+                    <Clock className="h-3 w-3 text-orange-400" /> {x1HoursLabel}
                   </span>
                 </div>
-                <h2 className="font-display text-xl sm:text-2xl font-black flex items-center gap-2 text-foreground">
+                <h2 className="font-display text-xl sm:text-2xl font-black flex items-center gap-2 text-white">
                   ⚔️ Arena de Batalha X1 Online
                 </h2>
-                <p className="text-xs text-muted-foreground leading-snug">
-                  Crie uma sala ou desafie colegas online no 1 vs 1 ao vivo com bônus diários de até <b>+100 XP extras</b>.
+                <p className="text-xs text-slate-300 leading-snug">
+                  Crie uma sala ou desafie colegas online no 1 vs 1 ao vivo com bônus diários de até <b className="text-white">+100 XP extras</b>.
                 </p>
               </div>
 
-              <div className="mt-3.5 inline-flex items-center gap-1.5 rounded-xl bg-accent px-3.5 py-2 text-xs font-black text-accent-foreground shadow-sm w-fit group-hover:bg-accent/90">
+              <div className="mt-3.5 inline-flex items-center gap-1.5 rounded-xl bg-orange-500 hover:bg-orange-400 px-4 py-2 text-xs font-black text-white shadow-md shadow-orange-500/30 w-fit group-hover:scale-[1.02] transition-transform">
                 {!playerProfile ? (
                   <>
                     <LogIn className="h-3.5 w-3.5" /> Entrar para Duelar →
@@ -488,100 +485,96 @@ export function Menu({
         </div>
       )}
 
-      {/* 5. Grade de Jogos: Cards Retangulares Achatados (Mais Jogos Visíveis) */}
-      <div className="grid sm:grid-cols-2 gap-3.5 sm:gap-4">
+      {/* 5. Grade de Jogos em 4 Colunas (Alinhada: 2 Jogos sob Torneio Ranqueado e 2 sob Arena X1) */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         {visible.map((g) => {
-          const s = stats[g.id] ?? { bestScore: 0, bestLevel: 1 };
-          const stageRecord = getGameStageRecord(g.id, stageId, gameRecords);
+          const isLocked = requireCodeGate && !unlocked.includes(g.id);
           return (
             <button
               key={g.id}
-              onClick={() => onSelect(g.id)}
-              className="group text-left rounded-2xl border bg-card p-3.5 sm:p-4 shadow-sm hover:shadow-lg hover:border-primary/50 hover:-translate-y-0.5 transition-all flex flex-col justify-between gap-3 cursor-pointer"
+              type="button"
+              onClick={() => setSelectedGameForDetail(g)}
+              className="group relative flex flex-col items-center justify-center rounded-3xl border-2 border-border/70 bg-card p-4 sm:p-5 text-center shadow-xs transition-all hover:scale-[1.03] hover:border-primary hover:shadow-xl hover:bg-accent/10 active:scale-95 cursor-pointer min-h-[155px]"
             >
-              {/* Linha Superior: Ícone no canto esquerdo + Nome e Descrição ao lado */}
-              <div className="flex items-start gap-3">
-                <div
-                  className={`grid h-12 w-12 sm:h-14 sm:w-14 shrink-0 place-items-center rounded-xl bg-gradient-to-br ${g.gradient} text-white shadow-md group-hover:scale-105 transition-transform`}
-                >
-                  {g.icon}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h2 className="font-display text-base sm:text-lg font-black text-foreground tracking-tight truncate">
-                    {g.title}
-                  </h2>
-                  <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2 leading-snug font-medium">
-                    {g.subtitle}
-                  </p>
-                </div>
+              {/* Ícone no Centro em Quadrado Arredondado Vibrante */}
+              <div
+                className={`grid h-16 w-16 sm:h-20 sm:w-20 place-items-center rounded-2xl bg-gradient-to-br ${g.gradient} text-white shadow-md group-hover:scale-105 group-hover:shadow-primary/30 transition-all mb-2.5`}
+              >
+                {React.isValidElement(g.icon)
+                  ? React.cloneElement(g.icon as React.ReactElement<{ className?: string }>, {
+                      className: "h-9 w-9 sm:h-11 sm:w-11",
+                    })
+                  : g.icon}
               </div>
 
-              {/* Linha Inferior: Badges, Recorde da Etapa e Botão Jogar */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border/60">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge
-                    icon={<Trophy className="h-3 w-3" />}
-                    label="Seu"
-                    value={s.bestScore}
-                    tone="accent"
-                  />
-                  <Badge
-                    icon={<Star className="h-3 w-3" />}
-                    label="Nv."
-                    value={s.bestLevel}
-                    tone="primary"
-                  />
+              {/* Nome do Jogo Abaixo do Ícone */}
+              <span className="font-display text-sm sm:text-base font-black text-foreground group-hover:text-primary transition-colors leading-tight line-clamp-2">
+                {g.title}
+              </span>
 
-                  {/* Recorde da Etapa em Pílula Compacta */}
-                  {stageRecord && (
-                    <span
-                      className="inline-flex items-center gap-1 rounded-full bg-secondary/80 border border-border px-2 py-0.5 text-[10px] font-bold text-foreground"
-                      title={
-                        stageRecord.holders.length > 0
-                          ? `Recordista: ${stageRecord.holders.map((h) => h.nick).join(", ")}`
-                          : "Recorde da Etapa"
-                      }
-                    >
-                      <span className="text-amber-500">🏆</span> {stageRecord.score} pts
-                      {stageRecord.holders[0] && (
-                        <span className="text-muted-foreground font-semibold truncate max-w-[70px] sm:max-w-[100px]">
-                          ({stageRecord.holders[0].nick})
-                        </span>
-                      )}
-                    </span>
-                  )}
-                </div>
-
-                <span className="inline-flex items-center gap-1 text-xs font-black text-primary group-hover:translate-x-1 transition-transform">
-                  Jogar →
+              {isLocked && (
+                <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[9px] font-black uppercase text-amber-600 dark:text-amber-400">
+                  <Lock className="h-2.5 w-2.5" /> Bloqueado
                 </span>
-              </div>
+              )}
             </button>
           );
         })}
 
-        {/* Botão de Inserir Código de Jogo (Compacto e Achatado) */}
+        {/* Card Minimalista para Inserir Novo Código de Jogo */}
         <button
+          type="button"
           onClick={onAddCode}
-          className="group flex items-center gap-3.5 rounded-2xl border-2 border-dashed bg-card/50 p-3.5 sm:p-4 text-left transition-all hover:border-primary hover:bg-card cursor-pointer"
+          className="group flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-primary/40 bg-card/40 p-4 sm:p-5 text-center transition-all hover:border-primary hover:bg-card hover:shadow-md cursor-pointer min-h-[155px]"
         >
-          <span className="grid h-12 w-12 sm:h-14 sm:w-14 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary group-hover:scale-105 transition-transform">
-            <KeyRound className="h-6 w-6" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <span className="font-display text-base font-bold block text-foreground">
-              Inserir novo código de jogo
-            </span>
-            <span className="text-xs text-muted-foreground block truncate">
-              Libere novos desafios ou digite o código da turma
-            </span>
+          <div className="grid h-14 w-14 sm:h-16 sm:w-16 place-items-center rounded-2xl bg-primary/10 text-primary group-hover:scale-105 transition-transform mb-2">
+            <KeyRound className="h-7 w-7" />
           </div>
+          <span className="font-display text-xs sm:text-sm font-black text-foreground group-hover:text-primary transition-colors leading-tight">
+            Inserir Código
+          </span>
+          <span className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
+            Liberar novos desafios
+          </span>
         </button>
       </div>
 
       <p className="text-center text-xs text-muted-foreground font-medium pt-2">
         Idealizado para alunos do 5º ao 9º ano • Funciona no celular, tablet e computador. Projeto INTEGRAÇÃO — SEMED-COARI.
       </p>
+
+      {/* 6. Modal de Detalhes do Jogo (Instruções, Recorde Pessoal, Recorde da Etapa, Modalidades e Botão Jogar) */}
+      <GameDetailDialog
+        game={selectedGameForDetail}
+        open={Boolean(selectedGameForDetail)}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setSelectedGameForDetail(null);
+        }}
+        onPlay={(gameId) => {
+          setSelectedGameForDetail(null);
+          onSelect(gameId);
+        }}
+        personalStats={
+          selectedGameForDetail
+            ? stats[selectedGameForDetail.id] ?? { bestScore: 0, bestLevel: 1 }
+            : { bestScore: 0, bestLevel: 1 }
+        }
+        stageRecord={
+          selectedGameForDetail
+            ? getGameStageRecord(selectedGameForDetail.id, stageId, gameRecords)
+            : null
+        }
+        stageName={playerProfile ? undefined : "1ª Etapa (5º ano)"}
+        isUnlocked={
+          selectedGameForDetail
+            ? !requireCodeGate || unlocked.includes(selectedGameForDetail.id)
+            : true
+        }
+        onOpenCodeGate={() => {
+          setSelectedGameForDetail(null);
+          onAddCode();
+        }}
+      />
     </div>
   );
 }

@@ -175,9 +175,9 @@ export const NoticeBoard: React.FC<NoticeBoardProps> = ({
           </>
         )}
 
-        {/* Conteúdo do Slide */}
-        <div className="relative z-10 px-6 sm:px-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="space-y-1.5 flex-1 min-w-0">
+        {/* Conteúdo do Slide com Altura Mínima Estável (Zero Oscilação / Layout Shift) */}
+        <div className="relative z-10 px-6 sm:px-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 min-h-[136px] sm:min-h-[105px]">
+          <div className="space-y-1.5 flex-1 min-w-0 flex flex-col justify-center min-h-[72px]">
             {/* Tag / Badge de Identificação */}
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-primary px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-primary-foreground shadow-2xs">
@@ -199,18 +199,18 @@ export const NoticeBoard: React.FC<NoticeBoardProps> = ({
             </div>
 
             {/* Título do Slide */}
-            <h3 className="font-display text-lg sm:text-2xl font-black text-foreground tracking-tight leading-snug">
+            <h3 className="font-display text-lg sm:text-2xl font-black text-foreground tracking-tight leading-snug line-clamp-1 sm:line-clamp-2">
               {currentSlide.title}
             </h3>
 
             {/* Mensagem / Descrição */}
-            <p className="text-xs sm:text-sm text-muted-foreground font-medium leading-relaxed max-w-2xl line-clamp-2 sm:line-clamp-3">
+            <p className="text-xs sm:text-sm text-muted-foreground font-medium leading-relaxed max-w-2xl line-clamp-2">
               {currentSlide.message}
             </p>
           </div>
 
           {/* Área de Ação / Medalha / Botão de Acesso Rápido */}
-          <div className="shrink-0 flex flex-wrap items-center gap-3 w-full md:w-auto justify-end pt-1 md:pt-0">
+          <div className="shrink-0 flex flex-wrap items-center gap-3 w-full md:w-auto justify-end pt-1 md:pt-0 min-h-[44px]">
             {/* Medalha Vinculada ao Evento (Clicável para Inspeção) */}
             {linkedMedalObj && (
               <button
