@@ -253,6 +253,24 @@ describe("Torneio Semanal Ranqueado (Nível 3+) e Regras da Arena X1 (Nível 5+,
     });
     assert.equal(r4.pointsDelta, -10);
     assert.equal(r4.newTournamentPoints, 0); // Floor at 0!
+
+    // 5. Garante que perfis de administradores reais (Josiney / Quemuel) pontuam normalmente e aparecem na classificação
+    const rJosiney = await recordWeeklyTournamentAttempt({
+      profile: {
+        ...baseProfile,
+        id: "p_josiney",
+        nick: "ZHERET",
+        nickNormalized: "josiney",
+        isAdmin: true,
+        tournamentPoints: 0,
+      } as any,
+      score: 100,
+      correct: 10,
+      wrong: 0,
+    });
+    assert.equal(rJosiney.pointsDelta, 10);
+    assert.equal(rJosiney.newTournamentPoints, 10);
+    assert.ok(rJosiney.standing !== null);
   });
 
   it("concede as medalhas de maestria ao alcançar o ápice de cada liga (Bronze III, Prata III, etc)", () => {

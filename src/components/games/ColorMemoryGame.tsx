@@ -56,7 +56,7 @@ function randomSeq(len: number, avoid?: Color[]): Color[] {
 }
 
 export function ColorMemoryGame({ onExit, onStatsChange, isRanked }: Props) {
-  const [phase, setPhase] = useState<Phase>("setup");
+  const [phase, setPhase] = useState<Phase>("countdown");
   const [difficulty, setDifficulty] = useState<Difficulty>(isRanked ? "dificil" : "facil");
   const [teamConfig, setTeamConfig] = useState<TeamConfig>(NORMAL_CONFIG);
   const team = useTeamSession();

@@ -54,7 +54,7 @@ const BALL_COLORS = [
 ];
 
 export function VariableHuntGame({ onExit, onStatsChange, isRanked }: Props) {
-  const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("setup");
+  const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("countdown");
   const [startLevel, setStartLevel] = useState(isRanked ? 5 : 1);
 
   useEffect(() => {

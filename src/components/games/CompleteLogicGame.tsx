@@ -39,7 +39,7 @@ interface Props {
 }
 
 export function CompleteLogicGame({ onExit, onStatsChange }: Props) {
-  const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("setup");
+  const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("countdown");
   const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
   const [teamConfig, setTeamConfig] = useState<TeamConfig>(NORMAL_CONFIG);
   const team = useTeamSession();

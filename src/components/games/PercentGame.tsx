@@ -53,7 +53,7 @@ type Phase = "setup" | "countdown" | "playing";
 const TITLE = "Desafio das Partes";
 
 export function PercentGame({ onExit, onStatsChange }: Props) {
-  const [phase, setPhase] = useState<Phase>("setup");
+  const [phase, setPhase] = useState<Phase>("countdown");
   const [mode, setMode] = useState<Mode>("porcentagem");
   const [teamConfig, setTeamConfig] = useState<TeamConfig>(NORMAL_CONFIG);
   const team = useTeamSession();

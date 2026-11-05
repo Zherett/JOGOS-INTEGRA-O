@@ -38,8 +38,21 @@ const OP_LABELS: Record<OpKind, string> = {
 };
 
 export function LogicGame({ onExit, onStatsChange, isRanked }: Props) {
-  const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("setup");
-  const [ops, setOps] = useState<OpKind[]>([...ALL_OPS]);
+  const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("countdown");
+  const [ops, setOps] = useState<OpKind[]>(() => {
+    try {
+      const raw = localStorage.getItem("desafios_logica_ops");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.includes("add") && parsed.includes("sub")) {
+          return parsed as OpKind[];
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    return [...ALL_OPS];
+  });
 
   useEffect(() => {
     if (isRanked) {

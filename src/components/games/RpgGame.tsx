@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GameTopBar } from "./GameTopBar";
+import { Countdown } from "./Countdown";
 import { ResultPanel } from "./ResultPanel";
 import { saveLastMatch, updateBest } from "@/lib/game-storage";
 import { playCorrect, playTone, playWrong } from "@/lib/sound";
@@ -35,7 +36,7 @@ interface Props {
 const MAX_PLAYER_LIVES = 3;
 
 export function RpgGame({ onExit, onStatsChange }: Props) {
-  const [phase, setPhase] = useState<"start" | "playing" | "victory" | "gameover">("start");
+  const [phase, setPhase] = useState<"countdown" | "playing" | "victory" | "gameover">("countdown");
   const [stage, setStage] = useState(1);
   const boss = getRobotBoss(stage);
 
@@ -311,79 +312,10 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
     <div className="space-y-5">
       <GameTopBar title="Batalha de Robôs" onExit={onExit} />
 
-      {/* TELA INICIAL */}
-      {phase === "start" && (
-        <div className="rounded-3xl border bg-card p-6 sm:p-8 shadow-xl space-y-6">
-          <div className="grid sm:grid-cols-3 items-center gap-6 rounded-2xl bg-gradient-to-r from-sky-500/10 via-purple-500/10 to-red-500/10 p-5 border">
-            <div className="flex flex-col items-center text-center">
-              <PlayerGeoRobot hit={false} superCharging={true} />
-              <span className="mt-2 font-display text-sm font-extrabold text-sky-600 dark:text-sky-400">
-                Robô Prisma (Você)
-              </span>
-              <span className="text-[11px] text-muted-foreground">Formas Coloridas • Raio Azul</span>
-            </div>
-
-            <div className="text-center space-y-2">
-              <div className="inline-flex items-center gap-1.5 rounded-full bg-accent/15 px-3 py-1 text-xs font-extrabold text-accent">
-                <Swords className="h-4 w-4" /> LUTA DE PODER
-              </div>
-              <h2 className="font-display text-2xl sm:text-3xl font-extrabold">
-                Raio Azul vs. Raio Vermelho
-              </h2>
-              <p className="text-xs sm:text-sm text-muted-foreground">
-                A barra de energia no centro avança para a esquerda (vermelho) com o tempo. Acerte
-                as questões para empurrar o <b>azul</b> e golpear o robô inimigo!
-              </p>
-            </div>
-
-            <div className="flex flex-col items-center text-center">
-              <EnemyGeoRobot theme="star" hit={null} />
-              <span className="mt-2 font-display text-sm font-extrabold text-red-600 dark:text-red-400">
-                5 Chefes Vermelhos
-              </span>
-              <span className="text-[11px] text-muted-foreground">
-                Formas Vermelhas • Raio Rubro
-              </span>
-            </div>
-          </div>
-
-          <div className="grid sm:grid-cols-3 gap-3 text-xs sm:text-sm">
-            <div className="rounded-2xl border bg-secondary/40 p-4 space-y-1">
-              <div className="font-display font-extrabold text-primary flex items-center gap-1.5">
-                <Zap className="h-4 w-4" /> 1. Golpe a Cada Acerto
-              </div>
-              <p className="text-muted-foreground">
-                Cada resposta correta empurra a barra azul para a direita e tira <b>1 ponto de vida</b>{" "}
-                do robô vermelho.
-              </p>
-            </div>
-            <div className="rounded-2xl border bg-secondary/40 p-4 space-y-1">
-              <div className="font-display font-extrabold text-accent flex items-center gap-1.5">
-                <Sparkles className="h-4 w-4" /> 2. Super Golpe (Barra 100%)
-              </div>
-              <p className="text-muted-foreground">
-                Quando você enche a barra azul até o fim, dispara um <b>Super Raio</b> que tira{" "}
-                <b>{SUPER_HIT_DAMAGE} vidas de uma vez</b>, derrotando o inimigo muito mais rápido!
-              </p>
-            </div>
-            <div className="rounded-2xl border bg-secondary/40 p-4 space-y-1">
-              <div className="font-display font-extrabold text-destructive flex items-center gap-1.5">
-                <ShieldAlert className="h-4 w-4" /> 3. Cuidado com o Vermelho
-              </div>
-              <p className="text-muted-foreground">
-                O vermelho avança sem parar! Se ele tomar toda a barra até o seu lado, seu robô
-                perde 1 escudo.
-              </p>
-            </div>
-          </div>
-
-          <Button
-            size="lg"
-            onClick={startBattle}
-            className="h-14 w-full rounded-2xl font-display text-lg font-extrabold shadow-lg"
-          >
-            <Zap className="mr-2 h-5 w-5" /> Iniciar Batalha de Poder!
-          </Button>
+      {/* CONTAGEM REGRESSIVA 3, 2, 1 */}
+      {phase === "countdown" && (
+        <div className="space-y-4">
+          <Countdown onDone={startBattle} />
         </div>
       )}
 
@@ -757,7 +689,7 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
             correct={correctCount}
             wrong={wrongCount}
             level={stage}
-            onReplay={startBattle}
+            onReplay={() => setPhase("countdown")}
             onMenu={onExit}
           />
         </div>

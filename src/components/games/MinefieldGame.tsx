@@ -39,7 +39,7 @@ function fmt(sec: number) {
 }
 
 export function MinefieldGame({ onExit, onStatsChange, isRanked }: Props) {
-  const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("setup");
+  const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("countdown");
   const [teamConfig, setTeamConfig] = useState<TeamConfig>(NORMAL_CONFIG);
   const team = useTeamSession();
   const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);

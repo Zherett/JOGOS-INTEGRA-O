@@ -322,6 +322,7 @@ function Index() {
           unlocked={unlocked}
           enabledGames={cfg.enabledGames}
           requireCodeGate={cfg.requireCodeGate}
+          showCodeGateCardOnHome={cfg.showCodeGateCardOnHome}
           x1Enabled={cfg.x1Enabled ?? true}
           x1OpenNow={x1OpenNow}
           x1HoursLabel={x1HoursLabel}
@@ -393,7 +394,12 @@ function Index() {
             />
             <GameComponent
               onExit={handleExitGame}
-              onStatsChange={refreshLocal}
+              onStatsChange={() => {
+                refreshLocal();
+                if (activeRankedGameId && view === activeRankedGameId) {
+                  void finishRankedEntry(false);
+                }
+              }}
               isRanked={Boolean(activeRankedGameId && view === activeRankedGameId)}
             />
           </div>

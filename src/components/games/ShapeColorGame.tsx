@@ -49,7 +49,7 @@ interface Props {
 }
 
 export function ShapeColorGame({ onExit, onStatsChange, isRanked }: Props) {
-  const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("setup");
+  const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("countdown");
   const [startLevel, setStartLevel] = useState(isRanked ? 4 : 1);
 
   useEffect(() => {

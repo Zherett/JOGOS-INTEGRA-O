@@ -35,8 +35,20 @@ const SIZE_OPTIONS: PlaneSize[] = [8, 10, 15];
 const sizeToRange = (n: PlaneSize) => n;
 
 export function CartesianGame({ onExit, onStatsChange, isRanked }: Props) {
-  const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("setup");
-  const [planeSize, setPlaneSize] = useState<PlaneSize>(isRanked ? 15 : 8);
+  const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("countdown");
+  const [planeSize, setPlaneSize] = useState<PlaneSize>(() => {
+    if (isRanked) return 15;
+    try {
+      const raw = localStorage.getItem("desafios_cartesiano_size");
+      if (raw) {
+        const parsed = Number(raw);
+        if (parsed === 8 || parsed === 10 || parsed === 15) return parsed as PlaneSize;
+      }
+    } catch {
+      /* ignore */
+    }
+    return 8;
+  });
 
   useEffect(() => {
     if (isRanked) {

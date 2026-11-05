@@ -47,6 +47,7 @@ interface Props {
   unlocked: GameId[];
   enabledGames: Record<GameId, boolean>;
   requireCodeGate: boolean;
+  showCodeGateCardOnHome?: boolean;
   x1Enabled?: boolean;
   x1OpenNow?: boolean;
   x1HoursLabel?: string;
@@ -70,6 +71,7 @@ export function Menu({
   unlocked,
   enabledGames,
   requireCodeGate,
+  showCodeGateCardOnHome = false,
   x1Enabled = true,
   x1OpenNow = true,
   x1HoursLabel = "07:00 às 19:00",
@@ -521,22 +523,24 @@ export function Menu({
           );
         })}
 
-        {/* Card Minimalista para Inserir Novo Código de Jogo */}
-        <button
-          type="button"
-          onClick={onAddCode}
-          className="group flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-primary/40 bg-card/40 p-4 sm:p-5 text-center transition-all hover:border-primary hover:bg-card hover:shadow-md cursor-pointer min-h-[155px]"
-        >
-          <div className="grid h-14 w-14 sm:h-16 sm:w-16 place-items-center rounded-2xl bg-primary/10 text-primary group-hover:scale-105 transition-transform mb-2">
-            <KeyRound className="h-7 w-7" />
-          </div>
-          <span className="font-display text-xs sm:text-sm font-black text-foreground group-hover:text-primary transition-colors leading-tight">
-            Inserir Código
-          </span>
-          <span className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
-            Liberar novos desafios
-          </span>
-        </button>
+        {/* Card Opcional para Inserir Novo Código de Jogo (Configurável no Painel ADM) */}
+        {showCodeGateCardOnHome && (
+          <button
+            type="button"
+            onClick={onAddCode}
+            className="group flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-primary/40 bg-card/40 p-4 sm:p-5 text-center transition-all hover:border-primary hover:bg-card hover:shadow-md cursor-pointer min-h-[155px]"
+          >
+            <div className="grid h-14 w-14 sm:h-16 sm:w-16 place-items-center rounded-2xl bg-primary/10 text-primary group-hover:scale-105 transition-transform mb-2">
+              <KeyRound className="h-7 w-7" />
+            </div>
+            <span className="font-display text-xs sm:text-sm font-black text-foreground group-hover:text-primary transition-colors leading-tight">
+              Inserir Código
+            </span>
+            <span className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
+              Liberar novos desafios
+            </span>
+          </button>
+        )}
       </div>
 
       <p className="text-center text-xs text-muted-foreground font-medium pt-2">

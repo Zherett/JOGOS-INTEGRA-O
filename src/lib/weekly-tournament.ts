@@ -583,17 +583,7 @@ export function evaluateTournamentStandings(
   const list = Object.values(recordsMap)
     .filter((rec) => {
       const pId = rec.playerId.toLowerCase();
-      const nick = rec.nick.toLowerCase();
-      return (
-        pId !== "admin-system" &&
-        !pId.startsWith("admin-") &&
-        pId !== "admin" &&
-        pId !== "josiney" &&
-        pId !== "quemuel" &&
-        nick !== "admin" &&
-        nick !== "josiney" &&
-        nick !== "quemuel"
-      );
+      return pId !== "admin-system" && !pId.startsWith("admin-system");
     })
     .map((rec) => {
       const resolvedAge =
@@ -953,15 +943,7 @@ export async function recordWeeklyTournamentAttempt(args: {
   dailyBonusAwarded: boolean;
 }> {
   const pId = args.profile.id.toLowerCase();
-  const nick = args.profile.nickNormalized?.toLowerCase();
-  if (
-    args.profile.isAdmin ||
-    pId === "admin-system" ||
-    pId.startsWith("admin-") ||
-    nick === "admin" ||
-    nick === "josiney" ||
-    nick === "quemuel"
-  ) {
+  if (pId === "admin-system" || pId.startsWith("admin-system")) {
     const curRank = getTournamentRank(0).currentRank;
     return {
       standing: null,

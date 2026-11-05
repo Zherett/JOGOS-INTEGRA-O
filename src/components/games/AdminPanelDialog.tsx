@@ -1008,6 +1008,28 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                   </div>
                 </div>
 
+                {/* Exibir ou Ocultar Card de Inserir Código na Tela Inicial */}
+                <div className="rounded-2xl border bg-card p-3.5 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-display text-sm font-bold text-foreground flex items-center gap-2">
+                      <KeyRound className="h-4 w-4 text-primary" />
+                      Card "Inserir Código" na Tela Inicial
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      Quando ativado, exibe um botão pontilhado na grade de jogos da página inicial para os alunos inserirem códigos de liberação.
+                    </div>
+                  </div>
+                  <Switch
+                    checked={draft.showCodeGateCardOnHome ?? false}
+                    onCheckedChange={(v) => {
+                      const updated = { ...draft, showCodeGateCardOnHome: v };
+                      setDraft(updated);
+                      void auth.updateAdminConfig(updated);
+                      onConfigSaved?.();
+                    }}
+                  />
+                </div>
+
                 {/* Arena X1 Online Config (Nível 5+ e Horários) */}
                 <div className="rounded-2xl border bg-accent/10 p-3.5 space-y-3">
                   <div className="flex items-center justify-between gap-4">

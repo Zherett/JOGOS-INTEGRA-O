@@ -87,6 +87,8 @@ export interface PlatformAdminConfig {
   masterCode: string;
   /** When false, all enabled games appear unlocked in the menu without requiring a code. */
   requireCodeGate: boolean;
+  /** Exibir ou ocultar o card 'Inserir Código' na grade de jogos da tela inicial (padrão: false). */
+  showCodeGateCardOnHome?: boolean;
   /** Current ranking season number (incremented on each reset). */
   seasonId: number;
   /** Human-readable name for the active ranking cycle/season. */
@@ -177,6 +179,7 @@ export const DEFAULT_ADMIN_CONFIG: PlatformAdminConfig = {
   gameCodes: { ...DEFAULT_GAME_CODES },
   masterCode: DEFAULT_MASTER_CODE,
   requireCodeGate: false,
+  showCodeGateCardOnHome: false,
   seasonId: 1,
   seasonName: "Temporada 1 • SEMED Coari",
   lastResetAt: "2026-01-01T00:00:00.000Z",
