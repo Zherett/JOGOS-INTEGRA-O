@@ -25,8 +25,10 @@ import {
   ROBOT_BOSSES,
   SUPER_HIT_DAMAGE,
   type ClashQuestion,
+  type RobotBossDef,
   type RobotShapeTheme,
 } from "@/lib/rpg-content";
+import { grantSpecialRobotMedal } from "@/lib/playfab";
 
 interface Props {
   onExit: () => void;
@@ -38,7 +40,7 @@ const MAX_PLAYER_LIVES = 3;
 export function RpgGame({ onExit, onStatsChange }: Props) {
   const [phase, setPhase] = useState<"countdown" | "playing" | "victory" | "gameover">("countdown");
   const [stage, setStage] = useState(1);
-  const boss = getRobotBoss(stage);
+  const [boss, setBoss] = useState<RobotBossDef>(() => getRobotBoss(1, false));
 
   const [enemyHp, setEnemyHp] = useState(boss.maxHp);
   const [playerLives, setPlayerLives] = useState(MAX_PLAYER_LIVES);
@@ -62,6 +64,8 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
   const recentAnsRef = useRef<boolean[]>([]);
   const blueShareRef = useRef(INITIAL_BLUE_SHARE);
   const stageRef = useRef(1);
+  const bossRef = useRef<RobotBossDef>(boss);
+  const specialSpawnedRef = useRef(false);
   const livesRef = useRef(MAX_PLAYER_LIVES);
   const scoreRef = useRef(0);
   const correctRef = useRef(0);
@@ -69,6 +73,7 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
 
   blueShareRef.current = blueShare;
   stageRef.current = stage;
+  bossRef.current = boss;
   livesRef.current = playerLives;
   scoreRef.current = score;
   correctRef.current = correctCount;
@@ -102,7 +107,10 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
   );
 
   const startBattle = () => {
-    const firstBoss = getRobotBoss(1);
+    specialSpawnedRef.current = false;
+    const firstBoss = getRobotBoss(1, false);
+    setBoss(firstBoss);
+    bossRef.current = firstBoss;
     recentTextsRef.current = [];
     recentAnsRef.current = [];
     setStage(1);
@@ -134,7 +142,7 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
 
       setIsStunned(now < stunnedUntil);
 
-      const currentBoss = getRobotBoss(stageRef.current);
+      const currentBoss = bossRef.current;
       const tickRes = applyClashTick(blueShareRef.current, dt, currentBoss);
 
       if (tickRes.redOvertookAll) {
@@ -153,7 +161,7 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
           return;
         }
 
-        setClashBanner("⚠️ SOBRECARGA VERMELHA! Você perdeu 1 escudo!");
+        setClashBanner("⚠️ SOBRECARGA INIMIGA! Você perdeu 1 escudo!");
         window.setTimeout(() => setClashBanner(null), 1800);
         setBlueShare(INITIAL_BLUE_SHARE);
         blueShareRef.current = INITIAL_BLUE_SHARE;
@@ -173,7 +181,7 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
       if (phase !== "playing") return;
       if (performance.now() < stunnedUntil) return;
 
-      const currentBoss = getRobotBoss(stage);
+      const currentBoss = bossRef.current;
       const outcome = evaluateClashAnswer({
         question,
         chosenAnswer: chosen,
@@ -205,7 +213,7 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
             finishMatch("gameover", Math.max(0, score + outcome.scoreDelta), stage);
             return;
           }
-          setClashBanner("⚠️ ERRO CRÍTICO! O raio vermelho atingiu seu robô (-1 escudo)!");
+          setClashBanner("⚠️ ERRO CRÍTICO! O raio inimigo atingiu seu robô (-1 escudo)!");
           window.setTimeout(() => setClashBanner(null), 1800);
           setBlueShare(INITIAL_BLUE_SHARE);
         } else {
@@ -244,27 +252,57 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
       const nextScore = Math.max(0, score + outcome.scoreDelta + comboBonus);
 
       if (outcome.enemyDefeated) {
+        // Concede medalha platina se derrotou robô especial
+        if (currentBoss.isSpecial) {
+          if (currentBoss.specialType === "ametista") {
+            void grantSpecialRobotMedal("m_rpg_ametista");
+          } else if (currentBoss.specialType === "carmesim") {
+            void grantSpecialRobotMedal("m_rpg_carmesim");
+          }
+        }
+
         const stageClearScore = nextScore + currentBoss.rewardPoints;
         setScore(stageClearScore);
 
         if (stage >= ROBOT_BOSSES.length) {
-          // Defeated all 5 geometric robot bosses!
+          // Derrotou todos os 5 robôs da partida!
           setEnemyHp(0);
           setBlueShare(100);
           finishMatch("victory", stageClearScore, stage);
           return;
         }
 
-        // Advance to next geometric robot boss!
+        // Avança para o próximo robô com 10% de chance de especial (máx 1 por partida)
         const nextStage = stage + 1;
-        const nextBoss = getRobotBoss(nextStage);
+        let isSpecial = false;
+        if (!specialSpawnedRef.current && Math.random() < 0.10) {
+          isSpecial = true;
+          specialSpawnedRef.current = true;
+        }
+
+        const nextBoss = getRobotBoss(nextStage, isSpecial);
+        setBoss(nextBoss);
+        bossRef.current = nextBoss;
         setStage(nextStage);
         setEnemyHp(nextBoss.maxHp);
         setBlueShare(INITIAL_BLUE_SHARE);
-        setClashBanner(
-          `🏆 ${currentBoss.name} derrotado! (+${currentBoss.rewardPoints} pts) • Prepare-se para a Fase ${nextStage}!`,
-        );
-        window.setTimeout(() => setClashBanner(null), 2500);
+
+        if (isSpecial) {
+          if (nextBoss.specialType === "carmesim") {
+            setClashBanner(
+              `🔥 ALERTA MÁXIMO! Robô Carmesim Lendário avistado! (3x Pontos + 100 Bônus + Medalha Platina)`,
+            );
+          } else {
+            setClashBanner(
+              `✨ ALERTA ESPECIAL! Robô Ametista avistado! (2x Pontos + Medalha Platina)`,
+            );
+          }
+        } else {
+          setClashBanner(
+            `🏆 ${currentBoss.name} derrotado! (+${currentBoss.rewardPoints} pts) • Prepare-se para a Fase ${nextStage}!`,
+          );
+        }
+        window.setTimeout(() => setClashBanner(null), 3200);
         nextQuestion(nextStage);
         return;
       }
@@ -442,10 +480,10 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
                 </div>
 
                 {/* A Barra de Energia com Brilho Pulsante e Alternância de Cor */}
-                <div className="relative h-11 sm:h-13 w-full rounded-2xl border-2 border-white/20 bg-slate-950 shadow-[0_0_30px_rgba(0,0,0,0.9)] overflow-visible">
+                <div className="relative h-11 sm:h-13 w-full rounded-2xl border-2 border-white/20 bg-slate-950 shadow-[0_0_30px_rgba(0,0,0,0.9)] overflow-hidden">
                   {/* Lado Azul (Jogador - Esquerda) com alternância contínua de tons de azul e brilho neon */}
                   <div
-                    className="absolute inset-y-0 left-0 rounded-l-xl transition-[width] duration-75 overflow-hidden"
+                    className="absolute inset-y-0 left-0 rounded-l-xl transition-all duration-300 ease-out overflow-hidden"
                     style={{
                       width: `${blueShare}%`,
                       boxShadow: "0 0 25px rgba(56,189,248,0.85), inset 0 0 15px rgba(255,255,255,0.4)",
@@ -457,7 +495,7 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
 
                   {/* Lado Vermelho (Inimigo - Direita) com alternância contínua de tons de vermelho e brilho neon */}
                   <div
-                    className="absolute inset-y-0 right-0 rounded-r-xl transition-[width] duration-75 overflow-hidden"
+                    className="absolute inset-y-0 right-0 rounded-r-xl transition-all duration-300 ease-out overflow-hidden"
                     style={{
                       width: `${redShare}%`,
                       boxShadow: "0 0 25px rgba(239,68,68,0.85), inset 0 0 15px rgba(255,255,255,0.4)",
@@ -466,60 +504,6 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
                       animation: "redEnergyPulse 2.2s ease-in-out infinite alternate",
                     }}
                   />
-
-                  {/* EFEITO DE CHOQUE CENTRAL COM FAÍSCAS GEOMÉTRICAS (SEM EMOJIS/ÍCONES) ESCONDENDO A LINHA DIVISÓRIA */}
-                  <div
-                    className="pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 z-30"
-                    style={{ left: `${Math.max(2, Math.min(98, blueShare))}%` }}
-                  >
-                    <div className="relative flex items-center justify-center">
-                      {/* Barreira de Plasma Central (cobre verticalmente toda a linha divisória) */}
-                      <div className="h-16 sm:h-20 w-5 rounded-full bg-white blur-[1.5px] shadow-[0_0_20px_#ffffff,0_0_35px_#38bdf8,0_0_35px_#ef4444] animate-pulse" />
-
-                      {/* Faíscas Geométricas 1: Losangos, Triângulos e Formas Angulares Rotativas (Horário) */}
-                      <svg
-                        viewBox="0 0 100 100"
-                        className="absolute h-24 w-24 overflow-visible animate-spin"
-                        style={{ animationDuration: "1.2s" }}
-                        aria-hidden="true"
-                      >
-                        {/* Losangos Brilhantes */}
-                        <polygon points="50,6 56,22 50,38 44,22" fill="#ffffff" />
-                        <polygon points="50,94 56,78 50,62 44,78" fill="#38bdf8" />
-                        <polygon points="6,50 22,44 38,50 22,56" fill="#38bdf8" />
-                        <polygon points="94,50 78,44 62,50 78,56" fill="#f87171" />
-                        
-                        {/* Triângulos e Diamantes Diagonais */}
-                        <polygon points="18,18 36,24 24,36" fill="#fef08a" />
-                        <polygon points="82,82 64,76 76,64" fill="#fb7185" />
-                        <polygon points="82,18 76,36 64,24" fill="#facc15" />
-                        <polygon points="18,82 24,64 36,76" fill="#67e8f9" />
-                      </svg>
-
-                      {/* Faíscas Geométricas 2: Quadrados Giratórios e Cristais Geométricos (Anti-horário) */}
-                      <svg
-                        viewBox="0 0 100 100"
-                        className="absolute h-20 w-20 overflow-visible"
-                        style={{
-                          animation: "spinReverse 0.85s linear infinite",
-                        }}
-                        aria-hidden="true"
-                      >
-                        {/* Quadrados concêntricos rotacionados (formando estrelas de 8 e 12 pontas geométricas) */}
-                        <rect x="42" y="42" width="16" height="16" fill="#ffffff" transform="rotate(45 50 50)" opacity="0.95" />
-                        <rect x="44" y="44" width="12" height="12" fill="#fef08a" transform="rotate(22.5 50 50)" />
-                        <polygon points="50,20 54,34 50,48 46,34" fill="#67e8f9" />
-                        <polygon points="50,80 54,66 50,52 46,66" fill="#f87171" />
-                        <polygon points="20,50 34,46 48,50 34,54" fill="#bae6fd" />
-                        <polygon points="80,50 66,46 52,50 66,54" fill="#fca5a5" />
-                      </svg>
-
-                      {/* Flash central em Losango Branco/Dourado pulsante */}
-                      <svg viewBox="0 0 40 40" className="absolute h-8 w-8 animate-ping" aria-hidden="true">
-                        <polygon points="20,0 40,20 20,40 0,20" fill="#ffffff" opacity="0.75" />
-                      </svg>
-                    </div>
-                  </div>
                 </div>
 
                 {/* Injeção inline de keyframes para alternância vibrante de cor das barras */}
@@ -587,7 +571,7 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
                 </div>
               </div>
 
-              {/* LADO DIREITO: ROBÔ INIMIGO VERMELHO DE FORMAS GEOMÉTRICAS */}
+              {/* LADO DIREITO: ROBÔ INIMIGO DE FORMAS GEOMÉTRICAS */}
               <div className="flex flex-col items-center shrink-0">
                 <div
                   className={`relative transition-transform duration-200 ${
@@ -598,7 +582,7 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
                         : ""
                   }`}
                 >
-                  <EnemyGeoRobot theme={boss.shapeTheme} hit={enemyHitKind} />
+                  <EnemyGeoRobot boss={boss} hit={enemyHitKind} />
                   {enemyHitKind && (
                     <span
                       className={`animate-pop-in absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-2.5 py-0.5 font-display text-xs font-extrabold shadow-lg ${
@@ -611,9 +595,22 @@ export function RpgGame({ onExit, onStatsChange }: Props) {
                     </span>
                   )}
                 </div>
-                <span className="mt-1.5 font-display text-[11px] sm:text-xs font-extrabold text-red-400">
+                <span
+                  className={`mt-1.5 font-display text-[11px] sm:text-xs font-extrabold ${
+                    boss.isSpecial
+                      ? boss.specialType === "carmesim"
+                        ? "text-red-400"
+                        : "text-purple-300"
+                      : "text-slate-300"
+                  }`}
+                >
                   {boss.name.toUpperCase()}
                 </span>
+                {boss.isSpecial && (
+                  <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-400 px-2 py-0.5 text-[9px] font-black text-slate-950 shadow">
+                    ★ {boss.scoreMultiplier}x PONTOS
+                  </span>
+                )}
                 <span className="font-mono text-[10px] font-bold text-red-300/80">
                   {enemyHp} {enemyHp === 1 ? "GOLPE RESTANTE" : "GOLPES RESTANTES"}
                 </span>
@@ -831,121 +828,287 @@ function PlayerGeoRobot({
 }
 
 /* ============================================================================
- * ROBÔ INIMIGO VERMELHO (DIREITA) — FEITO DE FORMAS GEOMÉTRICAS VERMELHAS
+ * RENDERIZADORES DE FORMAS GEOMÉTRICAS DO ROBÔ INIMIGO (CABEÇA E NÚCLEO PEITORAL)
+ * ========================================================================== */
+function renderEnemyHead(theme: RobotShapeTheme, fill: string, stroke: string) {
+  switch (theme) {
+    case "triangle":
+      return <polygon points="65,22 102,64 28,64" fill={fill} stroke={stroke} strokeWidth="2.5" />;
+    case "diamond":
+      return <polygon points="65,18 100,43 65,66 30,43" fill={fill} stroke={stroke} strokeWidth="2.5" />;
+    case "hexagon":
+      return <polygon points="40,22 90,22 104,44 90,66 40,66 26,44" fill={fill} stroke={stroke} strokeWidth="2.5" />;
+    case "octagon":
+      return (
+        <polygon
+          points="42,20 88,20 102,34 102,52 88,66 42,66 28,52 28,34"
+          fill={fill}
+          stroke={stroke}
+          strokeWidth="2.5"
+        />
+      );
+    case "star":
+      return (
+        <polygon
+          points="65,16 75,32 95,34 80,48 85,66 65,56 45,66 50,48 35,34 55,32"
+          fill={fill}
+          stroke={stroke}
+          strokeWidth="2.5"
+        />
+      );
+  }
+}
+
+function renderEnemyChestCore(
+  theme: RobotShapeTheme,
+  outerFill: string,
+  outerStroke: string,
+  innerFill: string,
+  centerFill: string,
+) {
+  switch (theme) {
+    case "triangle":
+      return (
+        <>
+          <polygon points="65,74 86,112 44,112" fill={outerFill} stroke={outerStroke} strokeWidth="2" />
+          <polygon points="65,82 78,106 52,106" fill={innerFill} />
+          <polygon points="65,88 73,101 57,101" fill={centerFill} />
+        </>
+      );
+    case "diamond":
+      return (
+        <>
+          <polygon points="65,73 85,93 65,113 45,93" fill={outerFill} stroke={outerStroke} strokeWidth="2" />
+          <polygon points="65,81 75,93 65,105 55,93" fill={innerFill} />
+          <polygon points="65,86 70,93 65,100 60,93" fill={centerFill} />
+        </>
+      );
+    case "hexagon":
+      return (
+        <>
+          <polygon points="53,75 77,75 87,93 77,111 53,111 43,93" fill={outerFill} stroke={outerStroke} strokeWidth="2" />
+          <polygon points="57,81 73,81 79,93 73,105 57,105 51,93" fill={innerFill} />
+          <polygon points="60,86 70,86 74,93 70,100 60,100 56,93" fill={centerFill} />
+        </>
+      );
+    case "octagon":
+      return (
+        <>
+          <polygon
+            points="52,75 78,75 87,84 87,102 78,111 52,111 43,102 43,84"
+            fill={outerFill}
+            stroke={outerStroke}
+            strokeWidth="2"
+          />
+          <polygon points="56,81 74,81 80,87 80,99 74,105 56,105 50,99 50,87" fill={innerFill} />
+          <polygon points="59,86 71,86 75,90 75,96 71,100 59,100 55,96 55,90" fill={centerFill} />
+        </>
+      );
+    case "star":
+      return (
+        <>
+          <polygon
+            points="65,72 72,84 86,85 75,96 79,110 65,102 51,110 55,96 44,85 58,84"
+            fill={outerFill}
+            stroke={outerStroke}
+            strokeWidth="2"
+          />
+          <polygon
+            points="65,79 70,87 79,88 72,95 75,104 65,99 55,104 58,95 51,88 60,87"
+            fill={innerFill}
+          />
+          <circle cx="65" cy="93" r="4" fill={centerFill} />
+        </>
+      );
+  }
+}
+
+/* ============================================================================
+ * ROBÔ INIMIGO (DIREITA) — FORMAS GEOMÉTRICAS DISTINTAS POR FASE
  * ========================================================================== */
 function EnemyGeoRobot({
-  theme,
+  boss,
   hit,
 }: {
-  theme: RobotShapeTheme;
+  boss: RobotBossDef;
   hit: null | "normal" | "super";
 }) {
+  const isAmetista = boss.isSpecial && boss.specialType === "ametista";
+  const isCarmesim = boss.isSpecial && boss.specialType === "carmesim";
+
+  const dropShadowStyle = isCarmesim
+    ? "drop-shadow(0 0 20px rgba(168,85,247,0.95))"
+    : isAmetista
+      ? "drop-shadow(0 0 20px rgba(250,204,21,0.95))"
+      : "drop-shadow(0 0 12px rgba(239,68,68,0.45))";
+
+  const headBodyFill = hit
+    ? "#fde047"
+    : isCarmesim
+      ? "#dc2626"
+      : isAmetista
+        ? "#9333ea"
+        : "#475569";
+
+  const headBodyStroke = isCarmesim
+    ? "#fca5a5"
+    : isAmetista
+      ? "#fef08a"
+      : "#94a3b8";
+
+  const hornFill = isCarmesim
+    ? "#b91c1c"
+    : isAmetista
+      ? "#7e22ce"
+      : "#334155";
+
+  const hornStroke = isCarmesim
+    ? "#c084fc"
+    : isAmetista
+      ? "#facc15"
+      : "#ef4444";
+
+  const eyeColor = isCarmesim
+    ? "#e879f9"
+    : isAmetista
+      ? "#fde047"
+      : "#ef4444";
+
+  const pupilColor = isCarmesim
+    ? "#581c87"
+    : isAmetista
+      ? "#713f12"
+      : "#7f1d1d";
+
+  const coreOuterFill = isCarmesim
+    ? "#7f1d1d"
+    : isAmetista
+      ? "#581c87"
+      : "#1e293b";
+
+  const coreOuterStroke = isCarmesim
+    ? "#c084fc"
+    : isAmetista
+      ? "#facc15"
+      : "#ef4444";
+
+  const coreInnerFill = isCarmesim
+    ? "#ef4444"
+    : isAmetista
+      ? "#a855f7"
+      : "#dc2626";
+
+  const coreCenterFill = isCarmesim
+    ? "#f0abfc"
+    : isAmetista
+      ? "#fef08a"
+      : "#fca5a5";
+
+  const cannonFill = isCarmesim
+    ? "#991b1b"
+    : isAmetista
+      ? "#6b21a8"
+      : "#334155";
+
+  const legFill1 = isCarmesim
+    ? "#b91c1c"
+    : isAmetista
+      ? "#7e22ce"
+      : "#334155";
+
+  const legFill2 = isCarmesim
+    ? "#7f1d1d"
+    : isAmetista
+      ? "#581c87"
+      : "#1e293b";
+
   return (
     <svg
       viewBox="0 0 130 150"
-      className="h-24 w-24 sm:h-32 sm:w-32 drop-shadow-[0_0_14px_rgba(239,68,68,0.65)]"
+      className="h-24 w-24 sm:h-32 sm:w-32"
       style={{
+        filter: dropShadowStyle,
         animation: hit ? "none" : "robotIdleFloatRed 2.3s ease-in-out infinite",
         transformOrigin: "bottom center",
       }}
-      aria-label="Robô inimigo vermelho de formas geométricas"
+      aria-label={`Robô inimigo ${boss.name}`}
     >
-      {/* Chifres / Crista Geométrica Vermelha com tremor agressivo */}
+      {/* Chifres / Crista Geométrica com tremor agressivo */}
       <g style={{ animation: "angryHornsTremble 2.8s ease-in-out infinite", transformOrigin: "65px 32px" }}>
-        <polygon points="48,14 36,32 54,32" fill="#ef4444" stroke="#fecaca" strokeWidth="1.5" />
-        <polygon points="82,14 76,32 94,32" fill="#dc2626" stroke="#fecaca" strokeWidth="1.5" />
+        <polygon points="48,14 36,32 54,32" fill={hornFill} stroke={hornStroke} strokeWidth="1.5" />
+        <polygon points="82,14 76,32 94,32" fill={hornFill} stroke={hornStroke} strokeWidth="1.5" />
       </g>
 
-      {/* Cabeça Geométrica Vermelha */}
-      {theme === "triangle" ? (
-        <polygon
-          points="65,24 100,64 30,64"
-          fill={hit ? "#fde047" : "#b91c1c"}
-          stroke="#fca5a5"
-          strokeWidth="2.5"
-        />
-      ) : (
-        <polygon
-          points="40,30 90,30 100,48 90,64 40,64 30,48"
-          fill={hit ? "#fde047" : "#991b1b"}
-          stroke="#fca5a5"
-          strokeWidth="2.5"
-        />
-      )}
+      {/* Cabeça Geométrica (Formato exclusivo por fase: triângulo, losango, hexágono, octógono ou estrela) */}
+      {renderEnemyHead(boss.shapeTheme, headBodyFill, headBodyStroke)}
 
       {/* Sobrancelhas Angulares de Bravo (fechadas, agressivas) */}
-      <polygon points="40,38 64,44 64,41 40,35" fill="#fecaca" opacity="0.9" />
-      <polygon points="90,38 66,44 66,41 90,35" fill="#fecaca" opacity="0.9" />
+      <polygon points="40,38 64,44 64,41 40,35" fill={headBodyStroke} opacity="0.9" />
+      <polygon points="90,38 66,44 66,41 90,35" fill={headBodyStroke} opacity="0.9" />
 
-      {/* Visor / Olhos Vermelho/Amarelos Agressivos com piscar dinâmico de cara de bravo */}
+      {/* Visor / Olhos Agressivos (Vermelhos para robôs comuns, Dourados para Ametista, Magenta para Carmesim) */}
       <g
         style={{
           animation: "redEyeBlinkAngry 2.8s infinite",
           transformOrigin: "65px 49px",
         }}
       >
-        {/* Olho Esquerdo Agressivo (losango/triângulo inclinado com pupila de fúria) */}
-        <polygon points="43,43 62,49 45,55" fill="#fef08a" stroke="#dc2626" strokeWidth="1" />
-        <polygon points="50,47 58,49 52,51" fill="#7f1d1d" />
+        {/* Olho Esquerdo Agressivo */}
+        <polygon points="43,43 62,49 45,55" fill={eyeColor} stroke={pupilColor} strokeWidth="1" />
+        <polygon points="50,47 58,49 52,51" fill={pupilColor} />
 
-        {/* Olho Direito Agressivo (inclinado em direção oposta) */}
-        <polygon points="87,43 68,49 85,55" fill="#fef08a" stroke="#dc2626" strokeWidth="1" />
-        <polygon points="80,47 72,49 78,51" fill="#7f1d1d" />
+        {/* Olho Direito Agressivo */}
+        <polygon points="87,43 68,49 85,55" fill={eyeColor} stroke={pupilColor} strokeWidth="1" />
+        <polygon points="80,47 72,49 78,51" fill={pupilColor} />
       </g>
 
       {/* Boca com Expressão de Bravo (boca metálica cerrando dentes pontudos geométricos) */}
       <g style={{ animation: "angryMouthGrimace 2s ease-in-out infinite", transformOrigin: "65px 59px" }}>
-        <polygon points="50,58 80,58 76,62 54,62" fill="#1e1b4b" stroke="#fca5a5" strokeWidth="1" />
+        <polygon points="50,58 80,58 76,62 54,62" fill="#0f172a" stroke={headBodyStroke} strokeWidth="1" />
         {/* Dentes metálicos afiados */}
-        <polygon points="54,58 57,60 60,58" fill="#fef08a" />
+        <polygon points="54,58 57,60 60,58" fill="#f8fafc" />
         <polygon points="61,58 64,60 67,58" fill="#ffffff" />
-        <polygon points="68,58 71,60 74,58" fill="#fef08a" />
+        <polygon points="68,58 71,60 74,58" fill="#f8fafc" />
         <polygon points="57,62 60,60 63,62" fill="#ffffff" />
         <polygon points="64,62 67,60 70,62" fill="#ffffff" />
       </g>
 
-      {/* Corpo de Formas Geométricas em Tons de Vermelho */}
+      {/* Corpo de Formas Geométricas */}
       <polygon
         points="32,68 98,68 106,94 92,118 38,118 24,94"
-        fill={hit === "super" ? "#fff" : "#dc2626"}
-        stroke="#fca5a5"
+        fill={hit === "super" ? "#fff" : headBodyFill}
+        stroke={headBodyStroke}
         strokeWidth="2.5"
       />
-      {/* Núcleo Geométrico Interno Vermelho-Escuro / Carmesim com pulso de fogo */}
+
+      {/* Núcleo Peitoral Geométrico Interno com mesma forma da cabeça (Triângulo, Losango, Hexágono, Octógono ou Estrela) */}
       <g
         style={{
           animation: "redCorePulseAngry 1.6s ease-in-out infinite",
           transformOrigin: "65px 93px",
         }}
       >
-        <polygon
-          points="65,73 85,93 65,113 45,93"
-          fill="#7f1d1d"
-          stroke="#f87171"
-          strokeWidth="2"
-        />
-        <polygon points="65,81 75,93 65,105 55,93" fill="#ef4444" />
-        <polygon points="65,86 70,93 65,100 60,93" fill="#facc15" />
+        {renderEnemyChestCore(boss.shapeTheme, coreOuterFill, coreOuterStroke, coreInnerFill, coreCenterFill)}
       </g>
 
-      {/* Canhão Esquerdo Apontado para a Barra Central (Disparando o Raio Vermelho) */}
-      <rect x="18" y="78" width="22" height="14" rx="3" fill="#991b1b" stroke="#fca5a5" strokeWidth="1.5" />
-      <polygon points="22,74 4,85 22,96" fill="#ef4444" stroke="#fecaca" strokeWidth="1.5" />
+      {/* Canhão Esquerdo Apontado para a Barra Central */}
+      <rect x="18" y="78" width="22" height="14" rx="3" fill={cannonFill} stroke={headBodyStroke} strokeWidth="1.5" />
+      <polygon points="22,74 4,85 22,96" fill={coreInnerFill} stroke={headBodyStroke} strokeWidth="1.5" />
       <circle
         cx="7"
         cy="85"
         r="6"
-        fill="#fca5a5"
+        fill={coreCenterFill}
         className="animate-ping"
         style={{ animationDuration: "1.2s" }}
       />
 
-      {/* Braço Direito de Espinhos Vermelhos */}
-      <polygon points="98,72 120,82 102,98" fill="#b91c1c" stroke="#fca5a5" strokeWidth="1.5" />
+      {/* Braço Direito de Espinhos */}
+      <polygon points="98,72 120,82 102,98" fill={cannonFill} stroke={headBodyStroke} strokeWidth="1.5" />
 
-      {/* Pernas Geométricas Vermelhas */}
-      <polygon points="42,118 58,118 52,145 34,145" fill="#991b1b" stroke="#fca5a5" strokeWidth="1.5" />
-      <polygon points="72,118 88,118 96,145 78,145" fill="#7f1d1d" stroke="#fca5a5" strokeWidth="1.5" />
+      {/* Pernas Geométricas */}
+      <polygon points="42,118 58,118 52,145 34,145" fill={legFill1} stroke={headBodyStroke} strokeWidth="1.5" />
+      <polygon points="72,118 88,118 96,145 78,145" fill={legFill2} stroke={headBodyStroke} strokeWidth="1.5" />
     </svg>
   );
 }

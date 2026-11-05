@@ -100,4 +100,61 @@ describe("Batalha de Robôs Geométricos (RPG da Lógica)", () => {
 
     assert.ok(categories.size >= 3);
   });
+
+  it("gera temas de formas geométricas correspondentes aos 5 estágios e gerencia robôs especiais", () => {
+    // 5 temas distintos
+    const themes = [1, 2, 3, 4, 5].map((s) => getRobotBoss(s).shapeTheme);
+    assert.deepEqual(themes, ["triangle", "diamond", "hexagon", "octagon", "star"]);
+
+    // Robô Especial Ametista (estágios 2-4)
+    const ametista = getRobotBoss(2, true);
+    assert.equal(ametista.isSpecial, true);
+    assert.equal(ametista.specialType, "ametista");
+    assert.equal(ametista.scoreMultiplier, 2);
+    assert.equal(ametista.accentColor, "#a855f7");
+
+    const ametistaCorrect = evaluateClashAnswer({
+      question: { text: "1 + 1 = 2", answer: true, category: "matematica", categoryLabel: "Matemática" },
+      chosenAnswer: true,
+      currentBlueShare: 50,
+      currentEnemyHp: 5,
+      boss: ametista,
+    });
+    assert.equal(ametistaCorrect.scoreDelta, 20); // +10 * 2
+
+    const ametistaWrong = evaluateClashAnswer({
+      question: { text: "1 + 1 = 2", answer: true, category: "matematica", categoryLabel: "Matemática" },
+      chosenAnswer: false,
+      currentBlueShare: 50,
+      currentEnemyHp: 5,
+      boss: ametista,
+    });
+    assert.equal(ametistaWrong.scoreDelta, -10); // -5 * 2
+
+    // Robô Especial Carmesim (estágio 5)
+    const carmesim = getRobotBoss(5, true);
+    assert.equal(carmesim.isSpecial, true);
+    assert.equal(carmesim.specialType, "carmesim");
+    assert.equal(carmesim.scoreMultiplier, 3);
+    assert.equal(carmesim.accentColor, "#dc2626");
+    assert.equal(carmesim.rewardPoints, ROBOT_BOSSES[4].rewardPoints + 100); // +100 bônus
+
+    const carmesimCorrect = evaluateClashAnswer({
+      question: { text: "1 + 1 = 2", answer: true, category: "matematica", categoryLabel: "Matemática" },
+      chosenAnswer: true,
+      currentBlueShare: 50,
+      currentEnemyHp: 5,
+      boss: carmesim,
+    });
+    assert.equal(carmesimCorrect.scoreDelta, 30); // +10 * 3
+
+    const carmesimWrong = evaluateClashAnswer({
+      question: { text: "1 + 1 = 2", answer: true, category: "matematica", categoryLabel: "Matemática" },
+      chosenAnswer: false,
+      currentBlueShare: 50,
+      currentEnemyHp: 5,
+      boss: carmesim,
+    });
+    assert.equal(carmesimWrong.scoreDelta, -15); // -5 * 3
+  });
 });

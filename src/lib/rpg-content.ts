@@ -27,6 +27,9 @@ export interface RobotBossDef {
   rewardPoints: number;
   shapeTheme: RobotShapeTheme;
   accentColor: string;
+  isSpecial?: boolean;
+  specialType?: "ametista" | "carmesim";
+  scoreMultiplier?: number;
 }
 
 export const NORMAL_HIT_DAMAGE = 1;
@@ -37,7 +40,7 @@ export const SUPER_RESET_BLUE_SHARE = 55;
 export const ROBOT_BOSSES: RobotBossDef[] = [
   {
     stage: 1,
-    name: "Sentinela Tri-Rubro",
+    name: "Sentinela Tri-Cinza",
     title: "Fase 1 • Robô de Triângulos",
     maxHp: 5,
     redPushPerSec: 1.8,
@@ -45,35 +48,35 @@ export const ROBOT_BOSSES: RobotBossDef[] = [
     redPenaltyOnWrong: 14,
     rewardPoints: 40,
     shapeTheme: "triangle",
-    accentColor: "#ef4444",
+    accentColor: "#64748b",
   },
   {
     stage: 2,
-    name: "Destruidor Hexa-Fogo",
-    title: "Fase 2 • Robô de Hexágonos",
+    name: "Destruidor Losango-Cinza",
+    title: "Fase 2 • Robô de Losangos",
     maxHp: 7,
     redPushPerSec: 2.5,
     blueGainOnCorrect: 22,
     redPenaltyOnWrong: 15,
     rewardPoints: 60,
-    shapeTheme: "hexagon",
-    accentColor: "#dc2626",
+    shapeTheme: "diamond",
+    accentColor: "#64748b",
   },
   {
     stage: 3,
-    name: "Colosso Losango-Escaldo",
-    title: "Fase 3 • Robô de Losangos",
+    name: "Colosso Hexa-Cinza",
+    title: "Fase 3 • Robô de Hexágonos",
     maxHp: 9,
     redPushPerSec: 3.4,
     blueGainOnCorrect: 20,
     redPenaltyOnWrong: 16,
     rewardPoints: 80,
-    shapeTheme: "diamond",
-    accentColor: "#b91c1c",
+    shapeTheme: "hexagon",
+    accentColor: "#64748b",
   },
   {
     stage: 4,
-    name: "Titã Octa-Carmesim",
+    name: "Titã Octa-Cinza",
     title: "Fase 4 • Robô de Octógonos",
     maxHp: 11,
     redPushPerSec: 4.5,
@@ -81,11 +84,11 @@ export const ROBOT_BOSSES: RobotBossDef[] = [
     redPenaltyOnWrong: 17,
     rewardPoints: 110,
     shapeTheme: "octagon",
-    accentColor: "#991b1b",
+    accentColor: "#64748b",
   },
   {
     stage: 5,
-    name: "Overlord Ômega-Vermelho",
+    name: "Overlord Estrela-Cinza",
     title: "Chefe Final • Rei das Formas",
     maxHp: 14,
     redPushPerSec: 5.8,
@@ -93,13 +96,41 @@ export const ROBOT_BOSSES: RobotBossDef[] = [
     redPenaltyOnWrong: 18,
     rewardPoints: 160,
     shapeTheme: "star",
-    accentColor: "#7f1d1d",
+    accentColor: "#64748b",
   },
 ];
 
-export function getRobotBoss(stage: number): RobotBossDef {
+export function getRobotBoss(stage: number, isSpecial = false): RobotBossDef {
   const idx = Math.max(0, Math.min(ROBOT_BOSSES.length - 1, Math.floor(stage) - 1));
-  return ROBOT_BOSSES[idx];
+  const base = ROBOT_BOSSES[idx];
+
+  if (!isSpecial || stage < 2) {
+    return { ...base };
+  }
+
+  if (stage === 5) {
+    return {
+      ...base,
+      name: "Robô Carmesim Especial",
+      title: "Chefe Final • Robô Carmesim Lendário",
+      isSpecial: true,
+      specialType: "carmesim",
+      scoreMultiplier: 3,
+      rewardPoints: base.rewardPoints + 100, // +100 pontos de bônus por derrotá-lo
+      accentColor: "#dc2626",
+    };
+  }
+
+  return {
+    ...base,
+    name: "Robô Ametista Especial",
+    title: `Fase ${stage} • Robô Especial Ametista`,
+    isSpecial: true,
+    specialType: "ametista",
+    scoreMultiplier: 2,
+    rewardPoints: base.rewardPoints * 2,
+    accentColor: "#a855f7",
+  };
 }
 
 /* ---------------- Power-Clash Energy Bar Physics & Evaluation ---------------- */
@@ -159,6 +190,7 @@ export function evaluateClashAnswer(args: {
   boss: RobotBossDef;
 }): ClashAnswerOutcome {
   const isCorrect = args.chosenAnswer === args.question.answer;
+  const mult = args.boss.scoreMultiplier ?? 1;
 
   if (!isCorrect) {
     const nextBlue = Math.max(0, args.currentBlueShare - args.boss.redPenaltyOnWrong);
@@ -170,7 +202,7 @@ export function evaluateClashAnswer(args: {
       enemyDefeated: false,
       nextBlueShare: nextBlue,
       redOvertookAll: nextBlue <= 0,
-      scoreDelta: -5,
+      scoreDelta: -5 * mult,
     };
   }
 
@@ -180,7 +212,7 @@ export function evaluateClashAnswer(args: {
   const nextEnemyHp = Math.max(0, args.currentEnemyHp - damageToEnemy);
   const enemyDefeated = nextEnemyHp <= 0;
   const nextBlueShare = isSuperHit ? SUPER_RESET_BLUE_SHARE : Math.min(99, rawNextBlue);
-  const scoreDelta = isSuperHit ? 35 : 15;
+  const scoreDelta = 10 * mult;
 
   return {
     isCorrect: true,

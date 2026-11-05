@@ -968,6 +968,14 @@ export function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdmin
       if (m.medalId.startsWith("m_x1_win_") && (acc.profile.x1Wins ?? 0) === 0) {
         return false;
       }
+      // Permanent immunity for Beta Tester and Special Robot boss medals
+      if (
+        m.medalId === "m_rpg_ametista" ||
+        m.medalId === "m_rpg_carmesim" ||
+        m.medalId.startsWith("beta_tester_")
+      ) {
+        return true;
+      }
       const def = medalDefMap.get(m.medalId);
       if (!def) return true;
       const cond = def.condition;
@@ -1065,6 +1073,14 @@ export function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdmin
 
     // Check total_medals_count (meta_collector_50 / meta_collector_80) after filtering
     filtered = filtered.filter((m) => {
+      // Permanent immunity for Beta Tester and Special Robot boss medals
+      if (
+        m.medalId === "m_rpg_ametista" ||
+        m.medalId === "m_rpg_carmesim" ||
+        m.medalId.startsWith("beta_tester_")
+      ) {
+        return true;
+      }
       const def = medalDefMap.get(m.medalId);
       if (def?.condition.type === "total_medals_count") {
         return filtered.length >= (def.condition.threshold ?? 50);
@@ -3754,6 +3770,22 @@ export async function grantPlayerMedalManually(
   }
 
   return { success: true };
+}
+
+/**
+ * Concede medalha de robô especial (Ametista ou Carmesim) ao jogador ativo da sessão.
+ */
+export async function grantSpecialRobotMedal(
+  medalId: "m_rpg_ametista" | "m_rpg_carmesim",
+): Promise<boolean> {
+  const session = loadStoredSession();
+  if (!session) return false;
+  const cfg = loadAdminConfig();
+  const allMedals = getAllAvailableMedals(cfg.customMedals);
+  const def = allMedals.find((m) => m.id === medalId);
+  if (!def) return false;
+  const res = await grantPlayerMedalManually(session.playerId, def);
+  return res.success;
 }
 
 /**

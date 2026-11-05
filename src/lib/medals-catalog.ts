@@ -807,6 +807,24 @@ export function buildBaseMedalsCatalog(): MedalDefinition[] {
       condition: { type: "top1_consecutive_weeks", threshold: 4 },
       isSecret: true,
     },
+    {
+      id: "m_rpg_ametista",
+      title: "Destruidor do Robô Ametista",
+      description: "Por derrotar um robô especial na Batalha de Robôs.",
+      rarity: "platina",
+      category: "evento",
+      iconName: "Shield",
+      condition: { type: "manual_event" },
+    },
+    {
+      id: "m_rpg_carmesim",
+      title: "Destruidor do Robô Carmesim",
+      description: "Por derrotar o temido Robô Carmesim no confronto final da Batalha de Robôs.",
+      rarity: "platina",
+      category: "evento",
+      iconName: "Flame",
+      condition: { type: "manual_event" },
+    },
   );
 
   return medals;

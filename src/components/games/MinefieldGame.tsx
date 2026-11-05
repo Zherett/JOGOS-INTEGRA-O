@@ -44,13 +44,7 @@ export function MinefieldGame({ onExit, onStatsChange, isRanked }: Props) {
   const team = useTeamSession();
   const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
   const [runId, setRunId] = useState(0);
-  const [answerSeconds, setAnswerSeconds] = useState<number>(isRanked ? 15 : ANSWER_SECONDS);
-
-  useEffect(() => {
-    if (isRanked) {
-      setAnswerSeconds(15);
-    }
-  }, [isRanked]);
+  const answerSeconds = ANSWER_SECONDS; // Tempo fixo em 20 segundos
 
   useEffect(() => { setLastMatch(loadLastMatch("minado")); }, []);
 
@@ -133,8 +127,13 @@ export function MinefieldGame({ onExit, onStatsChange, isRanked }: Props) {
       if (card.kind === "bonus") {
         setScore((s) => Math.max(0, s + card.points));
         team.credit(card.points);
-        if (card.points >= 0) { setCorrect((c) => c + 1); beep(760, 0.16, "triangle"); }
-        else { setWrong((w) => w + 1); beep(180, 0.2, "sawtooth"); }
+        if (card.points >= 0) {
+          setCorrect((c) => c + 1);
+          beep(760, 0.16, "triangle");
+        } else {
+          // Erro é computado exclusivamente por tempo esgotado na questão
+          beep(180, 0.2, "sawtooth");
+        }
         setToast(
           `Carta ${card.label}: ${card.points > 0 ? "+" : ""}${card.points} ${
             Math.abs(card.points) === 1 ? "ponto" : "pontos"
@@ -179,7 +178,7 @@ export function MinefieldGame({ onExit, onStatsChange, isRanked }: Props) {
       window.setTimeout(() => beep(990, 0.16, "triangle"), 90);
     } else {
       setScore((s) => Math.max(0, s - POINTS_WRONG));
-      setWrong((w) => w + 1);
+      // Erro é contabilizado apenas quando o tempo de 20s esgota
       team.credit(-POINTS_WRONG);
       beep(170, 0.28, "sawtooth");
     }
@@ -236,25 +235,9 @@ export function MinefieldGame({ onExit, onStatsChange, isRanked }: Props) {
         <div className="space-y-4">
           <TeamSetup value={teamConfig} onChange={setTeamConfig} locked={team.activeSession} />
 
-          <div>
-            <p className="mb-2 font-display font-bold">
-              Tempo para responder {isRanked && "• 🔒 Travado em 15s (Torneio Ranqueado)"}
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              {ANSWER_TIME_OPTIONS.map((t) => (
-                <OptionChip
-                  key={t}
-                  active={answerSeconds === t}
-                  onClick={() => {
-                    if (!isRanked) setAnswerSeconds(t);
-                  }}
-                >
-                  <span className="inline-flex items-center gap-1.5">
-                    <Timer className="h-4 w-4" /> {t}s {isRanked && t === 15 ? "🔒" : ""}
-                  </span>
-                </OptionChip>
-              ))}
-            </div>
+          <div className="flex items-center gap-2 rounded-2xl border bg-secondary/30 p-3 text-xs font-bold text-muted-foreground">
+            <Timer className="h-4 w-4 text-primary" />
+            <span>Tempo por questão: <b className="text-foreground">20 segundos</b> (O erro só é registrado se o tempo esgotar)</span>
           </div>
 
           <div className="rounded-2xl border bg-secondary/40 p-4 text-sm">
@@ -262,7 +245,7 @@ export function MinefieldGame({ onExit, onStatsChange, isRanked }: Props) {
             <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
               <li>Tabuleiro 8×8 com colunas A–H e linhas 1–8.</li>
               <li>Ao clicar, a carta vira e revela um desafio (V ou F, conta misteriosa ou forma geométrica).</li>
-              <li>Você tem {answerSeconds} segundos para responder cada questão.</li>
+              <li>Você tem 20 segundos para responder cada questão. Se o tempo esgotar, será contabilizado erro.</li>
               <li>Algumas cartas são bônus: valem de +1 a +3 ou de −1 a −3 pontos, sem pergunta.</li>
               <li>No modo equipes, a vez passa automaticamente e as cartas ficam na cor da equipe.</li>
             </ul>

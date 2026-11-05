@@ -9,8 +9,8 @@ export const ROWS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 export const POINTS_CORRECT = 5;
 export const POINTS_WRONG = 3;
-export const ANSWER_SECONDS = 15;
-export const ANSWER_TIME_OPTIONS = [10, 15, 20] as const;
+export const ANSWER_SECONDS = 20;
+export const ANSWER_TIME_OPTIONS = [20] as const;
 
 export type CardKind = "tf" | "mystery" | "shape" | "bonus";
 
