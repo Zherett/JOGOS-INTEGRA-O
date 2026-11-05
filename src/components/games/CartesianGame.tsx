@@ -95,7 +95,7 @@ export function CartesianGame({ onExit, onStatsChange, isRanked }: Props) {
         level,
         at: Date.now(),
         isTeam: team.activeSession,
-        mode: team.activeSession ? "equipes" : "padrao",
+        mode: isRanked ? "torneio_semanal" : team.activeSession ? "equipes" : "padrao",
       };
       saveLastMatch("cartesiano", m);
       setLastMatch(m);

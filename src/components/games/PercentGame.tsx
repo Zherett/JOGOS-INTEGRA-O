@@ -46,13 +46,14 @@ const MODE_LABEL: Record<Mode, string> = {
 interface Props {
   onExit: () => void;
   onStatsChange: () => void;
+  isRanked?: boolean;
 }
 
 type Phase = "setup" | "countdown" | "playing";
 
 const TITLE = "Desafio das Partes";
 
-export function PercentGame({ onExit, onStatsChange }: Props) {
+export function PercentGame({ onExit, onStatsChange, isRanked }: Props) {
   const [phase, setPhase] = useState<Phase>("countdown");
   const [mode, setMode] = useState<Mode>("porcentagem");
   const [teamConfig, setTeamConfig] = useState<TeamConfig>(NORMAL_CONFIG);
@@ -127,7 +128,7 @@ export function PercentGame({ onExit, onStatsChange }: Props) {
       wrong,
       level,
       at: Date.now(),
-      mode: team.activeSession ? "equipes" : mode,
+      mode: isRanked ? "torneio_semanal" : team.activeSession ? "equipes" : mode,
       isTeam: team.activeSession,
     };
     saveLastMatch("porcentagem", m);

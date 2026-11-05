@@ -30,9 +30,13 @@ const POINTS_WRONG = 5;
 
 const beep = playTone;
 
-interface Props { onExit: () => void; onStatsChange: () => void }
+interface Props {
+  onExit: () => void;
+  onStatsChange: () => void;
+  isRanked?: boolean;
+}
 
-export function RoboGridGame({ onExit, onStatsChange }: Props) {
+export function RoboGridGame({ onExit, onStatsChange, isRanked }: Props) {
   const [phase, setPhase] = useState<"setup" | "countdown" | "playing">("countdown");
   const [lastMatch, setLastMatch] = useState<LastMatch | null>(null);
   const [teamConfig, setTeamConfig] = useState<TeamConfig>(NORMAL_CONFIG);
@@ -70,7 +74,7 @@ export function RoboGridGame({ onExit, onStatsChange }: Props) {
         level,
         at: Date.now(),
         isTeam: team.activeSession,
-        mode: team.activeSession ? "equipes" : "padrao",
+        mode: isRanked ? "torneio_semanal" : team.activeSession ? "equipes" : "padrao",
       };
       saveLastMatch("robogrid", m);
       setLastMatch(m);

@@ -104,7 +104,7 @@ export function ShapeColorGame({ onExit, onStatsChange, isRanked }: Props) {
         level,
         at: Date.now(),
         isTeam: team.activeSession,
-        mode: team.activeSession ? "equipes" : "padrao",
+        mode: isRanked ? "torneio_semanal" : team.activeSession ? "equipes" : "padrao",
       };
       saveLastMatch("formas", m);
       setLastMatch(m);

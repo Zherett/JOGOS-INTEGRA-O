@@ -232,6 +232,11 @@ export function PlayerAuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     onMatchSaved((id, match) => {
+      // Partidas do Torneio Semanal Ranqueado são processadas exclusivamente pelo finishRankedEntry
+      // para calcular pontos ranqueados, patentes e evitar condições de corrida na nuvem
+      if (match.mode === "torneio_semanal") {
+        return;
+      }
       if (match.score > 0) {
         const stage = stageFromBirthdate(profile.birthdate, new Date(), profile.school).id;
         recordGameStageScore({

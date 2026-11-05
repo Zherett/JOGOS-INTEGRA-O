@@ -833,8 +833,16 @@ export function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdmin
     acc.profile.tournamentPoints = 0;
     acc.profile.tournamentRankId = "bronze_1";
     acc.profile.tournamentWeekKey = currentWeekKey;
-  } else if (!acc.profile.tournamentWeekKey) {
-    acc.profile.tournamentWeekKey = currentWeekKey;
+  } else {
+    if (!acc.profile.tournamentWeekKey) {
+      acc.profile.tournamentWeekKey = currentWeekKey;
+    }
+    if (typeof acc.profile.tournamentPoints !== "number") {
+      acc.profile.tournamentPoints = 0;
+    }
+    if (!acc.profile.tournamentRankId) {
+      acc.profile.tournamentRankId = "bronze_1";
+    }
   }
 
   // As medalhas do Torneio Semanal são prêmios exclusivos concedidos no encerramento de ciclo (domingo às 23:59).
@@ -1258,6 +1266,15 @@ function buildAccountFromPlayFabPayload(
     distinctGamesPlayed,
     dailyXp: parsedProfile.dailyXp ?? 0,
     dailyXpDate: parsedProfile.dailyXpDate ?? getLocalDateKey(),
+    dailyTournamentEntries: parsedProfile.dailyTournamentEntries ?? 0,
+    dailyTournamentXp: parsedProfile.dailyTournamentXp ?? 0,
+    tournamentPoints: parsedProfile.tournamentPoints ?? 0,
+    bestTournamentPoints: Math.max(
+      parsedProfile.bestTournamentPoints ?? 0,
+      parsedProfile.tournamentPoints ?? 0,
+    ),
+    tournamentRankId: parsedProfile.tournamentRankId ?? "bronze_1",
+    tournamentWeekKey: parsedProfile.tournamentWeekKey ?? getCurrentWeekKey(),
     streakDays: getPlayerStreakDays(parsedProfile),
     lastActiveDate: parsedProfile.lastActiveDate,
     activeDates: Array.isArray(parsedProfile.activeDates) ? parsedProfile.activeDates : [],
@@ -2218,6 +2235,38 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
               existing?.profile.tournamentMedals ??
               udProf?.tournamentMedals ??
               [],
+            dailyTournamentEntries: Math.max(
+              parsed.dailyTournamentEntries ?? 0,
+              existing?.profile.dailyTournamentEntries ?? 0,
+              udProf?.dailyTournamentEntries ?? 0,
+            ),
+            dailyTournamentXp: Math.max(
+              parsed.dailyTournamentXp ?? 0,
+              existing?.profile.dailyTournamentXp ?? 0,
+              udProf?.dailyTournamentXp ?? 0,
+            ),
+            tournamentPoints: Math.max(
+              parsed.tournamentPoints ?? 0,
+              existing?.profile.tournamentPoints ?? 0,
+              udProf?.tournamentPoints ?? 0,
+            ),
+            bestTournamentPoints: Math.max(
+              parsed.bestTournamentPoints ?? 0,
+              existing?.profile.bestTournamentPoints ?? 0,
+              udProf?.bestTournamentPoints ?? 0,
+              parsed.tournamentPoints ?? 0,
+              existing?.profile.tournamentPoints ?? 0,
+            ),
+            tournamentRankId:
+              parsed.tournamentRankId ??
+              existing?.profile.tournamentRankId ??
+              udProf?.tournamentRankId ??
+              "bronze_1",
+            tournamentWeekKey:
+              parsed.tournamentWeekKey ??
+              existing?.profile.tournamentWeekKey ??
+              udProf?.tournamentWeekKey ??
+              getCurrentWeekKey(),
             unlockedMedals: Array.from(medalMap.values()),
             badges: Array.from(badgeMap.values()),
             eventProgress:

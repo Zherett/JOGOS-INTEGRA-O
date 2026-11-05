@@ -94,7 +94,7 @@ export function MinefieldGame({ onExit, onStatsChange, isRanked }: Props) {
         level: currentLevel,
         at: Date.now(),
         isTeam: team.activeSession,
-        mode: team.activeSession ? "equipes" : "padrao",
+        mode: isRanked ? "torneio_semanal" : team.activeSession ? "equipes" : "padrao",
       };
       saveLastMatch("minado", m);
       setLastMatch(m);

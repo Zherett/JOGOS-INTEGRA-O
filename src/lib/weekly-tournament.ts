@@ -8,9 +8,11 @@ import { loadAdminConfig } from "./game-codes.ts";
 import {
   grantPlayerTournamentMedal,
   getAdminPlayFabTicket,
+  getAllRegisteredPlayers,
   getPlayFabTitleId,
   isPlayFabConfigured,
   loadStoredSession,
+  syncStudentRosterFromPlayFab,
   type PlayerProfile,
 } from "./playfab.ts";
 import {
@@ -740,33 +742,73 @@ function loadTournamentStore(now = new Date()): WeeklyTournamentStore {
     cfg.enabledGames,
   );
 
-  const empty: WeeklyTournamentStore = {
+  const baseRecords: Record<string, TournamentPlayerRecord> = {};
+
+  if (typeof window !== "undefined") {
+    try {
+      const raw = window.localStorage.getItem(TOURNAMENT_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<WeeklyTournamentStore>;
+        if (parsed.weekKey === weekKey && parsed.records) {
+          Object.assign(baseRecords, parsed.records);
+        } else if (parsed.weekKey && parsed.records && Object.keys(parsed.records).length > 0) {
+          void finalizeWeeklyTournamentSeason(parsed as WeeklyTournamentStore);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Mescla dinamicamente jogadores registrados no catálogo PlayFab unificado com pontuação ativa
+  try {
+    const players = getAllRegisteredPlayers();
+    for (const p of players) {
+      const pId = p.id || p.nickNormalized;
+      if (!pId || pId.startsWith("admin-system")) continue;
+      const pts = typeof p.tournamentPoints === "number" ? p.tournamentPoints : 0;
+      if (pts > 0 || (p.dailyTournamentEntries ?? 0) > 0) {
+        const existing = baseRecords[p.id] || baseRecords[p.nickNormalized];
+        const pAge = p.birthdate ? ageFrom(p.birthdate, now) : 10;
+        const pStage = p.birthdate
+          ? stageFromBirthdate(p.birthdate, now, p.school).id
+          : "etapa_1";
+        const bestPts = Math.max(pts, existing?.tournamentPoints ?? 0);
+        const rank = getTournamentRank(bestPts).currentRank;
+        const recKey = p.id || p.nickNormalized;
+        baseRecords[recKey] = {
+          playerId: recKey,
+          nick: p.nick,
+          fullName: p.full_name,
+          school: p.school,
+          birthdate: p.birthdate,
+          age: pAge,
+          stage: pStage,
+          level: p.level,
+          bestScore: Math.max(existing?.bestScore ?? 0, bestPts),
+          totalEntries: Math.max(existing?.totalEntries ?? 0, p.dailyTournamentEntries ?? 1),
+          tournamentPoints: bestPts,
+          dailyWinsCount: existing?.dailyWinsCount ?? 0,
+          dailyMatchesCount: existing?.dailyMatchesCount ?? p.dailyTournamentEntries ?? 0,
+          dailyDateKey: existing?.dailyDateKey ?? p.dailyXpDate,
+          dailyBonusAwarded: existing?.dailyBonusAwarded ?? false,
+          highestRankId: rank.id,
+          activeTop5Since: existing?.activeTop5Since ?? null,
+          accumulatedTop5Ms: existing?.accumulatedTop5Ms ?? 0,
+          updatedAt: existing?.updatedAt ?? now.getTime(),
+        };
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return {
     weekKey,
     gameId: activeGame,
-    records: {},
+    records: baseRecords,
     updatedAt: now.getTime(),
   };
-
-  if (typeof window === "undefined") return empty;
-  try {
-    const raw = window.localStorage.getItem(TOURNAMENT_STORAGE_KEY);
-    if (!raw) return empty;
-    const parsed = JSON.parse(raw) as Partial<WeeklyTournamentStore>;
-    if (parsed.weekKey !== weekKey) {
-      if (parsed.weekKey && parsed.records && Object.keys(parsed.records).length > 0) {
-        void finalizeWeeklyTournamentSeason(parsed as WeeklyTournamentStore);
-      }
-      return empty;
-    }
-    return {
-      weekKey,
-      gameId: activeGame,
-      records: parsed.records ?? {},
-      updatedAt: parsed.updatedAt ?? now.getTime(),
-    };
-  } catch {
-    return empty;
-  }
 }
 
 function saveTournamentStore(store: WeeklyTournamentStore) {
@@ -784,7 +826,14 @@ export async function syncWeeklyTournamentWithPlayFab(): Promise<void> {
   const titleId = getPlayFabTitleId();
   if (!titleId) return;
 
-  // Prioriza o ticket administrativo de serviço para ter permissão global no SharedGroupData
+  // 1. Sincroniza o catálogo unificado de alunos (SEMED_STUDENT_ROSTER_V1) onde todos os perfis e pontuações já existem
+  try {
+    await syncStudentRosterFromPlayFab();
+  } catch {
+    /* ignore */
+  }
+
+  // 2. Prioriza o ticket administrativo de serviço para ter permissão global no SharedGroupData
   let ticket = await getAdminPlayFabTicket();
   if (!ticket) {
     const session = loadStoredSession();
@@ -893,7 +942,12 @@ export function getWeeklyTournamentSnapshot(
   const entriesRemainingToday = Math.max(0, TOURNAMENT_DAILY_ENTRIES_LIMIT - entriesUsedToday);
   const extraXpEarnedToday = isToday ? Math.max(0, profile?.dailyTournamentXp ?? 0) : 0;
   const myStanding = profile
-    ? (myStageEvaluated.allStandings.find((s) => s.playerId === profile.id) ?? null)
+    ? (myStageEvaluated.allStandings.find(
+        (s) =>
+          s.playerId === profile.id ||
+          s.playerId === profile.nickNormalized ||
+          (s.nick && s.nick.toLowerCase() === profile.nick.toLowerCase()),
+      ) ?? null)
     : null;
 
   const currentPoints = Math.max(
@@ -915,7 +969,7 @@ export function getWeeklyTournamentSnapshot(
     entriesUsedToday,
     entriesRemainingToday,
     extraXpEarnedToday,
-    canEnterLevel: (profile?.level ?? 1) >= TOURNAMENT_MIN_LEVEL,
+    canEnterLevel: Boolean(profile?.isAdmin || (profile?.level ?? 1) >= TOURNAMENT_MIN_LEVEL),
     tournamentPoints: currentPoints,
     rankInfo,
   };
@@ -1016,9 +1070,20 @@ export async function recordWeeklyTournamentAttempt(args: {
   const evaluated = evaluateTournamentStandings(store.records, nowMs, pStage.id);
   store.records = evaluated.updatedRecords;
   saveTournamentStore(store);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("desafios:weekly-tournament-updated", { detail: store }),
+    );
+  }
   void syncWeeklyTournamentWithPlayFab();
 
-  const myRow = evaluated.allStandings.find((s) => s.playerId === args.profile.id) ?? null;
+  const myRow =
+    evaluated.allStandings.find(
+      (s) =>
+        s.playerId === args.profile.id ||
+        s.playerId === args.profile.nickNormalized ||
+        (s.nick && s.nick.toLowerCase() === args.profile.nick.toLowerCase()),
+    ) ?? null;
   let awardedMedal: TournamentMedal | null = null;
 
   // Projeção do Top 5 da etapa durante a semana em andamento:

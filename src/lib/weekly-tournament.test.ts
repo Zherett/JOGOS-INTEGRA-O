@@ -389,4 +389,24 @@ describe("Torneio Semanal Ranqueado (Nível 3+) e Regras da Arena X1 (Nível 5+,
     assert.equal(aligned.profile.tournamentMedals?.length, 1);
     assert.equal(aligned.profile.tournamentMedals?.[0].weekKey, "2026-W40");
   });
+
+  it("garante preservação de tournamentPoints e rankId no alinhamento da temporada", () => {
+    const { weekKey } = getWeekInfo();
+    const mockAccount: any = {
+      profile: {
+        id: "jogador_ranqueado_ativo",
+        tournamentWeekKey: weekKey,
+        tournamentPoints: 45,
+        tournamentRankId: "bronze_2",
+        dailyTournamentEntries: 3,
+        dailyTournamentXp: 30,
+      },
+      stats: [],
+    };
+
+    const aligned = ensurePlayerSeasonAligned(mockAccount, {} as any);
+    assert.equal(aligned.profile.tournamentPoints, 45);
+    assert.equal(aligned.profile.tournamentRankId, "bronze_2");
+    assert.equal(aligned.profile.tournamentWeekKey, weekKey);
+  });
 });

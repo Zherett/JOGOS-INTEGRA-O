@@ -120,6 +120,7 @@ function Index() {
     if (auth.profile) {
       const correct = last?.correct ?? 0;
       const wrong = last?.wrong ?? 0;
+      const safeScore = Math.max(0, score);
       const pStage = stageFromBirthdate(auth.profile.birthdate, new Date(), auth.profile.school).id;
       recordGameStageScore({
         gameId: gId,
@@ -128,19 +129,19 @@ function Index() {
         nick: auth.profile.nick,
         fullName: auth.profile.full_name,
         school: auth.profile.school,
-        score: Math.max(10, score),
+        score: safeScore,
         achievedAt: Date.now(),
       });
       const attemptRes = await recordWeeklyTournamentAttempt({
         profile: auth.profile,
-        score: Math.max(10, score),
+        score: safeScore,
         correct,
         wrong,
       });
       await auth.recordMatch({
         gameId: gId,
         mode: "torneio_semanal",
-        score: Math.max(10, score),
+        score: safeScore,
         level,
         correct,
         wrong,
@@ -149,6 +150,7 @@ function Index() {
       });
     }
     refreshLocal();
+    void auth.refresh();
     if (exitToMenu) {
       setView("menu");
       setTournamentOpen(true);
