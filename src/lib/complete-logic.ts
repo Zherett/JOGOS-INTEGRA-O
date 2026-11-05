@@ -159,7 +159,8 @@ function level1(): CQuestion {
       const [a, o1, b] = cmpTriple(lt);
       const [c, o2, d] = cmpTriple(!lt);
       const res = Math.random() < 0.5;
-      q = build(1, [N(a), O(o1), N(b), SO, N(c), O(o2), N(d)], res, [...LOGIC, pick(["+", "×"]), pick(["−", "÷"])]);
+      // No meio de duas sentenças lógicas completas, somente 'e' ou 'ou' são válidos
+      q = build(1, [N(a), O(o1), N(b), SO, N(c), O(o2), N(d)], res, [...LOGIC]);
     } else {
       // Keep the fixed comparison neutral so the missing comparator matters.
       const connective = pick(LOGIC);
@@ -215,8 +216,8 @@ function level3(): CQuestion {
   const res = Math.random() < 0.5;
   const c = rng(1, 11);
   const o2 = pick(["<", ">"]);
-  const distract = shuffle(ARITH).slice(0, 3);
-  return build(3, [N(a), O(o1), N(b), SO, N(c), O(o2), SN], res, [op, ...distract]);
+  // No meio de duas sentenças lógicas completas, somente 'e' ou 'ou' são válidos
+  return build(3, [N(a), O(o1), N(b), SO, N(c), O(o2), SN], res, [...LOGIC]);
 }
 
 const GENS = [level1, level2, level3];

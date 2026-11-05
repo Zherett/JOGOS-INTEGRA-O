@@ -329,7 +329,7 @@ function HudBar({ time, score, level, lives, streak }: {
         value={"♥".repeat(lives)}
         tone="destructive"
       />
-      <Stat icon={<Flame className="h-3.5 w-3.5 sm:h-5 sm:w-5" />} label="Streak" value={String(streak)} tone="accent" />
+      <Stat icon={<Flame className="h-3.5 w-3.5 sm:h-5 sm:w-5" />} label="Sequência" value={String(streak)} tone="accent" />
     </div>
   );
 }

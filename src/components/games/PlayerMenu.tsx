@@ -651,7 +651,7 @@ export function PlayerMenu({ onConfigChanged }: Props) {
                 const isOver15 = isEtapa3OrOlder(profile.birthdate);
                 if (isOver15) return null;
 
-                const schoolNotSelected = !profile.school || profile.school === "Nenhuma";
+                const schoolNotSelected = !profile.school || profile.school === "Nenhuma" || profile.school === "Outro";
                 const effectiveSchool = schoolNotSelected ? initialSchool : profile.school;
                 const needsGradeSelection =
                   !profile.grade && schoolNeedsGrade(effectiveSchool);

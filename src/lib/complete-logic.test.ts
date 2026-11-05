@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { checkAnswer, generateQuestion, type CQuestion } from "./complete-logic.ts";
 
 describe("Completando a Lógica — nível 1", () => {
-  test("gera duas comparações conectadas, quatro opções e uma resposta válida", () => {
+  test("gera duas comparações conectadas com apenas 2 opções ('e'/'ou') entre sentenças e 4 opções nos comparadores", () => {
     const used = new Set<string>();
     const slotPositions = new Set<number>();
     for (let i = 0; i < 500; i++) {
@@ -12,11 +12,19 @@ describe("Completando a Lógica — nível 1", () => {
       assert.equal(q.hasNum, false);
       assert.equal(q.hasOp, true);
       assert.equal(typeof q.result, "boolean");
-      assert.equal(q.options.length, 4);
-      assert.equal(q.options.filter((op) => checkAnswer(q, null, op)).length, 1);
       const slot = q.tokens.findIndex((t) => t.t === "slotOp");
       assert.ok([1, 3, 5].includes(slot));
       slotPositions.add(slot);
+
+      // Quando o operador está no meio das duas sentenças (slot === 3), apenas 'e' e 'ou' devem ser oferecidos
+      if (slot === 3) {
+        assert.equal(q.options.length, 2);
+        assert.deepEqual([...q.options].sort(), ["e", "ou"]);
+      } else {
+        assert.equal(q.options.length, 4);
+      }
+
+      assert.equal(q.options.filter((op) => checkAnswer(q, null, op)).length, 1);
       for (const pos of [0, 2, 4, 6]) assert.equal(q.tokens[pos].t, "num");
     }
     assert.ok(slotPositions.has(3));
@@ -24,12 +32,12 @@ describe("Completando a Lógica — nível 1", () => {
     assert.equal(used.size, 500);
   });
 
-  test("aceita e em 5 > 3 __ 4 < 5 = V", () => {
+  test("aceita 'e' em 5 > 3 __ 4 < 5 = V com apenas as alternativas 'e' e 'ou'", () => {
     const q: CQuestion = {
       key: "example-connective", kind: 1, hasNum: false, hasOp: true,
       tokens: [{ t: "num", v: 5 }, { t: "op", v: ">" }, { t: "num", v: 3 },
         { t: "slotOp" }, { t: "num", v: 4 }, { t: "op", v: "<" }, { t: "num", v: 5 }],
-      result: true, options: ["e", "ou", "+", "−"],
+      result: true, options: ["e", "ou"],
     };
     assert.equal(checkAnswer(q, null, "e"), true);
     assert.equal(checkAnswer(q, null, "+"), false);

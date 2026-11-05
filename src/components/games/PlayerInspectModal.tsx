@@ -337,13 +337,15 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
                     onChange={(e) => {
                       const newDate = e.target.value;
                       setEditBirthdate(newDate);
-                      const a = newDate ? ageFrom(newDate) : 0;
-                      if (a >= 15 && isOfficialSemedSchool(editSchool)) {
+                      if (isEtapa3OrOlder(newDate) && isOfficialSemedSchool(editSchool)) {
                         setEditSchool("Nenhuma");
                         setEditTurma("");
-                      } else if (a > 11 && is5thGradeSchool(editSchool)) {
-                        setEditSchool("Nenhuma");
-                        setEditTurma("");
+                      } else if (newDate) {
+                        const a = ageFrom(newDate);
+                        if (a > 11 && is5thGradeSchool(editSchool)) {
+                          setEditSchool("Nenhuma");
+                          setEditTurma("");
+                        }
                       }
                     }}
                     className="h-9 w-full rounded-xl border bg-background px-3 text-xs font-semibold"

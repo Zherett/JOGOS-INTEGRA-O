@@ -297,7 +297,7 @@ export function CompleteLogicGame({ onExit, onStatsChange, isRanked }: Props) {
             {question.hasOp && (
               <div className="mt-6">
                 <p className="text-center text-sm text-muted-foreground mb-3">Arraste (ou toque) o elemento certo para o espaço</p>
-                <div className="grid grid-cols-4 gap-3 max-w-md mx-auto">
+                <div className={`grid gap-3 mx-auto ${question.options.length === 2 ? "grid-cols-2 max-w-xs" : "grid-cols-4 max-w-md"}`}>
                   {question.options.map((o) => (
                     <button
                       key={o}

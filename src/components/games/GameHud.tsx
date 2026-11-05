@@ -14,7 +14,7 @@ export function GameHud({ time, score, level, streak }: Props) {
       <Stat icon={<Clock className="h-3.5 w-3.5 sm:h-5 sm:w-5" />} label="Tempo" value={formatTime(time)} tone="primary" />
       <Stat icon={<Trophy className="h-3.5 w-3.5 sm:h-5 sm:w-5" />} label="Pontos" value={score.toString()} tone="accent" />
       <Stat icon={<Star className="h-3.5 w-3.5 sm:h-5 sm:w-5" />} label="Nível" value={level.toString()} tone="primary" />
-      <Stat icon={<Flame className="h-3.5 w-3.5 sm:h-5 sm:w-5" />} label="Streak" value={(streak ?? 0).toString()} tone="accent" />
+      <Stat icon={<Flame className="h-3.5 w-3.5 sm:h-5 sm:w-5" />} label="Sequência" value={(streak ?? 0).toString()} tone="accent" />
     </div>
   );
 }

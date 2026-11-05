@@ -3,6 +3,7 @@
 export const SCHOOLS = [
   { name: "Nenhuma", slug: "nenhuma", range: "", needsGrade: false },
   { name: "Raimundo Bezerra", slug: "raimundo_bezerra", range: "6º ao 9º", needsGrade: true },
+  { name: "Agenor Smith", slug: "agenor_smith", range: "6º ao 9º", needsGrade: true },
   { name: "Elisângela Litaiff", slug: "elisangela_litaiff", range: "5º ano", needsGrade: false },
   { name: "Raimunda Cruz", slug: "raimunda_cruz", range: "5º ano", needsGrade: false },
   { name: "Maria de Nazaré", slug: "maria_de_nazare", range: "5º ano", needsGrade: false },
@@ -14,9 +15,11 @@ export type SchoolName = (typeof SCHOOLS)[number]["name"];
 
 export const GRADES = ["5º ano", "6º ano", "7º ano", "8º ano", "9º ano"] as const;
 export const RAIMUNDO_GRADES = ["6º ano", "7º ano", "8º ano", "9º ano"] as const;
+export const FUNDAMENTAL_II_GRADES = RAIMUNDO_GRADES;
 
 export const OFFICIAL_SEMED_SCHOOLS = [
   "Raimundo Bezerra",
+  "Agenor Smith",
   "Elisângela Litaiff",
   "Raimunda Cruz",
   "Maria de Nazaré",
@@ -24,6 +27,21 @@ export const OFFICIAL_SEMED_SCHOOLS = [
 ] as const;
 
 export type OfficialSemedSchoolName = (typeof OFFICIAL_SEMED_SCHOOLS)[number];
+
+export const SECOND_STAGE_SCHOOLS = [
+  "Raimundo Bezerra",
+  "Agenor Smith",
+] as const;
+
+export function isSecondStageSchool(school?: string | null): boolean {
+  if (!school) return false;
+  const lower = school.trim().toLowerCase();
+  return (
+    SECOND_STAGE_SCHOOLS.some((s) => s.toLowerCase() === lower) ||
+    lower.includes("bezerra") ||
+    lower.includes("agenor")
+  );
+}
 
 export const FIFTH_GRADE_SCHOOLS = [
   "Elisângela Litaiff",
@@ -44,24 +62,41 @@ export function is5thGradeSchool(school?: string | null): boolean {
 }
 
 /**
- * Checks whether a student's age (>= 15 years) places them in Etapa 3 (Comunidade / Outro).
- * Players in Etapa 3 cannot be allocated to Elementary SEMED schools or classes.
+ * Checks whether a student belongs to Etapa 3 (Comunidade / Outro).
+ * Conforme diretriz pedagógica:
+ * - Nascidos até dezembro de 2010 (ano de nascimento >= 2010, ex: 2010, 2011, 2012...)
+ *   podem participar da 2ª Etapa (Ensino Fundamental - 6º ao 9º ano) e têm acesso
+ *   à Escola Municipal Raimundo Bezerra.
+ * - Nascidos antes de 2010 (ano de nascimento < 2010, ex: 2009, 2008, 2007...)
+ *   pertencem à 3ª Etapa (Comunidade / Outro) e não possuem vínculo com escolas do Ensino Fundamental.
  */
-export function isEtapa3OrOlder(birthdate?: string | null, now = new Date()): boolean {
+export function isEtapa3OrOlder(birthdate?: string | null, _now = new Date()): boolean {
   if (!birthdate) return false;
-  const b = new Date(`${birthdate}T00:00:00`);
-  if (Number.isNaN(b.getTime())) return false;
-  const turningAge = now.getFullYear() - b.getFullYear();
-  return turningAge >= 15 || ageFrom(birthdate, now) >= 15;
+  const clean = birthdate.trim();
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(clean);
+  if (isoMatch) {
+    const birthYear = parseInt(isoMatch[1], 10);
+    return birthYear < 2010;
+  }
+  const brMatch = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(clean);
+  if (brMatch) {
+    const birthYear = parseInt(brMatch[3], 10);
+    return birthYear < 2010;
+  }
+  const b = new Date(`${clean}T00:00:00`);
+  if (!Number.isNaN(b.getTime())) {
+    return b.getFullYear() < 2010;
+  }
+  return false;
 }
 
 /**
- * Returns available school options based on age:
- * - Ao ultrapassar os 15 anos (>= 15 anos): nenhuma escola oficial deve ser exibida (apenas "Nenhuma" e "Outro").
- * - Ao ultrapassar os 11 anos (> 11 anos, ou seja, 12 a 14 anos): escolas de 5º ano NÃO devem aparecer para serem selecionadas
- *   (apenas "Raimundo Bezerra", "Nenhuma" e "Outro").
+ * Returns available school options based on age/stage:
+ * - Nascidos antes de 2010 (3ª Etapa): nenhuma escola oficial deve ser exibida (apenas "Nenhuma" e "Outro").
+ * - Nascidos até dezembro de 2010 com mais de 11 anos (> 11 anos, ex: 12 a 16 anos):
+ *   escolas de 5º ano NÃO devem aparecer (apenas "Raimundo Bezerra", "Nenhuma" e "Outro").
  * - Até 11 anos (<= 11 anos, incluindo alunos nascidos em 2015 que completam 11 anos até dezembro de 2026):
- *   escolas de 5º ano aparecem normalmente.
+ *   escolas de 5º ano aparecem normalmente junto com as demais.
  */
 export function getAvailableSchoolsForAge(
   birthdate?: string | null,
@@ -69,16 +104,16 @@ export function getAvailableSchoolsForAge(
 ): typeof SCHOOLS {
   if (!birthdate) return SCHOOLS;
 
-  const age = ageFrom(birthdate, now);
-
-  // 1. Ao ultrapassar 15 anos: nenhuma escola oficial deve ser exibida
-  if (age >= 15 || isEtapa3OrOlder(birthdate, now)) {
+  // 1. Nascidos antes de 2010 pertencem à 3ª Etapa: nenhuma escola oficial deve ser exibida
+  if (isEtapa3OrOlder(birthdate, now)) {
     return SCHOOLS.filter(
       (s) => s.name === "Nenhuma" || s.name === "Outro",
     ) as unknown as typeof SCHOOLS;
   }
 
-  // 2. Ao ultrapassar 11 anos (> 11 anos, ex: 12 a 14 anos): não deve aparecer escolas de 5º ano
+  const age = ageFrom(birthdate, now);
+
+  // 2. Ao ultrapassar 11 anos (> 11 anos, ex: 12 a 16 anos para nascidos até dez/2010): não deve aparecer escolas de 5º ano
   if (age > 11) {
     return SCHOOLS.filter(
       (s) => !is5thGradeSchool(s.name),
@@ -321,21 +356,21 @@ export const AGE_STAGES: readonly AgeStageInfo[] = [
   {
     id: "etapa_2",
     shortLabel: "2ª Etapa",
-    label: "2ª Etapa (11 a 14 anos • 6º ao 9º ano)",
-    ageRangeLabel: "11 a 14 anos",
-    schoolCycleLabel: "6º ao 9º ano (Raimundo Bezerra)",
+    label: "2ª Etapa (6º ao 9º ano • Raimundo Bezerra, Agenor Smith)",
+    ageRangeLabel: "6º ao 9º ano (até 2010)",
+    schoolCycleLabel: "6º ao 9º ano (Raimundo Bezerra, Agenor Smith)",
     emoji: "⚡",
     minAge: 11,
-    maxAge: 14,
+    maxAge: 16,
   },
   {
     id: "etapa_3",
     shortLabel: "3ª Etapa",
-    label: "3ª Etapa (15+ anos • Comunidade / Outro)",
-    ageRangeLabel: "15+ anos",
+    label: "3ª Etapa (Comunidade / Outro)",
+    ageRangeLabel: "Nascidos antes de 2010",
     schoolCycleLabel: "Comunidade / Outro",
     emoji: "🚀",
-    minAge: 15,
+    minAge: 17,
     maxAge: null,
   },
 ] as const;
@@ -347,22 +382,22 @@ export function getAgeStageInfo(stageId: AgeStageId): AgeStageInfo {
 /**
  * Allocates a player into one of the 3 Age Stages based on their calculated age:
  * - 1ª Etapa (`etapa_1`): até 11 anos (alunos do 5º ano que completam até 11 anos até dezembro de 2026)
- * - 2ª Etapa (`etapa_2`): 12 a 14 anos (ou 11 anos no Raimundo Bezerra)
- * - 3ª Etapa (`etapa_3`): acima de 14 anos (>= 15)
+ * - 2ª Etapa (`etapa_2`): 12 a 16 anos (nascidos até dezembro de 2010 ou 11 anos no Raimundo Bezerra / Agenor Smith)
+ * - 3ª Etapa (`etapa_3`): 17+ anos (nascidos antes de 2010 • Comunidade / Outro)
  */
 export function stageFromAge(age: number): AgeStageInfo {
   const safeAge = Math.max(0, Math.floor(age));
   if (safeAge <= 11) return AGE_STAGES[0];
-  if (safeAge <= 14) return AGE_STAGES[1];
+  if (safeAge <= 16) return AGE_STAGES[1];
   return AGE_STAGES[2];
 }
 
 /**
- * Calculates the player's stage considering their actual age and school:
- * - Idade >= 15 anos -> 3ª Etapa (Jovens e Adultos / Comunidade)
- * - Idade > 11 anos (12 a 14 anos) -> 2ª Etapa (6º ao 9º ano / Raimundo Bezerra)
+ * Calculates the player's stage considering their actual age, birthdate and school:
+ * - Nascidos antes de 2010 -> 3ª Etapa (Jovens e Adultos / Comunidade / Outro)
+ * - Idade > 11 anos e nascidos até dezembro de 2010 -> 2ª Etapa (6º ao 9º ano / Raimundo Bezerra, Agenor Smith)
  * - Idade <= 11 anos (incluindo alunos que completam 11 anos até dezembro de 2026):
- *   -> Se estiver na escola Raimundo Bezerra (6º ao 9º ano), aloca na 2ª Etapa;
+ *   -> Se estiver em escola de 6º ao 9º ano (Raimundo Bezerra, Agenor Smith), aloca na 2ª Etapa;
  *   -> Caso contrário (escolas de 5º ano), aloca na 1ª Etapa (5º ano).
  * - Se data não informada: usa a escola como critério auxiliar
  */
@@ -375,27 +410,27 @@ export function stageFromBirthdate(
   if (!birthdate) {
     if (school) {
       if (is5thGradeSchool(school)) return AGE_STAGES[0];
-      if (school.toLowerCase().includes("bezerra")) return AGE_STAGES[1];
+      if (isSecondStageSchool(school)) return AGE_STAGES[1];
     }
     return AGE_STAGES[0];
   }
 
-  const age = ageFrom(birthdate, now);
-
-  // 0. Jogadores com 15 anos ou mais (Etapa 3) são sempre da 3ª Etapa (Comunidade / Outro)
-  if (age >= 15 || isEtapa3OrOlder(birthdate, now)) {
+  // 0. Nascidos antes de 2010 (Etapa 3) são sempre da 3ª Etapa (Comunidade / Outro)
+  if (isEtapa3OrOlder(birthdate, now)) {
     return AGE_STAGES[2];
   }
 
-  // 1. Jogadores que ultrapassaram 11 anos (12 a 14 anos) pertencem estritamente à 2ª Etapa (6º ao 9º ano)
+  const age = ageFrom(birthdate, now);
+
+  // 1. Jogadores que ultrapassaram 11 anos e nasceram até dez/2010 pertencem à 2ª Etapa (6º ao 9º ano)
   if (age > 11) {
     return AGE_STAGES[1];
   }
 
   // 2. Alunos com até 11 anos (válido até dezembro de 2026):
-  // Se estiver matriculado no Raimundo Bezerra (6º ao 9º ano), participa da 2ª Etapa;
+  // Se matriculado em escola do 6º ao 9º ano (Raimundo Bezerra ou Agenor Smith), participa da 2ª Etapa;
   // caso contrário (5º ano), participa da 1ª Etapa.
-  if (school && school.toLowerCase().includes("bezerra")) {
+  if (isSecondStageSchool(school)) {
     return AGE_STAGES[1];
   }
 

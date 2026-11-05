@@ -62,7 +62,7 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
 
   const generatedSignupPassword = birthdate ? passwordFromBirthdate(birthdate) : "";
   const calculatedAge = birthdate ? ageFrom(birthdate) : null;
-  const isOver15 = calculatedAge !== null ? (calculatedAge >= 15 || isEtapa3OrOlder(birthdate)) : false;
+  const isOver15 = birthdate ? isEtapa3OrOlder(birthdate) : (calculatedAge !== null ? calculatedAge >= 17 : false);
   const isOver11 = calculatedAge !== null ? calculatedAge > 11 : false;
   const availableSchools = getAvailableSchoolsForAge(birthdate);
   const isNoSchoolOrCommunity = school === "Nenhuma" || school === "Outro" || isOver15;
@@ -77,16 +77,18 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
 
   function handleBirthdateChange(val: string) {
     setBirthdate(val);
-    const age = val ? ageFrom(val) : 0;
-    if (age >= 15 || isEtapa3OrOlder(val)) {
+    if (isEtapa3OrOlder(val)) {
       if (isOfficialSemedSchool(school)) {
         setSchool("Nenhuma");
       }
       setTurma("");
-    } else if (age > 11) {
-      if (is5thGradeSchool(school)) {
-        setSchool("Nenhuma");
-        setTurma("");
+    } else if (val) {
+      const age = ageFrom(val);
+      if (age > 11) {
+        if (is5thGradeSchool(school)) {
+          setSchool("Nenhuma");
+          setTurma("");
+        }
       }
     }
   }
@@ -127,7 +129,7 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
 
     // Tab === "criar"
     const submitAge = birthdate ? ageFrom(birthdate) : 0;
-    const isPlayerOver15 = submitAge >= 15 || isEtapa3OrOlder(birthdate);
+    const isPlayerOver15 = isEtapa3OrOlder(birthdate);
     const isPlayerOver11 = submitAge > 11;
     let resolvedSchool = school;
     if (isPlayerOver15 && isOfficialSemedSchool(school)) {
@@ -433,11 +435,11 @@ export function PlayerAuthDialog({ open, onOpenChange }: Props) {
 
                     {isOver15 ? (
                       <div className="rounded-xl border border-accent/40 bg-accent/10 p-2.5 text-xs text-accent-foreground font-medium">
-                        ℹ️ Pela sua data de nascimento (15 anos ou mais • 3ª Etapa), você participa na categoria <b>Comunidade / Outro</b>. As escolas municipais da SEMED (5º ao 9º ano) são restritas para alunos de até 14 anos.
+                        ℹ️ Pela sua data de nascimento (nascidos antes de 2010 • 3ª Etapa), você participa na categoria <b>Comunidade / Outro</b>. As escolas municipais da SEMED (5º ao 9º ano) são restritas para alunos do Ensino Fundamental.
                       </div>
                     ) : isOver11 ? (
                       <div className="rounded-xl border border-primary/30 bg-primary/10 p-2.5 text-xs text-primary font-medium">
-                        ℹ️ Alunos acima de 11 anos (12 a 14 anos) pertencem à <b>2ª Etapa (6º ao 9º ano)</b> e não podem selecionar escolas de 5º ano. Para os anos finais, selecione a <b>Escola Municipal Raimundo Bezerra</b> ou a categoria <b>Outro</b>.
+                        ℹ️ Alunos da <b>2ª Etapa (6º ao 9º ano • nascidos até dez/2010)</b> não podem selecionar escolas de 5º ano. Para os anos finais, selecione uma escola da 2ª Etapa (<b>Raimundo Bezerra</b> ou <b>Agenor Smith</b>) ou a categoria <b>Outro</b>.
                       </div>
                     ) : null}
 

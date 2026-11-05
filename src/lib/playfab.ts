@@ -1401,7 +1401,7 @@ export async function playfabSignUp(data: SignUpData): Promise<{
   }
 
   const age = ageFrom(data.birthdate);
-  const isOver15 = age >= 15 || isEtapa3OrOlder(data.birthdate);
+  const isOver15 = isEtapa3OrOlder(data.birthdate);
   const isOver11 = age > 11;
   let resolvedSchool = data.school;
   if (isOver15 && isOfficialSemedSchool(data.school)) {
@@ -2491,7 +2491,7 @@ export async function updateStudentProfileByAdmin(args: {
 
   // Validate age restrictions
   const currentAge = ageFrom(acc.profile.birthdate);
-  if (currentAge >= 15 || isEtapa3OrOlder(acc.profile.birthdate)) {
+  if (isEtapa3OrOlder(acc.profile.birthdate)) {
     if (isOfficialSemedSchool(acc.profile.school)) {
       acc.profile.school = "Nenhuma";
     }
@@ -3509,13 +3509,13 @@ export async function playfabCompleteInitialSchoolSetup(args: {
 
   const p = acc.profile;
   const currentAge = ageFrom(p.birthdate);
-  const isOver15 = currentAge >= 15 || isEtapa3OrOlder(p.birthdate);
+  const isOver15 = isEtapa3OrOlder(p.birthdate);
   const isOver11 = currentAge > 11;
 
   if (isOver15) {
     return {
       profile: p,
-      error: "Para 15 anos ou mais (3ª Etapa • Comunidade), não há vínculo com escolas ou séries do ensino fundamental.",
+      error: "Para participantes da 3ª Etapa (Comunidade), não há vínculo com escolas ou séries do ensino fundamental.",
     };
   }
 
