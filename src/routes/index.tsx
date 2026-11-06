@@ -38,6 +38,7 @@ import {
   recordWeeklyTournamentAttempt,
   resolveWeeklyTournamentGame,
 } from "@/lib/weekly-tournament";
+import { awardCareerPoints, RECORD_STAGE_MAX_POINTS } from "@/lib/career-points";
 import integracaoPreto from "@/assets/integracao-preto.jpg";
 import semed from "@/assets/semed.png";
 import {
@@ -125,7 +126,7 @@ function Index() {
       const wrong = last?.wrong ?? 0;
       const safeScore = Math.max(0, score);
       const pStage = stageFromBirthdate(auth.profile.birthdate, new Date(), auth.profile.school).id;
-      recordGameStageScore({
+      const stageRecRes = recordGameStageScore({
         gameId: gId,
         stage: pStage,
         playerId: auth.profile.id,
@@ -135,6 +136,9 @@ function Index() {
         score: safeScore,
         achievedAt: Date.now(),
       });
+      if (stageRecRes.isNewRecord) {
+        awardCareerPoints(auth.profile, RECORD_STAGE_MAX_POINTS, "Novo Recorde da Escola/Etapa");
+      }
       const attemptRes = await recordWeeklyTournamentAttempt({
         profile: auth.profile,
         score: safeScore,

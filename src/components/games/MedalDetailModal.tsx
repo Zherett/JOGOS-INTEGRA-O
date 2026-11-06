@@ -12,6 +12,7 @@ import {
   type MedalDefinition,
   type PlayerUnlockedMedal,
 } from "@/lib/medals-catalog";
+import { MEDAL_POINTS_REWARDS } from "@/lib/career-points";
 
 interface Props {
   medal: MedalDefinition | null;
@@ -128,6 +129,16 @@ export function MedalDetailModal({
               ? "Medalha secreta. Jogue e descubra como conquistá-la!"
               : medal.description}
           </p>
+
+          {/* Recompensas da Medalha: Pontos de Conquista e XP */}
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 text-xs font-bold text-amber-500">
+              🪙 +{MEDAL_POINTS_REWARDS[medal.rarity] ?? 20} Pontos
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 border border-primary/30 px-2.5 py-1 text-xs font-bold text-primary">
+              ⚡ +{MEDAL_XP_REWARDS[medal.rarity] ?? 10} XP
+            </span>
+          </div>
 
           {/* Unlock Status / Progress */}
           <div className="mt-5 w-full rounded-2xl border bg-secondary/30 p-3.5 text-left">

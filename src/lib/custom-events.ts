@@ -22,6 +22,8 @@ export interface SpecialEvent {
   xpMultiplier?: number;
   /** Multiplicador de pontos no Torneio Ranqueado (ex: 1.5x, 2x, 3x) */
   rankedMultiplier?: number;
+  /** Multiplicador de Pontos de Conquista / Moedas de Carreira (ex: 1.5x, 2x, 3x) */
+  pointsMultiplier?: number;
   /** Limite de XP por partida/atividade (padrão normal: 20 XP, evento pode elevar para 50 XP, etc.) */
   matchXpCap?: number;
   /** Limite diário de XP geral (padrão normal: 1.000 XP, evento pode elevar para 2.500 XP, etc.) */
@@ -116,6 +118,7 @@ export interface ActiveEventBonuses {
   extraDailyXp: number;
   extraMatchXp: number;
   rankedMultiplier: number; // Multiplicador de pontos no Torneio Ranqueado (1x, 1.5x, 2x, 3x)
+  pointsMultiplier: number; // Multiplicador de Pontos de Conquista / Moedas (1x, 1.5x, 2x, 3x)
   activeEventNames: string[];
 }
 
@@ -149,6 +152,7 @@ export function getActiveEventBonuses(
   let extraMatch = 0;
   let extraDaily = 0;
   let extraRankedMultiplier = 0;
+  let extraPointsMultiplier = 0;
   const activeEventNames: string[] = [];
 
   const allActive = [
@@ -192,6 +196,11 @@ export function getActiveEventBonuses(
       if (ev.rankedMultiplier && ev.rankedMultiplier > 1) {
         extraRankedMultiplier += (ev.rankedMultiplier - 1);
       }
+
+      // Linha 5: Multiplicador de Pontos de Conquista / Moedas (1.5x, 2x, 3x)
+      if (ev.pointsMultiplier && ev.pointsMultiplier > 1) {
+        extraPointsMultiplier += (ev.pointsMultiplier - 1);
+      }
     }
   }
 
@@ -199,6 +208,7 @@ export function getActiveEventBonuses(
   const matchXpCap = baseMatchCap + extraMatch;
   const dailyXpCap = baseDailyCap + extraDaily;
   const rankedMultiplier = Number((1 + extraRankedMultiplier).toFixed(2));
+  const pointsMultiplier = Number((1 + extraPointsMultiplier).toFixed(2));
 
   return {
     multiplier,
@@ -207,6 +217,7 @@ export function getActiveEventBonuses(
     extraDailyXp: extraDaily,
     extraMatchXp: extraMatch,
     rankedMultiplier,
+    pointsMultiplier,
     activeEventNames,
   };
 }
@@ -328,6 +339,8 @@ export function createSpecialEvent(args: {
   bonusType: EventBonusType;
   bonusValue?: number;
   xpMultiplier?: number;
+  rankedMultiplier?: number;
+  pointsMultiplier?: number;
   matchXpCap?: number;
   dailyXpCap?: number;
   durationHours: number;
@@ -352,6 +365,8 @@ export function createSpecialEvent(args: {
     bonusType: args.bonusType,
     bonusValue: args.bonusValue,
     xpMultiplier: args.xpMultiplier,
+    rankedMultiplier: args.rankedMultiplier,
+    pointsMultiplier: args.pointsMultiplier,
     matchXpCap: args.matchXpCap,
     dailyXpCap: args.dailyXpCap,
     startsAt: now.toISOString(),
@@ -384,6 +399,8 @@ export interface RecurringEvent {
   xpMultiplier?: number;
   /** Multiplicador de pontos no Torneio Ranqueado (ex: 1.5x, 2x, 3x) */
   rankedMultiplier?: number;
+  /** Multiplicador de Pontos de Conquista / Moedas de Carreira (ex: 1.5x, 2x, 3x) */
+  pointsMultiplier?: number;
   /** Limite de XP por partida/atividade */
   matchXpCap?: number;
   /** Limite diário de XP geral */
@@ -493,6 +510,7 @@ export function createRecurringEvent(args: {
   specificDates: string[];
   xpMultiplier?: number;
   rankedMultiplier?: number;
+  pointsMultiplier?: number;
   matchXpCap?: number;
   dailyXpCap?: number;
   linkedMedalId?: string | null;
@@ -516,6 +534,7 @@ export function createRecurringEvent(args: {
     specificDates: args.specificDates,
     xpMultiplier: args.xpMultiplier,
     rankedMultiplier: args.rankedMultiplier,
+    pointsMultiplier: args.pointsMultiplier,
     matchXpCap: args.matchXpCap,
     dailyXpCap: args.dailyXpCap,
     active: true,
@@ -560,6 +579,7 @@ export interface ActiveEventDisplayItem {
 function buildEventBonusBadges(ev: {
   xpMultiplier?: number;
   rankedMultiplier?: number;
+  pointsMultiplier?: number;
   bonusType?: EventBonusType;
   bonusValue?: number;
   matchXpCap?: number;
@@ -587,6 +607,15 @@ function buildEventBonusBadges(ev: {
       type: "multiplier",
       label: `${ev.rankedMultiplier}x Pontos na Ranqueada`,
       icon: "🏆",
+    });
+  }
+
+  // 3. Multiplicador de Pontos de Conquista / Moedas
+  if (ev.pointsMultiplier && ev.pointsMultiplier > 1) {
+    badges.push({
+      type: "multiplier",
+      label: `${ev.pointsMultiplier}x Pontos de Conquista`,
+      icon: "🪙",
     });
   }
 

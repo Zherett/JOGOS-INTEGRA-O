@@ -22,6 +22,11 @@ import {
   type RecurringEvent,
 } from "./custom-events.ts";
 import {
+  awardCareerPoints,
+  checkTournamentTierPromotion,
+  RANKED_WIN_POINTS,
+} from "./career-points.ts";
+import {
   ageFrom,
   AGE_STAGES,
   getAgeStageInfo,
@@ -1099,6 +1104,13 @@ export async function recordWeeklyTournamentAttempt(args: {
   const curPoints = Math.max(0, existing?.tournamentPoints ?? args.profile.tournamentPoints ?? 0);
   const newTournamentPoints = Math.max(0, curPoints + pointsDelta);
   const rankInfo = getTournamentRank(newTournamentPoints);
+
+  // Concede pontos de carreira por vitória na ranqueada e promoção de classe
+  const careerMultiplier = eventBonuses.pointsMultiplier ?? 1;
+  if (won) {
+    awardCareerPoints(args.profile, RANKED_WIN_POINTS, "Vitória na Ranqueada", careerMultiplier);
+  }
+  checkTournamentTierPromotion(rankInfo.currentRank.id, args.profile, careerMultiplier);
 
   store.records[args.profile.id] = {
     playerId: args.profile.id,

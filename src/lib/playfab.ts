@@ -94,6 +94,20 @@ import {
   removePlayerFromGameRecords,
   seedRecordsFromRegistry,
 } from "./game-records.ts";
+import {
+  awardCareerPoints,
+  checkAndApplyDailyLoginPoints,
+  checkAndApplyFirstGameOfDayPoints,
+  checkLevelPromotionPoints,
+  checkTournamentTierPromotion,
+  ensurePlayerCareerPointsInitialized,
+  MEDAL_POINTS_REWARDS,
+  RECORD_PERSONAL_POINTS,
+  RECORD_STAGE_MAX_POINTS,
+  X1_WIN_POINTS,
+  FLAWLESS_MATCH_POINTS,
+  RANKED_WIN_POINTS,
+} from "./career-points.ts";
 import { removePlayerFromPresence } from "./presence.ts";
 import { removePlayerFromTournament } from "./weekly-tournament.ts";
 
@@ -199,6 +213,12 @@ export interface PlayerProfile {
   streakDays?: number;
   lastActiveDate?: string;
   activeDates?: string[];
+  pointsBalance?: number;
+  careerPoints?: number;
+  lastDailyLoginPointsDate?: string;
+  lastDailyFirstGamePointsDate?: string;
+  achievedTournamentTiers?: string[];
+  achievedLevelsPoints?: number[];
   tournamentMedals?: TournamentMedal[];
   unlockedMedals?: PlayerUnlockedMedal[];
   eventProgress?: Record<string, EventProgressData>;
@@ -248,7 +268,9 @@ export interface LeaderboardEntry {
   level: number;
   rankTitle: string;
   rankEmoji: string;
-  value: number; // Medals, XP, or Best Score depending on board
+  value: number; // Points, Medals, XP, or Best Score depending on board
+  careerPoints?: number;
+  pointsBalance?: number;
   medalsCount?: number;
   xpValue?: number;
   wins: number;
@@ -910,6 +932,9 @@ function getCurrentWeekKey(now = new Date()): string {
 }
 
 export function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig): StoredAccount {
+  ensurePlayerCareerPointsInitialized(acc.profile);
+  checkAndApplyDailyLoginPoints(acc.profile);
+
   const todayKey = getLocalDateKey();
   if (acc.profile.dailyXpDate !== todayKey) {
     acc.profile.dailyXp = 0;
@@ -2850,6 +2875,17 @@ export async function playfabRecordMatch(args: {
     matchesPlayed: Math.max((acc.profile.matchesPlayed ?? 0) + 1, 1),
   });
 
+  const eventBonuses = getActiveEventBonuses(
+    args.gameId,
+    cfg.dailyXpCap,
+    20,
+    undefined,
+    undefined,
+    undefined,
+    mode === "torneio_semanal",
+  );
+  const pointsMultiplier = eventBonuses.pointsMultiplier ?? 1;
+
   let earnedXp = 0;
   if (mode === "x1_online") {
     // Dedicated +100 XP/day extra cap for Arena X1 (unlimited matches per day)
@@ -2941,6 +2977,12 @@ export async function playfabRecordMatch(args: {
     const cur = acc.stats[existingIdx];
     const prevFlawless =
       cur.plays === 1 && (cur.last_wrong ?? 0) > 0 ? 0 : (cur.flawless_wins ?? 0);
+
+    // Concede pontos por bater o próprio recorde pessoal em qualquer jogo
+    if (safeScore > (cur.best_score ?? 0) && (cur.best_score ?? 0) > 0) {
+      awardCareerPoints(acc.profile, RECORD_PERSONAL_POINTS, "Novo Recorde Pessoal", pointsMultiplier);
+    }
+
     acc.stats[existingIdx] = {
       ...cur,
       plays: cur.plays + 1,
@@ -2963,6 +3005,20 @@ export async function playfabRecordMatch(args: {
       best_level: safeLevel,
       last_played_at: nowIso,
     });
+  }
+
+  // Pontuação de Carreira: inicialização, primeiro jogo do dia, precisão e vitórias
+  ensurePlayerCareerPointsInitialized(acc.profile);
+  checkAndApplyFirstGameOfDayPoints(acc.profile, undefined, pointsMultiplier);
+
+  if (flawless) {
+    awardCareerPoints(acc.profile, FLAWLESS_MATCH_POINTS, "Partida Perfeita", pointsMultiplier);
+  }
+  if (mode === "x1_online" && won) {
+    awardCareerPoints(acc.profile, X1_WIN_POINTS, "Vitória no Desafio X1", pointsMultiplier);
+  }
+  if (mode === "torneio_semanal" && won) {
+    awardCareerPoints(acc.profile, RANKED_WIN_POINTS, "Vitória na Ranqueada", pointsMultiplier);
   }
 
   const nextXp = acc.profile.xp + earnedXp;
@@ -3004,6 +3060,7 @@ export async function playfabRecordMatch(args: {
   });
   acc.profile.level = stageRes.level;
   acc.profile.levelStageProgress = stageRes.stageProgress;
+  checkLevelPromotionPoints(acc.profile.level, acc.profile, pointsMultiplier);
 
   acc.profile.badges = computeBadges({
     existing: acc.profile.badges,
@@ -3123,6 +3180,8 @@ export async function playfabRecordMatch(args: {
     for (const m of newlyAwarded) {
       currentUnlocked.push({ medalId: m.id, unlockedAt: nowIso });
       medalsBonusXp += MEDAL_XP_REWARDS[m.rarity] ?? 10;
+      const ptsReward = MEDAL_POINTS_REWARDS[m.rarity] ?? 20;
+      awardCareerPoints(acc.profile, ptsReward, m.title, pointsMultiplier);
     }
     acc.profile.unlockedMedals = currentUnlocked;
 
@@ -3141,6 +3200,7 @@ export async function playfabRecordMatch(args: {
       });
       acc.profile.level = syncedAfterBonus.level;
       acc.profile.levelStageProgress = syncedAfterBonus.stageProgress;
+      checkLevelPromotionPoints(acc.profile.level, acc.profile, pointsMultiplier);
 
       // Re-evaluate in case the bonus XP or newly added medals unlocked a level/meta medal
       const secondaryAwarded = evaluatePlayerMedals(
@@ -3162,6 +3222,8 @@ export async function playfabRecordMatch(args: {
           medalsBonusXp += extraXp;
           acc.profile.xp += extraXp;
           acc.profile.seasonXp = (acc.profile.seasonXp ?? 0) + extraXp;
+          const ptsReward = MEDAL_POINTS_REWARDS[sm.rarity] ?? 20;
+          awardCareerPoints(acc.profile, ptsReward, sm.title, pointsMultiplier);
         }
       }
       acc.profile.unlockedMedals = currentUnlocked;
@@ -3289,6 +3351,7 @@ function saveLeaderboardRankHistory(history: Record<string, Record<string, RankH
 }
 
 export type LeaderboardFilter =
+  | { kind: "points"; stage?: RankingFilterCategory }
   | { kind: "medals"; stage?: RankingFilterCategory }
   | { kind: "xp_season"; stage?: RankingFilterCategory }
   | { kind: "xp_total"; stage?: RankingFilterCategory }
@@ -3426,7 +3489,9 @@ export async function fetchLeaderboard(
     const xpValue = p.seasonXp ?? p.xp;
 
     let value = 0;
-    if (filter.kind === "medals") {
+    if (filter.kind === "points") {
+      value = p.careerPoints ?? 0;
+    } else if (filter.kind === "medals") {
       value = medalsCount;
     } else if (filter.kind === "xp_total") {
       value = Math.max(p.xp, pfStatVal);
@@ -3455,6 +3520,8 @@ export async function fetchLeaderboard(
       rankTitle: titleInfo.title,
       rankEmoji: titleInfo.emoji,
       value,
+      careerPoints: p.careerPoints ?? 0,
+      pointsBalance: p.pointsBalance ?? 0,
       medalsCount,
       xpValue,
       wins: p.wins ?? 0,

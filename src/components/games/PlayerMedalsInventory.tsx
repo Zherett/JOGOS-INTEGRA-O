@@ -20,6 +20,7 @@ import {
   type MedalRarity,
   type PlayerUnlockedMedal,
 } from "@/lib/medals-catalog";
+import { MEDAL_POINTS_REWARDS } from "@/lib/career-points";
 import { MedalIcon } from "./MedalIcon";
 import { MedalDetailModal } from "./MedalDetailModal";
 import { Input } from "@/components/ui/input";
@@ -406,13 +407,18 @@ export function PlayerMedalsInventory({
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-1">
-                        <span
-                          className={`text-[9px] font-black uppercase tracking-wider ${
-                            isUnlocked ? rarity.textColor : "text-muted-foreground"
-                          }`}
-                        >
-                          {rarity.label}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`text-[9px] font-black uppercase tracking-wider ${
+                              isUnlocked ? rarity.textColor : "text-muted-foreground"
+                            }`}
+                          >
+                            {rarity.label}
+                          </span>
+                          <span className="text-[9px] font-extrabold text-amber-500">
+                            +{MEDAL_POINTS_REWARDS[m.rarity] ?? 20} pts
+                          </span>
+                        </div>
                         {isUnlocked ? (
                           <span className="flex items-center gap-1 text-[9px] font-extrabold text-emerald-500">
                             <CheckCircle className="h-3 w-3" />

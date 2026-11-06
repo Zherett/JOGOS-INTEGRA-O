@@ -30,7 +30,7 @@ interface Props {
   onOpenChange: (v: boolean) => void;
 }
 
-type TabKind = "medalhas" | "geral" | "jogos" | "escolas";
+type TabKind = "pontos" | "medalhas" | "geral" | "jogos" | "escolas";
 
 export function LeaderboardDialog({ open, onOpenChange }: Props) {
   const auth = usePlayerAuth();
@@ -63,7 +63,9 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
 
     const load = async () => {
       let res: LeaderboardEntry[] = [];
-      if (tab === "medalhas") {
+      if (tab === "pontos") {
+        res = await fetchLeaderboard({ kind: "points", stage: selectedStage }, 50);
+      } else if (tab === "medalhas") {
         res = await fetchLeaderboard({ kind: "medals", stage: selectedStage }, 50);
       } else if (tab === "geral") {
         res = await fetchLeaderboard({ kind: "xp_season", stage: selectedStage }, 50);
@@ -229,8 +231,19 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
           </div>
         )}
 
-        {/* Destaque Principal: 4 Abas de Classificação ("Medalhas", "XP", "Por Jogo", "Escolas") */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 rounded-2xl bg-secondary p-1">
+        {/* Destaque Principal: 5 Abas de Classificação ("Pontos", "Medalhas", "XP", "Por Jogo", "Escolas") */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 rounded-2xl bg-secondary p-1">
+          <button
+            type="button"
+            onClick={() => setTab("pontos")}
+            className={`flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs sm:text-sm font-black transition-all ${
+              tab === "pontos"
+                ? "bg-amber-500 text-zinc-950 shadow-md font-black"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <span>🪙</span> Pontos
+          </button>
           <button
             type="button"
             onClick={() => setTab("medalhas")}
@@ -467,11 +480,13 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
                     <div className="text-right shrink-0">
                       <div className="flex items-center justify-end gap-1.5">
                         <span className="font-display text-base sm:text-lg font-extrabold text-primary whitespace-nowrap">
-                          {tab === "medalhas"
-                            ? `🏅 ${row.value} ${row.value === 1 ? "medalha" : "medalhas"}`
-                            : tab === "jogos"
-                              ? `${row.value} pts`
-                              : `${row.value} XP`}
+                          {tab === "pontos"
+                            ? `🪙 ${row.value} pts`
+                            : tab === "medalhas"
+                              ? `🏅 ${row.value} ${row.value === 1 ? "medalha" : "medalhas"}`
+                              : tab === "jogos"
+                                ? `${row.value} pts`
+                                : `${row.value} XP`}
                         </span>
 
                         {/* Seta indicativa real de subida (verde) ou descida (vermelha) no ranking */}

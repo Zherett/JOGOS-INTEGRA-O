@@ -443,6 +443,31 @@ export function PlayerMenu({ onConfigChanged }: Props) {
                       </p>
                     )}
 
+                    {/* Carteira e Pontos de Conquista do Aluno */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border-2 border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent p-3">
+                      <div className="flex items-center gap-2">
+                        <span className="grid h-8 w-8 place-items-center rounded-xl bg-amber-500/20 text-base">
+                          🪙
+                        </span>
+                        <div>
+                          <div className="text-xs font-black text-foreground">
+                            {profile.pointsBalance ?? 0} Pontos Disponíveis
+                          </div>
+                          <div className="text-[10px] text-muted-foreground font-medium">
+                            Saldo atual para futuras aquisições
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="rounded-lg bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 font-mono text-[11px] font-black text-amber-600 dark:text-amber-400">
+                          {profile.careerPoints ?? 0} pts totais
+                        </span>
+                        <div className="text-[9px] text-muted-foreground">
+                          Hall da Fama
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Divisória Interna Elegante para a Seção de Nível e Requisitos */}
                     <div className="border-t border-border/60 pt-3 space-y-2.5">
                       <div className="flex items-center justify-between text-xs sm:text-sm font-bold">

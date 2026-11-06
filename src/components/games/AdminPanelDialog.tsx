@@ -196,6 +196,8 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [evDailyExtraXp, setEvDailyExtraXp] = useState<number>(500);
   const [evHasRankedMultiplier, setEvHasRankedMultiplier] = useState(false);
   const [evRankedMultiplier, setEvRankedMultiplier] = useState<number>(2);
+  const [evHasPointsMultiplier, setEvHasPointsMultiplier] = useState(false);
+  const [evPointsMultiplier, setEvPointsMultiplier] = useState<number>(2);
   const [evDurationHours, setEvDurationHours] = useState<number>(24);
   const [evLinkedMedalId, setEvLinkedMedalId] = useState<string>("");
   const [evObjective, setEvObjective] = useState<string>("");
@@ -233,6 +235,8 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [recDailyExtraXp, setRecDailyExtraXp] = useState<number>(500);
   const [recHasRankedMultiplier, setRecHasRankedMultiplier] = useState(false);
   const [recRankedMultiplier, setRecRankedMultiplier] = useState<number>(2);
+  const [recHasPointsMultiplier, setRecHasPointsMultiplier] = useState(false);
+  const [recPointsMultiplier, setRecPointsMultiplier] = useState<number>(2);
   const [recLinkedMedal, setRecLinkedMedal] = useState<string>("");
   const [recObjective, setRecObjective] = useState<string>("");
 
@@ -596,6 +600,9 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     if (ev.rankedMultiplier && ev.rankedMultiplier > 1) {
       parts.push(`${ev.rankedMultiplier}x Pontos Ranqueados`);
     }
+    if (ev.pointsMultiplier && ev.pointsMultiplier > 1) {
+      parts.push(`${ev.pointsMultiplier}x Pontos de Conquista`);
+    }
     if (ev.matchXpCap && ev.matchXpCap > 20) {
       parts.push(`Max ${ev.matchXpCap} XP/partida`);
     }
@@ -622,7 +629,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
       flashSaved("Informe o título do evento.");
       return;
     }
-    const hasAnyBonus = evHasMultiplier || evHasMatchCap || evHasDailyCap || evHasRankedMultiplier;
+    const hasAnyBonus = evHasMultiplier || evHasMatchCap || evHasDailyCap || evHasRankedMultiplier || evHasPointsMultiplier;
     const hasAnyMedal = evAttachedMedals.length > 0 || Boolean(evLinkedMedalId);
     if (!hasAnyBonus && !hasAnyMedal) {
       flashSaved("Marque pelo menos uma caixa de bônus ou vincule uma medalha ao evento.");
@@ -651,6 +658,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
       bonusValue: evHasDailyCap ? 1000 + Number(evDailyExtraXp) : undefined,
       xpMultiplier: evHasMultiplier ? Number(evMultiplier) : undefined,
       rankedMultiplier: evHasRankedMultiplier ? Number(evRankedMultiplier) : undefined,
+      pointsMultiplier: evHasPointsMultiplier ? Number(evPointsMultiplier) : undefined,
       matchXpCap: evHasMatchCap ? Number(evMatchXpCap) : undefined,
       dailyXpCap: evHasDailyCap ? 1000 + Number(evDailyExtraXp) : undefined,
       durationHours: Number(evDurationHours),
@@ -718,7 +726,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
       flashSaved("Selecione pelo menos um dia da semana ou uma data específica.");
       return;
     }
-    const hasAnyBonus = recHasMultiplier || recHasMatchCap || recHasDailyCap || recHasRankedMultiplier;
+    const hasAnyBonus = recHasMultiplier || recHasMatchCap || recHasDailyCap || recHasRankedMultiplier || recHasPointsMultiplier;
     const hasAnyMedal = recAttachedMedals.length > 0 || Boolean(recLinkedMedal);
     if (!hasAnyBonus && !hasAnyMedal) {
       flashSaved("Marque pelo menos uma caixa de bônus ou vincule uma medalha ao evento.");
@@ -741,6 +749,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
       specificDates: recSpecificDates,
       xpMultiplier: recHasMultiplier ? Number(recMultiplier) : undefined,
       rankedMultiplier: recHasRankedMultiplier ? Number(recRankedMultiplier) : undefined,
+      pointsMultiplier: recHasPointsMultiplier ? Number(recPointsMultiplier) : undefined,
       matchXpCap: recHasMatchCap ? Number(recMatchCap) : undefined,
       dailyXpCap: recHasDailyCap ? 1000 + Number(recDailyExtraXp) : undefined,
       linkedMedalId: linkedIds[0] ?? (recLinkedMedal || null),
@@ -2118,6 +2127,34 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                 <p className="text-[10px] text-muted-foreground">Multiplica pontos no torneio</p>
                               </div>
                             </div>
+
+                            {/* Bônus 5: Multiplicador de Pontos de Conquista / Moedas */}
+                            <div className={`rounded-xl border p-2.5 space-y-2 transition-all ${evHasPointsMultiplier ? "border-amber-500/60 bg-card shadow-xs" : "border-border/60 bg-muted/20 opacity-60"}`}>
+                              <label className="flex items-center gap-2 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={evHasPointsMultiplier}
+                                  onChange={(e) => setEvHasPointsMultiplier(e.target.checked)}
+                                  className="h-4 w-4 rounded accent-amber-500 cursor-pointer"
+                                />
+                                <span className="text-xs font-bold text-foreground">
+                                  5. Pontos (Moedas)
+                                </span>
+                              </label>
+                              <div className="space-y-1">
+                                <select
+                                  disabled={!evHasPointsMultiplier}
+                                  value={evPointsMultiplier}
+                                  onChange={(e) => setEvPointsMultiplier(Number(e.target.value))}
+                                  className={`h-8 w-full rounded-lg border bg-background px-2 text-xs font-bold text-amber-500 ${!evHasPointsMultiplier && "opacity-40 cursor-not-allowed"}`}
+                                >
+                                  <option value={1.5}>1.5x (+50% pontos)</option>
+                                  <option value={2}>2x (Dobro de pontos)</option>
+                                  <option value={3}>3x (Triplo de pontos)</option>
+                                </select>
+                                <p className="text-[10px] text-muted-foreground">Multiplica pontos de conquista</p>
+                              </div>
+                            </div>
                           </div>
                         </div>
 
@@ -2880,6 +2917,34 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                   <option value={3}>3x (Triplo de pontos)</option>
                                 </select>
                                 <p className="text-[10px] text-muted-foreground">Multiplica pontos no torneio</p>
+                              </div>
+                            </div>
+
+                            {/* Bônus 5: Multiplicador de Pontos de Conquista / Moedas */}
+                            <div className={`rounded-xl border p-2.5 space-y-2 transition-all ${recHasPointsMultiplier ? "border-amber-500/60 bg-card shadow-xs" : "border-border/60 bg-muted/20 opacity-60"}`}>
+                              <label className="flex items-center gap-2 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={recHasPointsMultiplier}
+                                  onChange={(e) => setRecHasPointsMultiplier(e.target.checked)}
+                                  className="h-4 w-4 rounded accent-amber-500 cursor-pointer"
+                                />
+                                <span className="text-xs font-bold text-foreground">
+                                  5. Pontos (Moedas)
+                                </span>
+                              </label>
+                              <div className="space-y-1">
+                                <select
+                                  disabled={!recHasPointsMultiplier}
+                                  value={recPointsMultiplier}
+                                  onChange={(e) => setRecPointsMultiplier(Number(e.target.value))}
+                                  className={`h-8 w-full rounded-lg border bg-background px-2 text-xs font-bold text-amber-500 ${!recHasPointsMultiplier && "opacity-40 cursor-not-allowed"}`}
+                                >
+                                  <option value={1.5}>1.5x (+50% pontos)</option>
+                                  <option value={2}>2x (Dobro de pontos)</option>
+                                  <option value={3}>3x (Triplo de pontos)</option>
+                                </select>
+                                <p className="text-[10px] text-muted-foreground">Multiplica pontos de conquista</p>
                               </div>
                             </div>
                           </div>
