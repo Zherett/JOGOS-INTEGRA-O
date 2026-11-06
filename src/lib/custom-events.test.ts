@@ -405,4 +405,49 @@ describe("Eventos Personalizados Criados pelo Administrador", () => {
     assert.equal(getEventCycleKey(recEv, dateSun), "rec_weekend_2026-11-08");
     assert.notEqual(getEventCycleKey(recEv, dateSat), getEventCycleKey(recEv, dateSun));
   });
+
+  it("aplica bônus de escopo 'modo_ranqueado' exclusivamente em partidas ranqueadas e não no modo normal", () => {
+    const testNow = new Date("2026-11-05T12:00:00Z");
+    const rankedEvent: SpecialEvent = {
+      id: "ev_ranked_double",
+      title: "Torneio Ranqueado 2x Pontos",
+      description: "Ganhe o dobro de pontos de rank nesta semana!",
+      scope: "modo_ranqueado",
+      bonusType: "personalizado",
+      rankedMultiplier: 2,
+      xpMultiplier: 1.5,
+      startsAt: "2026-11-05T00:00:00Z",
+      endsAt: "2026-11-05T23:59:59Z",
+      active: true,
+      createdAt: "2026-11-05T00:00:00Z",
+    };
+
+    // 1. Partida Ranqueada (isRankedMatch = true) -> Multiplicadores aplicados!
+    const rankedBonuses = getActiveEventBonuses(
+      "campo_minado",
+      1000,
+      20,
+      [rankedEvent],
+      testNow,
+      [],
+      true, // isRankedMatch = true
+    );
+    assert.equal(rankedBonuses.rankedMultiplier, 2);
+    assert.equal(rankedBonuses.multiplier, 1.5);
+    assert.equal(rankedBonuses.activeEventNames.includes("Torneio Ranqueado 2x Pontos"), true);
+
+    // 2. Partida Normal do mesmo jogo (isRankedMatch = false) -> Bônus NÃO aplicados!
+    const normalBonuses = getActiveEventBonuses(
+      "campo_minado",
+      1000,
+      20,
+      [rankedEvent],
+      testNow,
+      [],
+      false, // isRankedMatch = false
+    );
+    assert.equal(normalBonuses.rankedMultiplier, 1);
+    assert.equal(normalBonuses.multiplier, 1);
+    assert.equal(normalBonuses.activeEventNames.length, 0);
+  });
 });

@@ -2,11 +2,19 @@ import { GAME_NAMES, type GameId } from "./game-storage.ts";
 
 export type EventBonusType = "dobro_xp" | "xp_1_5x" | "aumentar_limite_diario" | "personalizado";
 
+export type EventScope = "todos" | "modo_ranqueado" | GameId;
+
+export function formatEventScopeText(scope: EventScope): string {
+  if (scope === "todos") return "Todos os Jogos";
+  if (scope === "modo_ranqueado") return "Apenas Modo Ranqueado";
+  return GAME_NAMES[scope as GameId] ?? scope;
+}
+
 export interface SpecialEvent {
   id: string;
   title: string;
   description: string;
-  scope: "todos" | GameId;
+  scope: EventScope;
   bonusType: EventBonusType;
   /** Ex: 2000 when bonusType is "aumentar_limite_diario" */
   bonusValue?: number;
@@ -129,12 +137,13 @@ export interface CumulativeActiveBonuses {
  * Daily cap: base 1000 + 500 (Ev 1) + 200 (Ev 2) = 1700 total XP daily cap.
  */
 export function getActiveEventBonuses(
-  gameId: GameId,
+  gameId: GameId = "todos" as GameId,
   baseDailyCap = 1000,
   baseMatchCap = 20,
   activeEvents = getActiveSpecialEvents(),
   now = new Date(),
   recurringEvents = getActiveRecurringEvents(undefined, now),
+  isRankedMatch = false,
 ): ActiveEventBonuses {
   let extraMultiplier = 0;
   let extraMatch = 0;
@@ -148,7 +157,12 @@ export function getActiveEventBonuses(
   ];
 
   for (const ev of allActive) {
-    if (ev.scope === "todos" || ev.scope === gameId) {
+    const isRankedScope = ev.scope === "modo_ranqueado";
+    const inScope = isRankedScope
+      ? Boolean(isRankedMatch || (gameId as any) === "modo_ranqueado")
+      : ev.scope === "todos" || ev.scope === gameId;
+
+    if (inScope) {
       if (!activeEventNames.includes(ev.title)) {
         activeEventNames.push(ev.title);
       }
@@ -310,7 +324,7 @@ export function formatDateTimeBR(dateStr: string): string {
 export function createSpecialEvent(args: {
   title: string;
   description: string;
-  scope: "todos" | GameId;
+  scope: EventScope;
   bonusType: EventBonusType;
   bonusValue?: number;
   xpMultiplier?: number;
@@ -361,7 +375,7 @@ export interface RecurringEvent {
   id: string;
   title: string;
   description: string;
-  scope: "todos" | GameId;
+  scope: EventScope;
   /** Dias da semana: 0 = Domingo, 1 = Segunda, 2 = Terça, 3 = Quarta, 4 = Quinta, 5 = Sexta, 6 = Sábado */
   daysOfWeek: number[];
   /** Datas específicas no formato YYYY-MM-DD */
@@ -474,7 +488,7 @@ export function getActiveRecurringEvents(
 export function createRecurringEvent(args: {
   title: string;
   description: string;
-  scope: "todos" | GameId;
+  scope: EventScope;
   daysOfWeek: number[];
   specificDates: string[];
   xpMultiplier?: number;
@@ -529,7 +543,7 @@ export interface ActiveEventDisplayItem {
   id: string;
   title: string;
   description: string;
-  scope: "todos" | GameId;
+  scope: EventScope;
   badgeLabel: string;
   remainingTime: string;
   bonusTitle: string;
@@ -640,7 +654,7 @@ export function getAllActiveEvents(
       bonusTitle: "BÔNUS DO EVENTO",
       bonusHighlight: highlight,
       bonusBadges: badges,
-      bonusScopeText: ev.scope === "todos" ? "Todos os Jogos" : (GAME_NAMES[ev.scope] ?? ev.scope),
+      bonusScopeText: formatEventScopeText(ev.scope),
       activePeriodLabel: `Até ${formatDateTimeBR(ev.endsAt)}`,
       linkedMedalId: ev.linkedMedalId,
       linkedMedalIds: ev.linkedMedalIds ?? (ev.linkedMedalId ? [ev.linkedMedalId] : []),
@@ -672,7 +686,7 @@ export function getAllActiveEvents(
       bonusTitle: "BÔNUS DO EVENTO",
       bonusHighlight: highlight,
       bonusBadges: badges,
-      bonusScopeText: ev.scope === "todos" ? "Todos os Jogos" : (GAME_NAMES[ev.scope] ?? ev.scope),
+      bonusScopeText: formatEventScopeText(ev.scope),
       activePeriodLabel: `Válido hoje (${formatDateOnlyBR(todayDateStr)})`,
       linkedMedalId: ev.linkedMedalId,
       linkedMedalIds: ev.linkedMedalIds ?? (ev.linkedMedalId ? [ev.linkedMedalId] : []),

@@ -354,7 +354,15 @@ function Index() {
 
       {/* Banner Ao Vivo Informativo do Torneio Semanal Ranqueado */}
       {activeRankedGameId && view === activeRankedGameId && (() => {
-        const eventBonuses = getActiveEventBonuses();
+        const eventBonuses = getActiveEventBonuses(
+          activeRankedGameId,
+          1000,
+          20,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        );
         const rankedMult = eventBonuses.rankedMultiplier ?? 1;
         const isFree = dailyTournamentEntries < TOURNAMENT_DAILY_FREE_ENTRIES;
         return (

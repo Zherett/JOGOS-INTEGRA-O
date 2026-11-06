@@ -92,9 +92,11 @@ import {
   isRecurringEventActive,
   DAYS_OF_WEEK,
   getEventLinkedMedalIds,
+  formatEventScopeText,
   type SpecialEvent,
   type RecurringEvent,
   type EventBonusType,
+  type EventScope,
 } from "@/lib/custom-events";
 import {
   AVAILABLE_MEDAL_ICONS,
@@ -184,7 +186,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [isCreatingEvent, setIsCreatingEvent] = useState(false);
   const [evTitle, setEvTitle] = useState("");
   const [evDesc, setEvDesc] = useState("");
-  const [evScope, setEvScope] = useState<"todos" | GameId>("todos");
+  const [evScope, setEvScope] = useState<EventScope>("todos");
   const [evBonusType, setEvBonusType] = useState<EventBonusType>("personalizado");
   const [evHasMultiplier, setEvHasMultiplier] = useState(true);
   const [evMultiplier, setEvMultiplier] = useState<number>(2);
@@ -219,7 +221,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [isCreatingRecurring, setIsCreatingRecurring] = useState(false);
   const [recTitle, setRecTitle] = useState("");
   const [recDesc, setRecDesc] = useState("");
-  const [recScope, setRecScope] = useState<"todos" | GameId>("todos");
+  const [recScope, setRecScope] = useState<EventScope>("todos");
   const [recDaysOfWeek, setRecDaysOfWeek] = useState<number[]>([6, 0]); // Padrão: Sábado e Domingo
   const [recSpecificDates, setRecSpecificDates] = useState<string[]>([]);
   const [recDateInput, setRecDateInput] = useState("");
@@ -1955,10 +1957,11 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                             <Label className="text-xs font-bold">Escopo (Jogos Participantes)</Label>
                             <select
                               value={evScope}
-                              onChange={(e) => setEvScope(e.target.value as "todos" | GameId)}
+                              onChange={(e) => setEvScope(e.target.value as EventScope)}
                               className="h-9 w-full rounded-xl border bg-background px-3 text-xs font-bold"
                             >
                               <option value="todos">🌟 Todos os Jogos da Plataforma</option>
+                              <option value="modo_ranqueado">🏆 Apenas Jogo do Modo Ranqueado (Torneio Semanal)</option>
                               {ALL_GAME_IDS.map((id) => (
                                 <option key={id} value={id}>
                                   🎮 Somente: {GAME_NAMES[id]}
@@ -2088,7 +2091,13 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                 <input
                                   type="checkbox"
                                   checked={evHasRankedMultiplier}
-                                  onChange={(e) => setEvHasRankedMultiplier(e.target.checked)}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setEvHasRankedMultiplier(checked);
+                                    if (checked && evScope === "todos") {
+                                      setEvScope("modo_ranqueado");
+                                    }
+                                  }}
                                   className="h-4 w-4 rounded accent-amber-500 cursor-pointer"
                                 />
                                 <span className="text-xs font-bold text-foreground">
@@ -2526,8 +2535,14 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                     <h5 className="font-display text-sm font-black text-foreground truncate">
                                       {ev.title}
                                     </h5>
-                                    <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                                      {ev.scope === "todos" ? "Todos os Jogos" : GAME_NAMES[ev.scope]}
+                                    <span
+                                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                        ev.scope === "modo_ranqueado"
+                                          ? "bg-amber-500/20 text-amber-500 border border-amber-500/40"
+                                          : "bg-secondary text-muted-foreground"
+                                      }`}
+                                    >
+                                      {formatEventScopeText(ev.scope)}
                                     </span>
                                   </div>
 
@@ -2622,10 +2637,11 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                             <Label className="text-xs font-bold">Escopo (Jogos)</Label>
                             <select
                               value={recScope}
-                              onChange={(e) => setRecScope(e.target.value as "todos" | GameId)}
+                              onChange={(e) => setRecScope(e.target.value as EventScope)}
                               className="h-9 w-full rounded-xl border bg-background px-3 text-xs font-bold"
                             >
                               <option value="todos">🌟 Todos os Jogos da Plataforma</option>
+                              <option value="modo_ranqueado">🏆 Apenas Jogo do Modo Ranqueado (Torneio Semanal)</option>
                               {ALL_GAME_IDS.map((id) => (
                                 <option key={id} value={id}>
                                   🎮 Somente: {GAME_NAMES[id]}
@@ -2839,7 +2855,13 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                 <input
                                   type="checkbox"
                                   checked={recHasRankedMultiplier}
-                                  onChange={(e) => setRecHasRankedMultiplier(e.target.checked)}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setRecHasRankedMultiplier(checked);
+                                    if (checked && recScope === "todos") {
+                                      setRecScope("modo_ranqueado");
+                                    }
+                                  }}
                                   className="h-4 w-4 rounded accent-amber-500 cursor-pointer"
                                 />
                                 <span className="text-xs font-bold text-foreground">
@@ -3264,8 +3286,14 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                     <h5 className="font-display text-sm font-black text-foreground truncate">
                                       {ev.title}
                                     </h5>
-                                    <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                                      {ev.scope === "todos" ? "Todos os Jogos" : GAME_NAMES[ev.scope]}
+                                    <span
+                                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                        ev.scope === "modo_ranqueado"
+                                          ? "bg-amber-500/20 text-amber-500 border border-amber-500/40"
+                                          : "bg-secondary text-muted-foreground"
+                                      }`}
+                                    >
+                                      {formatEventScopeText(ev.scope)}
                                     </span>
                                   </div>
 

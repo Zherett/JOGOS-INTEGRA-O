@@ -103,7 +103,15 @@ export function ResultPanel({
       </div>
 
       {mode === "torneio_semanal" && (() => {
-        const eventBonuses = getActiveEventBonuses();
+        const eventBonuses = getActiveEventBonuses(
+          "todos" as any,
+          1000,
+          20,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        );
         const rankedMult = eventBonuses.rankedMultiplier ?? 1;
         const basePts = Math.max(1, 10 - wrong);
         const finalPts = Math.round(basePts * rankedMult);

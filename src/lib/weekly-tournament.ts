@@ -974,7 +974,15 @@ export function getWeeklyTournamentSnapshot(
       (isFreeEntry ? freeRemainingToday > 0 : paidRemainingToday > 0 && canAffordPaid),
   );
 
-  const eventBonuses = getActiveEventBonuses();
+  const eventBonuses = getActiveEventBonuses(
+    store.gameId,
+    1000,
+    20,
+    undefined,
+    undefined,
+    undefined,
+    true,
+  );
   const rankedMultiplier = eventBonuses.rankedMultiplier ?? 1;
 
   return {
@@ -1061,7 +1069,15 @@ export async function recordWeeklyTournamentAttempt(args: {
   // Regra de pontuação ranqueada:
   // Base 10 pontos, -1 ponto por erro cometido. Piso mínimo de 1 ponto ao concluir.
   const baseEarned = Math.max(1, 10 - safeWrong);
-  const eventBonuses = getActiveEventBonuses();
+  const eventBonuses = getActiveEventBonuses(
+    store.gameId,
+    1000,
+    20,
+    undefined,
+    undefined,
+    undefined,
+    true,
+  );
   const rankedMultiplier = Math.max(1, eventBonuses.rankedMultiplier ?? 1);
   const matchPoints = Math.round(baseEarned * rankedMultiplier);
   let pointsDelta = matchPoints;

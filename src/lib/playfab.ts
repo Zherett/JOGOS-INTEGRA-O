@@ -3047,7 +3047,10 @@ export async function playfabRecordMatch(args: {
         acc.profile.eventProgress[ev.id] = evProg;
       }
 
-      const inScope = ev.scope === "todos" || ev.scope === args.gameId;
+      const inScope =
+        ev.scope === "todos" ||
+        (ev.scope === "modo_ranqueado" && mode === "torneio_semanal") ||
+        (ev.scope !== "modo_ranqueado" && ev.scope === args.gameId);
       if (inScope) {
         evProg.matchesCount = (evProg.matchesCount ?? 0) + 1;
         evProg.matchesByGame = evProg.matchesByGame ?? {};
