@@ -66,16 +66,16 @@ describe("Torneio Semanal Ranqueado (Nível 3+) e Regras da Arena X1 (Nível 5+,
     assert.notEqual(getWeekInfo(sundayNight).weekKey, getWeekInfo(mondayMorning).weekKey);
   });
 
-  it("calcula bônus de permanência no Top 5 (quem se mantém na colocação por mais tempo ganha pontos extras)", () => {
+  it("calcula minutos de permanência no Top 5 e prioriza estritamente os pontos no ranking", () => {
     const now = 1_000_000_000;
-    const oneHourAgo = now - 60 * 60_000; // 60 minutos no Top 5 -> +12 pts de permanência
+    const oneHourAgo = now - 60 * 60_000; // 60 minutos no Top 5
 
     const metrics = computeTop5HoldMetrics(
       { activeTop5Since: oneHourAgo, accumulatedTop5Ms: 0 },
       now,
     );
     assert.equal(metrics.holdMinutes, 60);
-    assert.equal(metrics.holdBonusPoints, 12);
+    assert.equal(metrics.holdBonusPoints, 0); // Não infla pontos de rank de forma fantasma
 
     const records: Record<string, TournamentPlayerRecord> = {
       p1: {
@@ -84,6 +84,7 @@ describe("Torneio Semanal Ranqueado (Nível 3+) e Regras da Arena X1 (Nível 5+,
         fullName: "ALUNO UM",
         school: "Raimundo Bezerra",
         level: 5,
+        tournamentPoints: 100,
         bestScore: 100,
         totalEntries: 4,
         activeTop5Since: oneHourAgo,
@@ -96,7 +97,8 @@ describe("Torneio Semanal Ranqueado (Nível 3+) e Regras da Arena X1 (Nível 5+,
         fullName: "ALUNO DOIS",
         school: "Elisângela Litaiff",
         level: 4,
-        bestScore: 105, // 5 pontos a mais no jogo, porém 0 minutos de permanência
+        tournamentPoints: 105, // 5 pontos a mais no ranking
+        bestScore: 105,
         totalEntries: 1,
         activeTop5Since: now,
         accumulatedTop5Ms: 0,
@@ -105,12 +107,132 @@ describe("Torneio Semanal Ranqueado (Nível 3+) e Regras da Arena X1 (Nível 5+,
     };
 
     const res = evaluateTournamentStandings(records, now);
-    // p1 tem 100 + 12 (permanência) = 112 pts ranqueados, superando p2 (105 pts) por se manter na colocação!
-    assert.equal(res.top5[0].playerId, "p1");
-    assert.equal(res.top5[0].totalRankedPoints, 112);
+    // p2 tem 105 pts e deve estar em 1º lugar, superando p1 (100 pts) independentemente do tempo de Top 5
+    assert.equal(res.top5[0].playerId, "p2");
+    assert.equal(res.top5[0].tournamentPoints, 105);
     assert.equal(res.top5[0].projectedMedal.tier, "gold");
-    assert.equal(res.top5[1].playerId, "p2");
+    assert.equal(res.top5[1].playerId, "p1");
+    assert.equal(res.top5[1].tournamentPoints, 100);
     assert.equal(res.top5[1].projectedMedal.tier, "silver");
+  });
+
+  it("ordena o ranking corretamente garantindo que Douglas (27 pts) fique em 1º acima de outros alunos", () => {
+    const now = 1_000_000_000;
+    const records: Record<string, TournamentPlayerRecord> = {
+      kaylon: {
+        playerId: "kaylon",
+        nick: "kaylon",
+        fullName: "Kaylon Silva",
+        school: "Raimundo Bezerra",
+        stage: "etapa_2",
+        level: 4,
+        tournamentPoints: 5,
+        bestScore: 5,
+        totalEntries: 1,
+        activeTop5Since: now - 86400000, // 24h atrás
+        accumulatedTop5Ms: 0,
+        updatedAt: now - 86400000,
+      },
+      breno: {
+        playerId: "breno",
+        nick: "breno santos",
+        fullName: "Breno Santos",
+        school: "Raimundo Bezerra",
+        stage: "etapa_2",
+        level: 4,
+        tournamentPoints: 3,
+        bestScore: 3,
+        totalEntries: 3,
+        activeTop5Since: now - 86400000, // 24h atrás
+        accumulatedTop5Ms: 0,
+        updatedAt: now - 86400000,
+      },
+      douglas: {
+        playerId: "douglas",
+        nick: "douglas",
+        fullName: "Douglas Aluno",
+        school: "Raimundo Bezerra",
+        stage: "etapa_2",
+        level: 3,
+        tournamentPoints: 27,
+        bestScore: 27,
+        totalEntries: 4,
+        activeTop5Since: null, // acabou de pontuar
+        accumulatedTop5Ms: 0,
+        updatedAt: now,
+      },
+      delas: {
+        playerId: "delas",
+        nick: "delas",
+        fullName: "Delas Aluno",
+        school: "Raimundo Bezerra",
+        stage: "etapa_2",
+        level: 4,
+        tournamentPoints: 8,
+        bestScore: 8,
+        totalEntries: 1,
+        activeTop5Since: null,
+        accumulatedTop5Ms: 0,
+        updatedAt: now - 1000,
+      },
+    };
+
+    const res = evaluateTournamentStandings(records, now, "etapa_2");
+    assert.equal(res.top5.length, 4);
+    assert.equal(res.top5[0].nick, "douglas");
+    assert.equal(res.top5[0].tournamentPoints, 27);
+    assert.equal(res.top5[0].rank, 1);
+
+    assert.equal(res.top5[1].nick, "delas");
+    assert.equal(res.top5[1].tournamentPoints, 8);
+    assert.equal(res.top5[1].rank, 2);
+
+    assert.equal(res.top5[2].nick, "kaylon");
+    assert.equal(res.top5[2].tournamentPoints, 5);
+    assert.equal(res.top5[2].rank, 3);
+
+    assert.equal(res.top5[3].nick, "breno santos");
+    assert.equal(res.top5[3].tournamentPoints, 3);
+    assert.equal(res.top5[3].rank, 4);
+  });
+
+  it("garante que tempo de permanência não influencia o desempate, apenas pontuação de partidas", () => {
+    const now = 1_000_000_000;
+    const records: Record<string, TournamentPlayerRecord> = {
+      jogadorA: {
+        playerId: "jogadorA",
+        nick: "JogadorA",
+        fullName: "Jogador A",
+        school: "Escola 1",
+        stage: "etapa_2",
+        level: 3,
+        tournamentPoints: 20,
+        bestScore: 20,
+        totalEntries: 2,
+        activeTop5Since: now - 500000, // ficou muito tempo no Top 5
+        accumulatedTop5Ms: 1000000,
+        updatedAt: now - 500,
+      },
+      jogadorB: {
+        playerId: "jogadorB",
+        nick: "JogadorB",
+        fullName: "Jogador B",
+        school: "Escola 2",
+        stage: "etapa_2",
+        level: 3,
+        tournamentPoints: 20,
+        bestScore: 20,
+        totalEntries: 2,
+        activeTop5Since: null, // 0 tempo no Top 5
+        accumulatedTop5Ms: 0,
+        updatedAt: now - 1000, // pontuou antes!
+      },
+    };
+
+    const res = evaluateTournamentStandings(records, now, "etapa_2");
+    // JogadorB pontuou antes (updatedAt menor), então fica na frente mesmo tendo 0 tempo de permanência
+    assert.equal(res.top5[0].playerId, "jogadorB");
+    assert.equal(res.top5[1].playerId, "jogadorA");
   });
 
   it("separa o Top 5 por Etapa (Faixa Etária) para que um jogador de 20 anos (3ª Etapa) não desbanque um aluno de 10 anos (1ª Etapa)", () => {

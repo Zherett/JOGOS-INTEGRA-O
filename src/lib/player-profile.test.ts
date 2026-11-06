@@ -783,4 +783,81 @@ describe("Perfil do Jogador, Escolas, Trava de Níveis (1..10) e Limite Diário 
     assert.equal(atDailyCap.formulaText, "(Limite diário)");
     assert.equal(atDailyCap.displayLabel, "0 XP (Limite diário)");
   });
+
+  it("garante contabilização de vitórias, partidas e jogos diferentes na transição do Nível 6 para o Nível 7", () => {
+    // Aluno no Nível 6 com requisitos do Nível 7: 3445 XP, 25 partidas, 13 vitórias, 6 jogos diferentes
+    const initialLvl6Stage = {
+      forLevel: 6,
+      matches: 0,
+      wins: 0,
+      distinctGames: [],
+    };
+
+    // 1. Aluno joga partida e vence -> vitórias e partidas incrementam na etapa
+    const step1 = advanceLevelStageOnMatch({
+      currentLevel: 6,
+      stageProgress: initialLvl6Stage,
+      newXp: 2500,
+      gameId: "minado",
+      won: true,
+      maxAvailableGames: 10,
+    });
+    assert.equal(step1.leveledUp, false);
+    assert.equal(step1.level, 6);
+    assert.equal(step1.stageProgress.wins, 1);
+    assert.equal(step1.stageProgress.matches, 1);
+    assert.deepEqual(step1.stageProgress.distinctGames, ["minado"]);
+
+    // 2. Aluno joga mais partidas e acumula vitórias e jogos diferentes
+    let currentStage = step1.stageProgress;
+    const games = ["logica", "rpg", "cartesiano", "formas", "variaveis"];
+    for (let i = 0; i < games.length; i++) {
+      const step = advanceLevelStageOnMatch({
+        currentLevel: 6,
+        stageProgress: currentStage,
+        newXp: 2700 + i * 100,
+        gameId: games[i],
+        won: true,
+        maxAvailableGames: 10,
+      });
+      currentStage = step.stageProgress;
+    }
+    assert.equal(currentStage.wins, 6); // 1 + 5 = 6 vitórias
+    assert.equal(currentStage.matches, 6);
+    assert.equal(currentStage.distinctGames.length, 6); // 6 jogos diferentes
+
+    // 3. Verifica exibição dos requisitos no checklist do perfil
+    const progLvl6 = levelProgress({
+      xp: 3200,
+      matchesPlayed: 20,
+      wins: 15,
+      distinctGames: 6,
+      currentLevel: 6,
+      stageProgress: currentStage,
+    });
+    const winsCheck = progLvl6.checklist.find((c) => c.key === "wins")!;
+    const matchesCheck = progLvl6.checklist.find((c) => c.key === "matches")!;
+    const gamesCheck = progLvl6.checklist.find((c) => c.key === "distinctGames")!;
+    const xpCheck = progLvl6.checklist.find((c) => c.key === "xp")!;
+
+    assert.equal(winsCheck.required, 13);
+    assert.equal(matchesCheck.required, 25);
+    assert.equal(gamesCheck.required, 6);
+    assert.equal(xpCheck.required, 3445);
+    assert.equal(gamesCheck.met, true); // 6 / 6 jogos atingido!
+
+    // 4. Sincronização e recuperação com histórico de 15 vitórias e 28 partidas destrava o Nível 7
+    const syncedLvl7 = syncLevelStageProgress({
+      xp: 3500, // >= 3445 XP
+      lifetimeMatches: 28, // >= 25 partidas
+      lifetimeWins: 15, // >= 13 vitórias
+      lifetimeDistinctGames: 6, // >= 6 jogos
+      playedGameIds: ["minado", "logica", "rpg", "cartesiano", "formas", "variaveis"],
+      currentLevel: 6,
+      existingStage: currentStage,
+      maxAvailableGames: 10,
+    });
+    assert.equal(syncedLvl7.level, 7);
+    assert.equal(syncedLvl7.stageProgress.forLevel, 7);
+  });
 });

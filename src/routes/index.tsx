@@ -43,6 +43,7 @@ import semed from "@/assets/semed.png";
 import {
   ageFrom,
   getLocalDateKey,
+  isMatchVictory,
   isX1WindowOpen,
   stageFromBirthdate,
   TOURNAMENT_DAILY_FREE_ENTRIES,
@@ -140,9 +141,11 @@ function Index() {
         correct,
         wrong,
       });
+      const wonRanked = isMatchVictory(safeScore, correct, wrong);
       await auth.recordMatch({
         gameId: gId,
         mode: "torneio_semanal",
+        won: wonRanked,
         score: safeScore,
         level,
         correct,

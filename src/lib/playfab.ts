@@ -969,7 +969,6 @@ export function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdmin
           s.game_id &&
           ALL_GAME_IDS.includes(s.game_id) &&
           cfg.enabledGames[s.game_id] !== false &&
-          s.mode !== "torneio_semanal" &&
           ((s.plays ?? 0) > 0 || (s.best_score ?? 0) > 0 || (s.best_level ?? 1) > 1 || (s.wins ?? 0) > 0),
       )
       .map((s) => {
@@ -2966,11 +2965,10 @@ export async function playfabRecordMatch(args: {
     });
   }
 
-  const isSyntheticTournamentEntry = mode === "torneio_semanal";
   const nextXp = acc.profile.xp + earnedXp;
   const nextSeasonXp = (acc.profile.seasonXp ?? 0) + earnedXp;
-  const nextWins = (acc.profile.wins ?? 0) + (!isSyntheticTournamentEntry && won ? 1 : 0);
-  const nextMatches = (acc.profile.matchesPlayed ?? 0) + (isSyntheticTournamentEntry ? 0 : 1);
+  const nextWins = (acc.profile.wins ?? 0) + (won ? 1 : 0);
+  const nextMatches = (acc.profile.matchesPlayed ?? 0) + 1;
   const distinctGames = getDistinctGamesPlayed(
     acc.profile,
     acc.stats,
@@ -2993,31 +2991,19 @@ export async function playfabRecordMatch(args: {
   acc.profile.distinctGamesPlayed = distinctGames;
 
   const maxAvailableGames = Math.max(1, getEnabledGameIdsSet(cfg.enabledGames).size);
-  if (!isSyntheticTournamentEntry) {
-    const stageRes = advanceLevelStageOnMatch({
-      currentLevel: acc.profile.level,
-      stageProgress: acc.profile.levelStageProgress,
-      newXp: nextXp,
-      gameId: args.gameId,
-      won,
-      isGameEnabled: cfg.enabledGames[args.gameId] !== false,
-      maxAvailableGames,
-    });
-    acc.profile.level = stageRes.level;
-    acc.profile.levelStageProgress = stageRes.stageProgress;
-  } else {
-    const synced = syncLevelStageProgress({
-      xp: nextXp,
-      lifetimeMatches: nextMatches,
-      lifetimeWins: nextWins,
-      lifetimeDistinctGames: distinctGames,
-      currentLevel: acc.profile.level,
-      existingStage: acc.profile.levelStageProgress,
-      maxAvailableGames,
-    });
-    acc.profile.level = synced.level;
-    acc.profile.levelStageProgress = synced.stageProgress;
-  }
+  const stageRes = advanceLevelStageOnMatch({
+    currentLevel: acc.profile.level,
+    stageProgress: acc.profile.levelStageProgress,
+    newXp: nextXp,
+    lifetimeMatches: nextMatches,
+    lifetimeWins: nextWins,
+    gameId: args.gameId,
+    won,
+    isGameEnabled: cfg.enabledGames[args.gameId] !== false,
+    maxAvailableGames,
+  });
+  acc.profile.level = stageRes.level;
+  acc.profile.levelStageProgress = stageRes.stageProgress;
 
   acc.profile.badges = computeBadges({
     existing: acc.profile.badges,
@@ -3063,11 +3049,9 @@ export async function playfabRecordMatch(args: {
 
       const inScope = ev.scope === "todos" || ev.scope === args.gameId;
       if (inScope) {
-        if (!isSyntheticTournamentEntry) {
-          evProg.matchesCount = (evProg.matchesCount ?? 0) + 1;
-          evProg.matchesByGame = evProg.matchesByGame ?? {};
-          evProg.matchesByGame[args.gameId] = (evProg.matchesByGame[args.gameId] ?? 0) + 1;
-        }
+        evProg.matchesCount = (evProg.matchesCount ?? 0) + 1;
+        evProg.matchesByGame = evProg.matchesByGame ?? {};
+        evProg.matchesByGame[args.gameId] = (evProg.matchesByGame[args.gameId] ?? 0) + 1;
         evProg.xpEarned = (evProg.xpEarned ?? 0) + earnedXp;
         evProg.xpByGame = evProg.xpByGame ?? {};
         evProg.xpByGame[args.gameId] = (evProg.xpByGame[args.gameId] ?? 0) + earnedXp;

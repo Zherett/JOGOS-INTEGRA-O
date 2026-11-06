@@ -1829,7 +1829,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                   <td className="px-3 py-2.5 text-center text-muted-foreground">
                                     {row.holdMinutes > 0 ? (
                                       <span className="font-semibold text-accent">
-                                        {row.holdMinutes} min (+{row.holdBonusPoints} pts)
+                                        {row.holdMinutes} min
                                       </span>
                                     ) : (
                                       "—"
@@ -4058,6 +4058,9 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                 matchesPlayed: stEff.matchesPlayed,
                                 wins: stEff.wins,
                                 distinctGames: stEff.distinctGames,
+                                currentLevel: stEff.level,
+                                stageProgress: stEff.stageProgress,
+                                maxAvailableGames: stEff.maxAvailableGames,
                               });
 
                               return (
@@ -4976,6 +4979,9 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                           matchesPlayed: pEff.matchesPlayed,
                           wins: pEff.wins,
                           distinctGames: pEff.distinctGames,
+                          currentLevel: pEff.level,
+                          stageProgress: pEff.stageProgress,
+                          maxAvailableGames: pEff.maxAvailableGames,
                         });
 
                         return (

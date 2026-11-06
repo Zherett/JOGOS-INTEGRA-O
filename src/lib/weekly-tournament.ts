@@ -529,7 +529,7 @@ export function resolveWeeklyTournamentGame(
   return safePool[Math.abs(weekIndex) % safePool.length];
 }
 
-/** Calculates total minutes spent in the Top 5 and the corresponding permanence bonus points. */
+/** Calculates total minutes spent in the Top 5. */
 export function computeTop5HoldMetrics(
   record: Pick<TournamentPlayerRecord, "activeTop5Since" | "accumulatedTop5Ms">,
   nowMs = Date.now(),
@@ -538,22 +538,21 @@ export function computeTop5HoldMetrics(
     record.activeTop5Since !== null ? Math.max(0, nowMs - record.activeTop5Since) : 0;
   const totalMs = Math.max(0, (record.accumulatedTop5Ms ?? 0) + activeMs);
   const holdMinutes = Math.floor(totalMs / 60_000);
-  // +2 ranked points for every 10 minutes holding a Top 5 position (up to +300 bonus points/week)
-  const holdBonusPoints = Math.min(300, Math.floor(holdMinutes / 10) * 2);
+  // Pontuação de permanência completamente removida: apenas os pontos das partidas definem os ranks.
+  const holdBonusPoints = 0;
   return { holdMinutes, holdBonusPoints };
 }
 
 export function projectedMedalForRank(
   rank: number,
-  holdMinutes: number,
+  _holdMinutes = 0,
 ): TournamentStandingRow["projectedMedal"] {
-  const holdExtraXp = Math.min(100, Math.floor(holdMinutes / 30) * 5);
   if (rank === 1) {
     return {
       tier: "gold",
       emoji: "🥇",
       label: "Ouro • Campeão da Semana",
-      bonusXp: 150 + holdExtraXp,
+      bonusXp: 150,
     };
   }
   if (rank === 2) {
@@ -561,7 +560,7 @@ export function projectedMedalForRank(
       tier: "silver",
       emoji: "🥈",
       label: "Prata • Vice-Campeão Semanal",
-      bonusXp: 100 + holdExtraXp,
+      bonusXp: 100,
     };
   }
   if (rank === 3) {
@@ -569,14 +568,14 @@ export function projectedMedalForRank(
       tier: "bronze",
       emoji: "🥉",
       label: "Bronze • 3º Lugar Semanal",
-      bonusXp: 75 + holdExtraXp,
+      bonusXp: 75,
     };
   }
   return {
     tier: "elite",
     emoji: "🏅",
     label: "Elite • Top 5 da Semana",
-    bonusXp: 50 + holdExtraXp,
+    bonusXp: 50,
   };
 }
 
@@ -626,17 +625,16 @@ export function evaluateTournamentStandings(
         currentRank,
         holdMinutes,
         holdBonusPoints,
-        totalRankedPoints: tourPoints + holdBonusPoints,
+        totalRankedPoints: tourPoints,
       };
     });
 
-  // Ordena prioritariamente por Pontos Totais (Pontos Ranqueados + Bônus de Permanência no Top 5)
+  // Ordena unicamente por Pontos do Torneio (apenas as pontuações dos ranks definem as posições)
+  // Em caso de empate: melhor pontuação em partida individual (bestScore) e quem pontuou primeiro (updatedAt)
   list.sort(
     (a, b) =>
-      b.totalRankedPoints - a.totalRankedPoints ||
       b.tournamentPoints - a.tournamentPoints ||
       b.rec.bestScore - a.rec.bestScore ||
-      b.holdMinutes - a.holdMinutes ||
       a.rec.updatedAt - b.rec.updatedAt,
   );
 

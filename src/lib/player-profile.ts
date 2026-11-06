@@ -866,16 +866,22 @@ export function calculatePlayerLevel(input: PlayerProgressionInput): number {
       : nextReq.minDistinctGames;
     const stageMatches =
       input.stageProgress.forLevel === baseLevel
-        ? Math.max(0, Math.floor(input.stageProgress.matches ?? 0))
-        : 0;
+        ? Math.max(
+            Math.max(0, Math.floor(input.stageProgress.matches ?? 0)),
+            Math.max(0, Math.floor(input.matchesPlayed ?? 0)),
+          )
+        : Math.max(0, Math.floor(input.matchesPlayed ?? 0));
     const stageWins =
       input.stageProgress.forLevel === baseLevel
-        ? Math.max(0, Math.floor(input.stageProgress.wins ?? 0))
-        : 0;
+        ? Math.max(
+            Math.max(0, Math.floor(input.stageProgress.wins ?? 0)),
+            Math.max(0, Math.floor(input.wins ?? 0)),
+          )
+        : Math.max(0, Math.floor(input.wins ?? 0));
     const stageDistinct =
       input.stageProgress.forLevel === baseLevel && Array.isArray(input.stageProgress.distinctGames)
-        ? input.stageProgress.distinctGames.length
-        : 0;
+        ? Math.max(input.stageProgress.distinctGames.length, Math.max(0, Math.floor(input.distinctGames ?? 0)))
+        : Math.max(0, Math.floor(input.distinctGames ?? 0));
 
     const meetsNext =
       safeXp >= nextReq.minXp &&
@@ -961,16 +967,24 @@ export function syncLevelStageProgress(args: {
       : nextReq.minDistinctGames;
 
     const isSameStage = args.existingStage.forLevel === baseLevel;
-    const rawMatches = isSameStage ? Math.max(0, Math.floor(args.existingStage.matches ?? 0)) : 0;
-    const rawWins = isSameStage ? Math.max(0, Math.floor(args.existingStage.wins ?? 0)) : 0;
-    const rawDistinct =
+    const stageMatches = isSameStage ? Math.max(0, Math.floor(args.existingStage.matches ?? 0)) : 0;
+    const stageWins = isSameStage ? Math.max(0, Math.floor(args.existingStage.wins ?? 0)) : 0;
+    const rawMatches = Math.max(stageMatches, Math.max(0, Math.floor(args.lifetimeMatches ?? 0)));
+    const rawWins = Math.max(stageWins, Math.max(0, Math.floor(args.lifetimeWins ?? 0)));
+
+    const existingDistinct =
       isSameStage && Array.isArray(args.existingStage.distinctGames)
         ? Array.from(new Set(args.existingStage.distinctGames))
         : [];
+    const sourceIds = Array.isArray(args.playedGameIds) ? args.playedGameIds : [];
+    const allDistinct = Array.from(new Set([...existingDistinct, ...sourceIds]));
+    while (allDistinct.length < Math.min(reqDistinct, Math.max(0, Math.floor(args.lifetimeDistinctGames ?? 0)))) {
+      allDistinct.push(`game_${allDistinct.length + 1}`);
+    }
 
     const cappedMatches = Math.min(nextReq.minMatches, rawMatches);
     const cappedWins = Math.min(nextReq.minWins, rawWins);
-    const cappedDistinct = rawDistinct.slice(0, reqDistinct);
+    const cappedDistinct = allDistinct.slice(0, reqDistinct);
 
     const meetsAll =
       safeXp >= nextReq.minXp &&
@@ -1056,6 +1070,8 @@ export function advanceLevelStageOnMatch(args: {
   currentLevel: number;
   stageProgress?: LevelStageProgress | null;
   newXp: number;
+  lifetimeMatches?: number;
+  lifetimeWins?: number;
   gameId: string;
   won: boolean;
   isGameEnabled?: boolean;
@@ -1082,10 +1098,19 @@ export function advanceLevelStageOnMatch(args: {
       ? args.stageProgress
       : { forLevel: lvl, matches: 0, wins: 0, distinctGames: [] };
 
-  const nextMatches = Math.min(nextReq.minMatches, Math.max(0, Math.floor(baseStage.matches)) + 1);
+  const currentMatches = Math.max(
+    Math.max(0, Math.floor(baseStage.matches)),
+    typeof args.lifetimeMatches === "number" ? Math.max(0, Math.floor(args.lifetimeMatches)) : 0,
+  );
+  const currentWins = Math.max(
+    Math.max(0, Math.floor(baseStage.wins)),
+    typeof args.lifetimeWins === "number" ? Math.max(0, Math.floor(args.lifetimeWins)) : 0,
+  );
+
+  const nextMatches = Math.min(nextReq.minMatches, currentMatches + 1);
   const nextWins = Math.min(
     nextReq.minWins,
-    Math.max(0, Math.floor(baseStage.wins)) + (args.won ? 1 : 0),
+    currentWins + (args.won ? 1 : 0),
   );
   const distinctList = Array.isArray(baseStage.distinctGames)
     ? Array.from(new Set(baseStage.distinctGames))
