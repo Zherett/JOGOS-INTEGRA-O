@@ -56,6 +56,43 @@ export interface BonusCard {
 
 export type MineCard = (QuestionCard | BonusCard) & { id: string; label: string };
 
+export interface MinefieldEvaluation {
+  isCorrect: boolean;
+  scoreDelta: number;
+  isError: boolean;
+}
+
+/** Avalia a resposta fornecida a uma carta com desafio (V/F, conta misteriosa ou forma). */
+export function evaluateQuestionAnswer(
+  card: QuestionCard,
+  selectedOption: string,
+): MinefieldEvaluation {
+  const isCorrect = selectedOption === card.answer;
+  return {
+    isCorrect,
+    scoreDelta: isCorrect ? POINTS_CORRECT : -POINTS_WRONG,
+    isError: !isCorrect,
+  };
+}
+
+/** Avalia o esgotamento do tempo limite (20s) em uma questão. */
+export function evaluateTimeout(): MinefieldEvaluation {
+  return {
+    isCorrect: false,
+    scoreDelta: -POINTS_WRONG,
+    isError: true,
+  };
+}
+
+/** Avalia uma carta bônus/mina revelada no tabuleiro. */
+export function evaluateBonusCard(card: BonusCard): MinefieldEvaluation {
+  return {
+    isCorrect: card.points >= 0,
+    scoreDelta: card.points,
+    isError: card.points < 0,
+  };
+}
+
 function ri(n: number) { return Math.floor(Math.random() * n); }
 function rand<T>(a: readonly T[]): T { return a[ri(a.length)]; }
 function shuffle<T>(a: T[]): T[] {

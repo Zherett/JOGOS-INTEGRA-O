@@ -9,8 +9,15 @@ import {
   cellLabel,
   ANSWER_SECONDS,
   ANSWER_TIME_OPTIONS,
+  POINTS_CORRECT,
+  POINTS_WRONG,
+  evaluateQuestionAnswer,
+  evaluateTimeout,
+  evaluateBonusCard,
   GENERAL_SHAPES,
   TRIANGLE_CLASSIFICATIONS,
+  type QuestionCard,
+  type BonusCard,
 } from "./minefield-content.ts";
 
 describe("Campo Minado - Lógica de Conteúdo e Questões de Formas Geométricas", () => {
@@ -124,5 +131,102 @@ describe("Campo Minado - Lógica de Conteúdo e Questões de Formas Geométricas
       assert.ok(Math.abs(b.points) >= 1);
       assert.ok(Math.abs(b.points) <= 3);
     }
+  });
+
+  describe("Sistema de Pontuação e Contabilização de Erros (Campo Minado)", () => {
+    const sampleQuestion: QuestionCard = {
+      kind: "tf",
+      prompt: "Verdadeiro ou Falso?",
+      expr: "10 > 5",
+      options: ["Verdadeiro", "Falso"],
+      answer: "Verdadeiro",
+    };
+
+    it("atribui +5 pontos e marca acerto quando a resposta à questão está correta", () => {
+      const res = evaluateQuestionAnswer(sampleQuestion, "Verdadeiro");
+      assert.equal(res.isCorrect, true);
+      assert.equal(res.isError, false);
+      assert.equal(res.scoreDelta, POINTS_CORRECT);
+      assert.equal(res.scoreDelta, 5);
+    });
+
+    it("desconta 3 pontos e contabiliza ERRO quando a resposta à questão está incorreta", () => {
+      const res = evaluateQuestionAnswer(sampleQuestion, "Falso");
+      assert.equal(res.isCorrect, false);
+      assert.equal(res.isError, true);
+      assert.equal(res.scoreDelta, -POINTS_WRONG);
+      assert.equal(res.scoreDelta, -3);
+    });
+
+    it("desconta 3 pontos e contabiliza ERRO quando o tempo limite de 20s esgota", () => {
+      const res = evaluateTimeout();
+      assert.equal(res.isCorrect, false);
+      assert.equal(res.isError, true);
+      assert.equal(res.scoreDelta, -POINTS_WRONG);
+      assert.equal(res.scoreDelta, -3);
+    });
+
+    it("avalia carta bônus positiva como acerto e com pontuação positiva", () => {
+      const positiveBonus: BonusCard = { kind: "bonus", points: 2 };
+      const res = evaluateBonusCard(positiveBonus);
+      assert.equal(res.isCorrect, true);
+      assert.equal(res.isError, false);
+      assert.equal(res.scoreDelta, 2);
+    });
+
+    it("avalia carta mina (bônus negativo) como erro e com desconto de pontuação", () => {
+      const negativeMine: BonusCard = { kind: "bonus", points: -2 };
+      const res = evaluateBonusCard(negativeMine);
+      assert.equal(res.isCorrect, false);
+      assert.equal(res.isError, true);
+      assert.equal(res.scoreDelta, -2);
+    });
+
+    it("contabiliza com fidelidade múltiplos erros cometidos em uma partida (sem limitar a 1)", () => {
+      let score = 0;
+      let correct = 0;
+      let wrong = 0;
+
+      // 1. Acerta 3 questões (+15 pts, 3 acertos)
+      for (let i = 0; i < 3; i++) {
+        const ev = evaluateQuestionAnswer(sampleQuestion, "Verdadeiro");
+        score = Math.max(0, score + ev.scoreDelta);
+        if (ev.isCorrect) correct++;
+        if (ev.isError) wrong++;
+      }
+      assert.equal(score, 15);
+      assert.equal(correct, 3);
+      assert.equal(wrong, 0);
+
+      // 2. Erra 3 questões seguidas (-9 pts, 3 erros)
+      for (let i = 0; i < 3; i++) {
+        const ev = evaluateQuestionAnswer(sampleQuestion, "Falso");
+        score = Math.max(0, score + ev.scoreDelta);
+        if (ev.isCorrect) correct++;
+        if (ev.isError) wrong++;
+      }
+      assert.equal(score, 6);
+      assert.equal(correct, 3);
+      assert.equal(wrong, 3);
+
+      // 3. Esgota o tempo em 1 questão (-3 pts, 1 erro adicional)
+      const timeoutEv = evaluateTimeout();
+      score = Math.max(0, score + timeoutEv.scoreDelta);
+      if (timeoutEv.isError) wrong++;
+      assert.equal(score, 3);
+      assert.equal(wrong, 4);
+
+      // 4. Pisa em 1 mina (-2 pts, 1 erro adicional)
+      const mineEv = evaluateBonusCard({ kind: "bonus", points: -2 });
+      score = Math.max(0, score + mineEv.scoreDelta);
+      if (mineEv.isError) wrong++;
+      assert.equal(score, 1);
+      assert.equal(wrong, 5);
+
+      // Total final deve refletir TODOS os 5 erros cometidos, e NUNCA apenas 1!
+      assert.equal(correct, 3);
+      assert.equal(wrong, 5);
+      assert.equal(score, 1);
+    });
   });
 });
