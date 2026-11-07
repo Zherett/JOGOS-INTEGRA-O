@@ -49,6 +49,7 @@ export interface SystemInboxMessage {
   title: string;
   body: string;
   gifLinks?: Record<string, string>; // ex: { gif1: "https://...", gif2: "https://..." }
+  imageLinks?: Record<string, string>; // ex: { img1: "https://...", img2: "https://..." }
   reward?: InboxReward;
   metadata?: {
     deviceInfo?: string;
@@ -189,6 +190,7 @@ export function createInboxMessage(
     title: data.title,
     body: data.body,
     gifLinks: data.gifLinks ?? {},
+    imageLinks: data.imageLinks ?? {},
     reward: data.reward,
     metadata: data.metadata,
     read: false,
@@ -219,6 +221,7 @@ export interface AdminBroadcastDraft {
   title: string;
   body: string;
   gifLinks?: Record<string, string>;
+  imageLinks?: Record<string, string>;
   reward?: {
     type: InboxRewardType;
     pointsAmount?: number;
@@ -259,6 +262,7 @@ export function sendAdminBroadcastMessage(draft: AdminBroadcastDraft): SystemInb
     title: draft.title.trim(),
     body: draft.body.trim(),
     gifLinks: draft.gifLinks ?? {},
+    imageLinks: draft.imageLinks ?? {},
     reward: rewardObj,
   });
 

@@ -26,6 +26,7 @@ import {
   CheckCircle2,
   Clock3,
   RefreshCw,
+  Image as ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -86,6 +87,8 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
 
   // Tags de GIF: [{ tagKey: "gif1", url: "" }]
   const [gifList, setGifList] = useState<{ tagKey: string; url: string }[]>([]);
+  // Tags de Imagens Estáticas: [{ tagKey: "img1", url: "" }]
+  const [imageList, setImageList] = useState<{ tagKey: string; url: string }[]>([]);
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
 
   // Configurações de Recompensa
@@ -300,6 +303,30 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
     setTimeout(() => setCopiedTag(null), 2000);
   };
 
+  // Manipulação de Imagens Estáticas ([img1], [img2], etc.)
+  const handleAddImageTag = () => {
+    const nextIdx = imageList.length + 1;
+    const tagKey = `img${nextIdx}`;
+    setImageList((prev) => [...prev, { tagKey, url: "" }]);
+  };
+
+  const handleRemoveImageTag = (idx: number) => {
+    setImageList((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleUpdateImageUrl = (idx: number, url: string) => {
+    setImageList((prev) =>
+      prev.map((item, i) => (i === idx ? { ...item, url: url.trim() } : item))
+    );
+  };
+
+  const handleInsertImageIntoBody = (tagKey: string) => {
+    const tag = `[${tagKey}]`;
+    setBody((prev) => (prev ? `${prev}\n${tag}\n` : `${tag}\n`));
+    setCopiedTag(tagKey);
+    setTimeout(() => setCopiedTag(null), 2000);
+  };
+
   // Envio da Mensagem
   const handleSendMessage = async () => {
     if (!title.trim()) {
@@ -341,6 +368,14 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
       }
     }
 
+    // Constrói mapa de imageLinks ([img1], [img2], etc.)
+    const imageLinks: Record<string, string> = {};
+    for (const img of imageList) {
+      if (img.url.trim()) {
+        imageLinks[img.tagKey] = img.url.trim();
+      }
+    }
+
     const draft: AdminBroadcastDraft = {
       mode: recipientMode,
       targetSchool: recipientMode === "school" ? selectedSchool : undefined,
@@ -350,6 +385,7 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
       title: title.trim(),
       body: body.trim(),
       gifLinks: Object.keys(gifLinks).length > 0 ? gifLinks : undefined,
+      imageLinks: Object.keys(imageLinks).length > 0 ? imageLinks : undefined,
       reward: hasReward
         ? {
             type: rewardType,
@@ -383,6 +419,7 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
     setTitle("");
     setBody("");
     setGifList([]);
+    setImageList([]);
     setHasReward(false);
     setIsSecretReward(false);
     setSelectedStudentIds(new Set());
@@ -695,32 +732,43 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
               />
             </div>
 
-            {/* GERENCIADOR DE GIFS / ANIMAÇÕES */}
-            <div className="space-y-3 rounded-2xl border bg-secondary/30 p-3.5">
-              <div className="flex items-center justify-between">
+            {/* GERENCIADOR DE MÍDIAS (GIFS E IMAGENS ESTÁTICAS) */}
+            <div className="space-y-4 rounded-2xl border bg-secondary/30 p-3.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-amber-500" />
                   <span className="font-display text-xs font-bold text-foreground">
-                    Anexar Mídia / GIFs Animados
+                    Anexar Mídias (GIFs Animados & Imagens Estáticas)
                   </span>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleAddGifTag}
-                  className="h-7 rounded-xl text-[11px] font-bold gap-1 cursor-pointer"
-                >
-                  <Plus className="h-3 w-3" /> Adicionar GIF
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddGifTag}
+                    className="h-7 rounded-xl text-[11px] font-bold gap-1 cursor-pointer"
+                  >
+                    <Plus className="h-3 w-3" /> GIF ([gif])
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddImageTag}
+                    className="h-7 rounded-xl text-[11px] font-bold gap-1 cursor-pointer border-blue-500/40 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10"
+                  >
+                    <ImageIcon className="h-3 w-3" /> Imagem ([img])
+                  </Button>
+                </div>
               </div>
 
-              {gifList.length === 0 ? (
-                <p className="text-[11px] text-muted-foreground">
-                  Nenhum GIF anexado. Clique no botão acima para adicionar uma tag de animação (ex: <code>[gif1]</code>) e colar a URL correspondente.
-                </p>
-              ) : (
-                <div className="space-y-2">
+              {/* LISTA DE GIFS */}
+              {gifList.length > 0 && (
+                <div className="space-y-2 border-t border-border/50 pt-2">
+                  <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                    <Sparkles className="h-3 w-3" /> GIFs Animados:
+                  </span>
                   {gifList.map((gif, idx) => (
                     <div
                       key={gif.tagKey}
@@ -746,7 +794,7 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
                       <Input
                         value={gif.url}
                         onChange={(e) => handleUpdateGifUrl(idx, e.target.value)}
-                        placeholder="Cole o link direto do GIF (ex: https://media.tenor.com/.../badge.gif)"
+                        placeholder="Cole o link direto do GIF (ex: https://media.tenor.com/.../anim.gif)"
                         className="h-8 rounded-lg text-xs flex-1"
                       />
 
@@ -774,9 +822,78 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
                       </Button>
                     </div>
                   ))}
-                  <div className="text-[10px] text-muted-foreground">
-                    💡 <b>Dica:</b> Clique no botão da tag para inseri-la automaticamente no corpo da mensagem. Quando o aluno abrir a mensagem, o GIF será renderizado exatamente naquele local!
-                  </div>
+                </div>
+              )}
+
+              {/* LISTA DE IMAGENS ESTÁTICAS */}
+              {imageList.length > 0 && (
+                <div className="space-y-2 border-t border-border/50 pt-2">
+                  <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                    <ImageIcon className="h-3 w-3" /> Imagens Estáticas (PNG, JPG, WebP):
+                  </span>
+                  {imageList.map((img, idx) => (
+                    <div
+                      key={img.tagKey}
+                      className="flex flex-col sm:flex-row items-start sm:items-center gap-2 rounded-xl border bg-background p-2.5"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleInsertImageIntoBody(img.tagKey)}
+                        title="Clique para inserir a tag no texto"
+                        className="inline-flex items-center gap-1 rounded-lg bg-blue-500/15 border border-blue-500/30 px-2 py-1 text-xs font-mono font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-500 hover:text-white transition-colors cursor-pointer shrink-0"
+                      >
+                        {copiedTag === img.tagKey ? (
+                          <>
+                            <Check className="h-3 w-3" /> Inserido!
+                          </>
+                        ) : (
+                          <>
+                            [{img.tagKey}] <Copy className="h-3 w-3 opacity-70" />
+                          </>
+                        )}
+                      </button>
+
+                      <Input
+                        value={img.url}
+                        onChange={(e) => handleUpdateImageUrl(idx, e.target.value)}
+                        placeholder="Cole o link direto da imagem (ex: https://.../aviso.png)"
+                        className="h-8 rounded-lg text-xs flex-1"
+                      />
+
+                      {img.url && (
+                        <div className="h-8 w-8 rounded-lg border bg-muted/50 overflow-hidden shrink-0 flex items-center justify-center">
+                          <img
+                            src={img.url}
+                            alt="preview"
+                            className="h-full w-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = "none";
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveImageTag(idx)}
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive rounded-lg cursor-pointer shrink-0"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {gifList.length === 0 && imageList.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground">
+                  Nenhuma mídia anexada. Use os botões acima para adicionar tags como <code>[gif1]</code> para animações ou <code>[img1]</code> para imagens estáticas (PNG, JPG, etc.) e cole as URLs correspondentes.
+                </p>
+              ) : (
+                <div className="text-[10px] text-muted-foreground pt-1 border-t">
+                  💡 <b>Dica:</b> Clique no botão da tag (ex: <code>[gif1]</code> ou <code>[img1]</code>) para inseri-la automaticamente no corpo do texto.
                 </div>
               )}
             </div>

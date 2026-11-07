@@ -43,7 +43,22 @@ export function loadSpecialEvents(): SpecialEvent[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(SPECIAL_EVENTS_KEY);
-    return raw ? (JSON.parse(raw) as SpecialEvent[]) : [];
+    if (!raw) return [];
+    const list = JSON.parse(raw) as SpecialEvent[];
+    let migrated = false;
+    for (const ev of list) {
+      if (
+        ev.scope === "modo_ranqueado" &&
+        (ev.title.includes("Fim de Semana") || (ev.xpMultiplier && ev.xpMultiplier > 1))
+      ) {
+        ev.scope = "todos";
+        migrated = true;
+      }
+    }
+    if (migrated) {
+      localStorage.setItem(SPECIAL_EVENTS_KEY, JSON.stringify(list));
+    }
+    return list;
   } catch {
     return [];
   }
@@ -193,7 +208,12 @@ export function getActiveEventBonuses(
       }
 
       // Linha 4: Multiplicador de Pontos na Ranqueada (1.5x, 2x, 3x)
-      if (ev.rankedMultiplier && ev.rankedMultiplier > 1) {
+      // Aplica-se exclusivamente em partidas ranqueadas
+      if (
+        ev.rankedMultiplier &&
+        ev.rankedMultiplier > 1 &&
+        (isRankedMatch || (gameId as any) === "modo_ranqueado")
+      ) {
         extraRankedMultiplier += (ev.rankedMultiplier - 1);
       }
 
@@ -465,7 +485,21 @@ export function loadRecurringEvents(): RecurringEvent[] {
       localStorage.setItem(RECURRING_EVENTS_KEY, JSON.stringify(DEFAULT_RECURRING_EVENTS));
       return [...DEFAULT_RECURRING_EVENTS];
     }
-    return JSON.parse(raw) as RecurringEvent[];
+    const list = JSON.parse(raw) as RecurringEvent[];
+    let migrated = false;
+    for (const ev of list) {
+      if (
+        ev.scope === "modo_ranqueado" &&
+        (ev.title.includes("Fim de Semana") || (ev.xpMultiplier && ev.xpMultiplier > 1))
+      ) {
+        ev.scope = "todos";
+        migrated = true;
+      }
+    }
+    if (migrated) {
+      localStorage.setItem(RECURRING_EVENTS_KEY, JSON.stringify(list));
+    }
+    return list;
   } catch {
     return [];
   }

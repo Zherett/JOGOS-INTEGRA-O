@@ -165,9 +165,16 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
     }
   };
 
-  // Renderiza corpo da mensagem substituindo tags como [gif1], [gif2]
-  const renderMessageBody = (body: string, gifLinks?: Record<string, string>) => {
-    if (!gifLinks || Object.keys(gifLinks).length === 0) {
+  // Renderiza corpo da mensagem substituindo tags como [gif1], [gif2], [img1], [img2]
+  const renderMessageBody = (
+    body: string,
+    gifLinks?: Record<string, string>,
+    imageLinks?: Record<string, string>
+  ) => {
+    const hasGifs = gifLinks && Object.keys(gifLinks).length > 0;
+    const hasImages = imageLinks && Object.keys(imageLinks).length > 0;
+
+    if (!hasGifs && !hasImages) {
       return (
         <div className="whitespace-pre-wrap text-sm text-foreground leading-relaxed space-y-2">
           {body}
@@ -175,16 +182,19 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
       );
     }
 
-    // Divide texto pelas tags [gif1], [gif2], etc.
-    const parts = body.split(/(\[gif\d+\])/gi);
+    // Divide texto pelas tags [gif1], [gif2], [img1], [img2], etc.
+    const parts = body.split(/(\[(?:gif|img)\d+\])/gi);
 
     return (
       <div className="whitespace-pre-wrap text-sm text-foreground leading-relaxed space-y-3">
         {parts.map((part, index) => {
-          const match = /^\[(gif\d+)\]$/i.exec(part.trim());
+          const match = /^\[(gif|img)(\d+)\]$/i.exec(part.trim());
           if (match) {
-            const tagKey = match[1].toLowerCase();
-            const url = gifLinks[tagKey];
+            const prefix = match[1].toLowerCase();
+            const tagKey = `${prefix}${match[2]}`.toLowerCase();
+            const url = prefix === "gif" ? gifLinks?.[tagKey] : imageLinks?.[tagKey];
+            const isGif = prefix === "gif";
+
             if (url) {
               return (
                 <div
@@ -193,15 +203,15 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
                 >
                   <img
                     src={url}
-                    alt={`Animação ${tagKey}`}
-                    className="max-h-72 w-auto object-contain rounded-xl shadow-xs"
+                    alt={isGif ? `Animação ${tagKey}` : `Imagem ${tagKey}`}
+                    className="max-h-80 w-auto object-contain rounded-xl shadow-xs"
                     loading="lazy"
                     onError={(e) => {
                       (e.target as HTMLElement).style.display = "none";
                     }}
                   />
                   <span className="text-[10px] text-muted-foreground mt-1 font-mono uppercase">
-                    Mídia Anexa ({tagKey})
+                    {isGif ? `GIF Animado (${tagKey})` : `Imagem Anexa (${tagKey})`}
                   </span>
                 </div>
               );
@@ -346,7 +356,7 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
                               </h4>
                             </div>
                             <p className="line-clamp-2 text-[11px] text-muted-foreground mt-1">
-                              {msg.body.replace(/\[gif\d+\]/gi, " [GIF] ")}
+                              {msg.body.replace(/\[gif\d+\]/gi, " [GIF] ").replace(/\[img\d+\]/gi, " [IMAGEM] ")}
                             </p>
                           </div>
 
@@ -414,9 +424,9 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
                     </h2>
                   </div>
 
-                  {/* Corpo do Texto e GIFs */}
+                  {/* Corpo do Texto, GIFs e Imagens */}
                   <div className="rounded-3xl border bg-card p-5 sm:p-6 shadow-xs">
-                    {renderMessageBody(activeMessage.body, activeMessage.gifLinks)}
+                    {renderMessageBody(activeMessage.body, activeMessage.gifLinks, activeMessage.imageLinks)}
                   </div>
 
                   {/* Seção de Recompensa Anexa (se houver) */}

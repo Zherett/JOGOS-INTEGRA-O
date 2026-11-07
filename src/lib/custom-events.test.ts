@@ -450,4 +450,53 @@ describe("Eventos Personalizados Criados pelo Administrador", () => {
     assert.equal(normalBonuses.multiplier, 1);
     assert.equal(normalBonuses.activeEventNames.length, 0);
   });
+
+  it("garante que evento com scope 'todos' aplica XP e diário para partidas normais, mas reserva multiplicador de ranqueada para a ranqueada", () => {
+    const testNow = new Date("2026-11-07T12:00:00Z");
+    const weekendEvent: SpecialEvent = {
+      id: "ev_weekend_combined",
+      title: "3X de XP do Fim de Semana",
+      description: "Super evento",
+      scope: "todos",
+      bonusType: "personalizado",
+      xpMultiplier: 3,
+      rankedMultiplier: 1.5,
+      pointsMultiplier: 1.5,
+      dailyXpCap: 1700,
+      startsAt: "2026-11-07T00:00:00Z",
+      endsAt: "2026-11-07T23:59:59Z",
+      active: true,
+      createdAt: "2026-11-07T00:00:00Z",
+    };
+
+    // Partida Normal: recebe 3x XP, teto diário 1700, 1.5x moedas, MAS rankedMultiplier fica 1
+    const normalBonuses = getActiveEventBonuses(
+      "torre_hanoi",
+      1000,
+      20,
+      [weekendEvent],
+      testNow,
+      [],
+      false, // normal
+    );
+    assert.equal(normalBonuses.multiplier, 3);
+    assert.equal(normalBonuses.dailyXpCap, 1700);
+    assert.equal(normalBonuses.pointsMultiplier, 1.5);
+    assert.equal(normalBonuses.rankedMultiplier, 1);
+
+    // Partida Ranqueada: recebe 3x XP, teto 1700 E o rankedMultiplier 1.5x
+    const rankedBonuses = getActiveEventBonuses(
+      "torre_hanoi",
+      1000,
+      20,
+      [weekendEvent],
+      testNow,
+      [],
+      true, // ranqueada
+    );
+    assert.equal(rankedBonuses.multiplier, 3);
+    assert.equal(rankedBonuses.dailyXpCap, 1700);
+    assert.equal(rankedBonuses.pointsMultiplier, 1.5);
+    assert.equal(rankedBonuses.rankedMultiplier, 1.5);
+  });
 });

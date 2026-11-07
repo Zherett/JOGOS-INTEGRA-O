@@ -713,6 +713,21 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     onConfigSaved?.();
   }
 
+  async function handleToggleSpecialScope(id: string) {
+    const list = specialEvents.map((ev) => {
+      if (ev.id !== id) return ev;
+      const nextScope: EventScope = ev.scope === "modo_ranqueado" ? "todos" : "modo_ranqueado";
+      return { ...ev, scope: nextScope };
+    });
+    setSpecialEvents(list);
+    saveSpecialEvents(list);
+    const nextCfg = { ...draft, specialEvents: list };
+    setDraft(nextCfg);
+    await auth.updateAdminConfig(nextCfg);
+    flashSaved("✅ Escopo do evento atualizado com sucesso!");
+    onConfigSaved?.();
+  }
+
   async function handleDeleteEvent(id: string) {
     const list = specialEvents.filter((ev) => ev.id !== id);
     setSpecialEvents(list);
@@ -802,6 +817,21 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
         ? "✅ Status recorrente sincronizado com o Banco de Dados (PlayFab)!"
         : "💾 Status do evento recorrente atualizado localmente!"
     );
+    onConfigSaved?.();
+  }
+
+  async function handleToggleRecurringScope(id: string) {
+    const list = recurringEvents.map((ev) => {
+      if (ev.id !== id) return ev;
+      const nextScope: EventScope = ev.scope === "modo_ranqueado" ? "todos" : "modo_ranqueado";
+      return { ...ev, scope: nextScope };
+    });
+    setRecurringEvents(list);
+    saveRecurringEvents(list);
+    const nextCfg = { ...draft, recurringEvents: list };
+    setDraft(nextCfg);
+    await auth.updateAdminConfig(nextCfg);
+    flashSaved("✅ Escopo do evento recorrente atualizado com sucesso!");
     onConfigSaved?.();
   }
 
@@ -2125,11 +2155,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                   type="checkbox"
                                   checked={evHasRankedMultiplier}
                                   onChange={(e) => {
-                                    const checked = e.target.checked;
-                                    setEvHasRankedMultiplier(checked);
-                                    if (checked && evScope === "todos") {
-                                      setEvScope("modo_ranqueado");
-                                    }
+                                    setEvHasRankedMultiplier(e.target.checked);
                                   }}
                                   className="h-4 w-4 rounded accent-amber-500 cursor-pointer"
                                 />
@@ -2596,15 +2622,18 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                     <h5 className="font-display text-sm font-black text-foreground truncate">
                                       {ev.title}
                                     </h5>
-                                    <span
-                                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleToggleSpecialScope(ev.id)}
+                                      title="Clique para alternar o escopo do evento (Todos os Jogos ⇄ Apenas Ranqueada)"
+                                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold cursor-pointer transition-all border hover:scale-105 ${
                                         ev.scope === "modo_ranqueado"
-                                          ? "bg-amber-500/20 text-amber-500 border border-amber-500/40"
-                                          : "bg-secondary text-muted-foreground"
+                                          ? "bg-amber-500/20 text-amber-500 border-amber-500/40 hover:bg-amber-500/30"
+                                          : "bg-secondary text-muted-foreground border-border/60 hover:text-foreground"
                                       }`}
                                     >
-                                      {formatEventScopeText(ev.scope)}
-                                    </span>
+                                      {formatEventScopeText(ev.scope)} ⇄
+                                    </button>
                                   </div>
 
                                   {ev.description && (
@@ -2917,11 +2946,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                   type="checkbox"
                                   checked={recHasRankedMultiplier}
                                   onChange={(e) => {
-                                    const checked = e.target.checked;
-                                    setRecHasRankedMultiplier(checked);
-                                    if (checked && recScope === "todos") {
-                                      setRecScope("modo_ranqueado");
-                                    }
+                                    setRecHasRankedMultiplier(e.target.checked);
                                   }}
                                   className="h-4 w-4 rounded accent-amber-500 cursor-pointer"
                                 />
@@ -3375,15 +3400,18 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                     <h5 className="font-display text-sm font-black text-foreground truncate">
                                       {ev.title}
                                     </h5>
-                                    <span
-                                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleToggleRecurringScope(ev.id)}
+                                      title="Clique para alternar o escopo do evento (Todos os Jogos ⇄ Apenas Ranqueada)"
+                                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold cursor-pointer transition-all border hover:scale-105 ${
                                         ev.scope === "modo_ranqueado"
-                                          ? "bg-amber-500/20 text-amber-500 border border-amber-500/40"
-                                          : "bg-secondary text-muted-foreground"
+                                          ? "bg-amber-500/20 text-amber-500 border-amber-500/40 hover:bg-amber-500/30"
+                                          : "bg-secondary text-muted-foreground border-border/60 hover:text-foreground"
                                       }`}
                                     >
-                                      {formatEventScopeText(ev.scope)}
-                                    </span>
+                                      {formatEventScopeText(ev.scope)} ⇄
+                                    </button>
                                   </div>
 
                                   <div className="text-xs text-muted-foreground flex flex-wrap gap-2">

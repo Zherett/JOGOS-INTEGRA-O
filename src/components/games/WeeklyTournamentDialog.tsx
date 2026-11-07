@@ -552,9 +552,6 @@ export function WeeklyTournamentDialog({
                           <div className="font-display text-base font-black text-primary">
                             {rowPoints} pts
                           </div>
-                          <div className="text-[10px] text-muted-foreground">
-                            Recorde: {row.bestScore} • {row.totalEntries}x
-                          </div>
                         </div>
                       </div>
                     );

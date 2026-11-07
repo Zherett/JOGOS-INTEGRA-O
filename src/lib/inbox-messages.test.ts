@@ -316,4 +316,22 @@ describe("Sistema Completo de Caixa de Entrada e Correio (inbox-messages)", () =
     assert.equal(readers.readStudents[0].student.nick, "ZHERET");
     assert.equal(readers.readStudents[0].readAt, "2026-11-07T04:00:00.000Z");
   });
+
+  it("permite anexar tanto GIFs quanto imagens estáticas (PNG, JPG) com tags [gifX] e [imgX]", () => {
+    const student = createTestStudent();
+    const msg = sendAdminBroadcastMessage({
+      mode: "all",
+      title: "Comunicado com Imagens e GIFs",
+      body: "Veja o infográfico abaixo:\n[img1]\nE a comemoração:\n[gif1]",
+      gifLinks: { gif1: "https://media.tenor.com/test.gif" },
+      imageLinks: { img1: "https://exemplo.com/infografico.png" },
+    });
+
+    const msgs = getInboxMessagesForPlayer(student);
+    assert.equal(msgs.length > 0, true);
+    const found = msgs.find((m) => m.id === msg.id);
+    assert.ok(found);
+    assert.equal(found?.imageLinks?.["img1"], "https://exemplo.com/infografico.png");
+    assert.equal(found?.gifLinks?.["gif1"], "https://media.tenor.com/test.gif");
+  });
 });
