@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Trophy,
   Award,
@@ -69,18 +69,20 @@ export function PlayerMedalsInventory({
   const allMedals = getAllAvailableMedals(customMedals);
   const eventMedalsList = allMedals.filter((m) => m.category === "evento" || Boolean(m.eventId));
   const unlockedMap = new Map<string, PlayerUnlockedMedal>();
-  unlockedMedals.forEach((u) => unlockedMap.set(u.medalId, u));
+  (unlockedMedals ?? []).forEach((u) => {
+    if (u && u.medalId) unlockedMap.set(u.medalId, u);
+  });
 
   const pioneers = useMemo(() => {
     try {
       const players = getAllRegisteredPlayers();
-      return getCachedMedalPioneers(players);
+      return getCachedMedalPioneers(players) ?? {};
     } catch {
-      return getCachedMedalPioneers();
+      return getCachedMedalPioneers() ?? {};
     }
   }, []);
 
-  const showcase = getTopShowcaseMedals(unlockedMedals, allMedals);
+  const showcase = getTopShowcaseMedals(unlockedMedals ?? [], allMedals);
 
   // Map each medal to its progress and unlock state
   const medalsWithProgress = allMedals.map((m) => {
@@ -111,8 +113,8 @@ export function PlayerMedalsInventory({
     }
 
     // Both unlocked: sort by rarity weight (Diamante -> Platina -> Ouro -> Prata -> Bronze)
-    const wA = RARITY_INFO[a.medal.rarity].weight;
-    const wB = RARITY_INFO[b.medal.rarity].weight;
+    const wA = RARITY_INFO[a.medal.rarity]?.weight ?? 0;
+    const wB = RARITY_INFO[b.medal.rarity]?.weight ?? 0;
     if (wB !== wA) return wB - wA;
 
     return a.medal.title.localeCompare(b.medal.title);
@@ -127,10 +129,11 @@ export function PlayerMedalsInventory({
       const isSecLocked = Boolean(m.isSecret && !unlockedMap.has(m.id));
       const effectiveTitle = isSecLocked ? "medalha secreta" : m.title.toLowerCase();
       const effectiveDesc = isSecLocked ? "medalha secreta jogue e descubra" : m.description.toLowerCase();
+      const rLabel = RARITY_INFO[m.rarity]?.label.toLowerCase() ?? "";
       return (
         effectiveTitle.includes(q) ||
         effectiveDesc.includes(q) ||
-        RARITY_INFO[m.rarity].label.toLowerCase().includes(q)
+        rLabel.includes(q)
       );
     }
     return true;
@@ -453,12 +456,12 @@ export function PlayerMedalsInventory({
                             🎪 {m.eventName ? `Evento: ${m.eventName}` : "Evento Especial"}
                           </span>
                         )}
-                        {pioneers[m.id] && !isSecretLocked && (
+                        {pioneers?.[m.id] && !isSecretLocked && (
                           <span
                             className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 border border-amber-500/25 px-1.5 py-0.2 text-[9px] font-bold text-amber-600 dark:text-amber-400"
-                            title={`Pioneiro: ${pioneers[m.id].studentNick} (${pioneers[m.id].studentSchool})`}
+                            title={`Pioneiro: ${pioneers[m.id].studentNick || "Aluno"} (${pioneers[m.id].studentSchool || ""})`}
                           >
-                            🌟 1º: {pioneers[m.id].studentNick}
+                            🌟 1º: {pioneers[m.id].studentNick || "Aluno"}
                           </span>
                         )}
                       </div>

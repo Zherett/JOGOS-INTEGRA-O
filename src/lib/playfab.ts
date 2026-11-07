@@ -491,10 +491,14 @@ export function loadRegistry(): Record<string, StoredAccount> {
     const parsed = JSON.parse(raw) as Record<string, StoredAccount>;
     let tombstoneCleaned = false;
     for (const [key, acc] of Object.entries(parsed)) {
+      if (!acc || !acc.profile || !acc.profile.id) {
+        delete parsed[key];
+        continue;
+      }
       if (
         isTombstoned(key) ||
-        isTombstoned(acc?.profile?.id) ||
-        isTombstoned(acc?.profile?.nickNormalized)
+        isTombstoned(acc.profile.id) ||
+        isTombstoned(acc.profile.nickNormalized)
       ) {
         delete parsed[key];
         tombstoneCleaned = true;
@@ -943,6 +947,7 @@ function getCurrentWeekKey(now = new Date()): string {
 }
 
 export function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdminConfig): StoredAccount {
+  if (!acc || !acc.profile) return acc;
   ensurePlayerCareerPointsInitialized(acc.profile);
   checkAndApplyDailyLoginPoints(acc.profile);
 

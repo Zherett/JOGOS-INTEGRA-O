@@ -52,6 +52,7 @@ export function awardCareerPoints(
   _reason?: string,
   multiplier = 1,
 ): { profile: PlayerProfile; pointsAwarded: number } {
+  if (!profile) return { profile, pointsAwarded: 0 };
   const safeMult = Math.max(1, multiplier);
   const pointsAwarded = Math.round(basePoints * safeMult);
   if (pointsAwarded <= 0) {
@@ -94,6 +95,7 @@ export function checkAndApplyDailyLoginPoints(
   now = new Date(),
   multiplier = 1,
 ): { profile: PlayerProfile; pointsAwarded: number } {
+  if (!profile) return { profile, pointsAwarded: 0 };
   const todayKey = getLocalDateKey(now);
   if (profile.lastDailyLoginPointsDate === todayKey) {
     return { profile, pointsAwarded: 0 };
@@ -111,6 +113,7 @@ export function checkAndApplyFirstGameOfDayPoints(
   now = new Date(),
   multiplier = 1,
 ): { profile: PlayerProfile; pointsAwarded: number } {
+  if (!profile) return { profile, pointsAwarded: 0 };
   const todayKey = getLocalDateKey(now);
   if (profile.lastDailyFirstGamePointsDate === todayKey) {
     return { profile, pointsAwarded: 0 };
@@ -129,6 +132,7 @@ export function checkTournamentTierPromotion(
   profile: PlayerProfile,
   multiplier = 1,
 ): { profile: PlayerProfile; pointsAwarded: number; newTiers: string[] } {
+  if (!profile) return { profile, pointsAwarded: 0, newTiers: [] };
   const tier = rankId.split("_")[0]?.toLowerCase();
   if (!tier || !TOURNAMENT_TIER_PROMOTION_POINTS[tier]) {
     return { profile, pointsAwarded: 0, newTiers: [] };
@@ -161,7 +165,7 @@ export function checkLevelPromotionPoints(
   profile: PlayerProfile,
   multiplier = 1,
 ): { profile: PlayerProfile; pointsAwarded: number } {
-  if (level < 2 || level > 10) {
+  if (!profile || level < 2 || level > 10) {
     return { profile, pointsAwarded: 0 };
   }
 
@@ -194,12 +198,14 @@ export function checkLevelPromotionPoints(
  * nas medalhas desbloqueadas e no nível atual, evitando que comecem do zero.
  */
 export function calculateRetroactivePoints(profile: PlayerProfile): number {
+  if (!profile) return 0;
   let sum = 0;
 
   // 1. Pontos de medalhas já conquistadas
   if (Array.isArray(profile.unlockedMedals)) {
     for (const m of profile.unlockedMedals) {
-      const rarity = (m.rarity ?? "bronze") as MedalRarity;
+      if (!m) continue;
+      const rarity = ((m as any).rarity ?? "bronze") as MedalRarity;
       sum += MEDAL_POINTS_REWARDS[rarity] ?? 20;
     }
   }
@@ -223,6 +229,7 @@ export function calculateRetroactivePoints(profile: PlayerProfile): number {
  * aplicando reconciliação retroativa justa caso estejam zerados/indefinidos.
  */
 export function ensurePlayerCareerPointsInitialized(profile: PlayerProfile): PlayerProfile {
+  if (!profile) return profile;
   const needsInit =
     profile.careerPoints === undefined ||
     profile.pointsBalance === undefined ||
