@@ -158,11 +158,65 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
     });
   }, [eligibleStudents, studentSearch]);
 
-  // Inicializa a seleção quando muda o modo ou o filtro
+  // Contagem de alunos por escola para exibir no seletor
+  const schoolCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const st of studentsList) {
+      if (st.school) {
+        counts[st.school] = (counts[st.school] || 0) + 1;
+      }
+    }
+    return counts;
+  }, [studentsList]);
+
+  // Contagem de alunos por etapa para exibir no seletor
+  const stageCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const st of studentsList) {
+      try {
+        const info = stageFromBirthdate(st.birthdate, new Date(), st.school);
+        counts[info.id] = (counts[info.id] || 0) + 1;
+      } catch {
+        /* ignore */
+      }
+    }
+    return counts;
+  }, [studentsList]);
+
+  // Inicialização estável da seleção (executa na carga inicial e quando troca de modo/escola/etapa)
+  const [hasInitialized, setHasInitialized] = useState(false);
   useEffect(() => {
-    const allIds = new Set(eligibleStudents.map((s) => s.id));
-    setSelectedStudentIds(allIds);
-  }, [recipientMode, selectedSchool, selectedStage, eligibleStudents]);
+    if (!hasInitialized && studentsList.length > 0) {
+      setSelectedStudentIds(new Set(studentsList.map((s) => s.id)));
+      setHasInitialized(true);
+    }
+  }, [studentsList, hasInitialized]);
+
+  // Atualiza seleção apenas quando o modo ou os filtros específicos são alterados pelo ADM
+  useEffect(() => {
+    if (hasInitialized) {
+      const allIds = new Set(eligibleStudents.map((s) => s.id));
+      setSelectedStudentIds(allIds);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recipientMode, selectedSchool, selectedStage]);
+
+  // Verifica se todos os alunos elegíveis estão marcados atualmente
+  const isAllSelected = useMemo(() => {
+    if (eligibleStudents.length === 0) return false;
+    return eligibleStudents.every((s) => selectedStudentIds.has(s.id));
+  }, [eligibleStudents, selectedStudentIds]);
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      // Se todos estiverem selecionados, desmarca todos
+      setSelectedStudentIds(new Set());
+    } else {
+      // Caso contrário, marca todos os elegíveis
+      const next = new Set(eligibleStudents.map((s) => s.id));
+      setSelectedStudentIds(next);
+    }
+  };
 
   const handleToggleStudent = (id: string) => {
     setSelectedStudentIds((prev) => {
@@ -174,15 +228,6 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
       }
       return next;
     });
-  };
-
-  const handleSelectAll = () => {
-    const next = new Set(eligibleStudents.map((s) => s.id));
-    setSelectedStudentIds(next);
-  };
-
-  const handleDeselectAll = () => {
-    setSelectedStudentIds(new Set());
   };
 
   // Manipulação de GIFs
@@ -368,41 +413,61 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
             {/* FILTROS ADICIONAIS CONFORME MODO */}
             {recipientMode === "school" && (
               <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-foreground">Selecione a Escola</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-foreground">Selecione a Escola</Label>
+                  <span className="text-[10px] text-muted-foreground font-semibold">
+                    {selectedSchool === "TODAS"
+                      ? `${studentsList.length} alunos cadastrados`
+                      : `${schoolCounts[selectedSchool] || 0} alunos cadastrados`}
+                  </span>
+                </div>
                 <select
                   value={selectedSchool}
                   onChange={(e) => setSelectedSchool(e.target.value)}
-                  className="h-10 w-full rounded-xl border bg-background px-3 text-xs font-bold"
+                  className="h-10 w-full rounded-xl border bg-background px-3 text-xs font-bold text-foreground focus:ring-2 focus:ring-primary"
                 >
-                  <option value="TODAS">Todas as Escolas</option>
-                  {SCHOOLS.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
+                  <option value="TODAS">Todas as Escolas ({studentsList.length} alunos)</option>
+                  {SCHOOLS.map((s) => {
+                    const count = schoolCounts[s.name] || 0;
+                    return (
+                      <option key={s.name} value={s.name}>
+                        {s.name} ({count} {count === 1 ? "aluno" : "alunos"})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             )}
 
             {recipientMode === "stage" && (
               <div className="space-y-1.5">
-                <Label className="text-xs font-bold text-foreground">Selecione a Etapa</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-foreground">Selecione a Etapa</Label>
+                  <span className="text-[10px] text-muted-foreground font-semibold">
+                    {selectedStage === "TODAS"
+                      ? `${studentsList.length} alunos no total`
+                      : `${stageCounts[selectedStage] || 0} alunos`}
+                  </span>
+                </div>
                 <select
                   value={selectedStage}
                   onChange={(e) => setSelectedStage(e.target.value)}
-                  className="h-10 w-full rounded-xl border bg-background px-3 text-xs font-bold"
+                  className="h-10 w-full rounded-xl border bg-background px-3 text-xs font-bold text-foreground focus:ring-2 focus:ring-primary"
                 >
-                  <option value="TODAS">Todas as Etapas</option>
-                  {AGE_STAGES.map((st) => (
-                    <option key={st.id} value={st.id}>
-                      {st.label}
-                    </option>
-                  ))}
+                  <option value="TODAS">Todas as Etapas ({studentsList.length} alunos)</option>
+                  {AGE_STAGES.map((st) => {
+                    const count = stageCounts[st.id] || 0;
+                    return (
+                      <option key={st.id} value={st.id}>
+                        {st.label} ({count} {count === 1 ? "aluno" : "alunos"})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             )}
 
-            {/* BARRA DE PESQUISA E AÇÕES RÁPIDAS DE MARCAÇÃO */}
+            {/* BARRA DE PESQUISA E AÇÃO RÁPIDA DE MARCAÇÃO EM 1 BOTÃO */}
             <div className="space-y-2 pt-1">
               <div className="relative">
                 <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
@@ -417,18 +482,29 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
               <div className="flex items-center justify-between text-xs pt-1">
                 <button
                   type="button"
-                  onClick={handleSelectAll}
-                  className="flex items-center gap-1 font-bold text-primary hover:underline cursor-pointer"
+                  onClick={handleToggleSelectAll}
+                  className={`flex items-center gap-1.5 font-bold text-xs py-1 px-3 rounded-xl transition-all cursor-pointer border ${
+                    isAllSelected
+                      ? "bg-destructive/10 text-destructive border-destructive/30 hover:bg-destructive/20"
+                      : "bg-primary/10 text-primary border-primary/30 hover:bg-primary/20"
+                  }`}
                 >
-                  <CheckSquare className="h-3.5 w-3.5" /> Marcar Todos ({eligibleStudents.length})
+                  {isAllSelected ? (
+                    <>
+                      <CheckSquare className="h-3.5 w-3.5" />
+                      <span>Desmarcar Todos ({eligibleStudents.length})</span>
+                    </>
+                  ) : (
+                    <>
+                      <Square className="h-3.5 w-3.5" />
+                      <span>Marcar Todos ({eligibleStudents.length})</span>
+                    </>
+                  )}
                 </button>
-                <button
-                  type="button"
-                  onClick={handleDeselectAll}
-                  className="flex items-center gap-1 font-bold text-muted-foreground hover:text-destructive cursor-pointer"
-                >
-                  <Square className="h-3.5 w-3.5" /> Desmarcar Todos
-                </button>
+
+                <span className="text-[11px] font-bold text-muted-foreground">
+                  {selectedStudentIds.size} de {eligibleStudents.length} marcados
+                </span>
               </div>
             </div>
 
