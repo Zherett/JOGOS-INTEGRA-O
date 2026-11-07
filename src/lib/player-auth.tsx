@@ -7,6 +7,15 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { ShieldAlert } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { onMatchSaved, type GameId } from "./game-storage";
 import { recordGameStageScore } from "./game-records";
 import { stageFromBirthdate } from "./player-profile";
@@ -107,6 +116,7 @@ export function PlayerAuthProvider({ children }: { children: ReactNode }) {
   const [stats, setStats] = useState<GameStatRow[]>([]);
   const [adminConfig, setAdminConfig] = useState<PlatformAdminConfig>(() => loadAdminConfig());
   const [adminPinUnlocked, setAdminPinUnlocked] = useState(false);
+  const [sessionKickedTime, setSessionKickedTime] = useState<string | null>(null);
 
   const loadState = useCallback(async () => {
     const syncedCfg = await syncAdminConfigFromPlayFab();
@@ -201,6 +211,23 @@ export function PlayerAuthProvider({ children }: { children: ReactNode }) {
     setStats([]);
     setAdminPinUnlocked(false);
   }, []);
+
+  // Sessão Única Modelo A: Ouvinte para desconexão automática caso a conta seja conectada em outro aparelho
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onSessionTerminated = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      const d = detail?.timestamp ? new Date(detail.timestamp) : new Date();
+      const timeStr = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      void signOut();
+      setSessionKickedTime(timeStr);
+    };
+
+    window.addEventListener("desafios:session-terminated", onSessionTerminated);
+    return () => {
+      window.removeEventListener("desafios:session-terminated", onSessionTerminated);
+    };
+  }, [signOut]);
 
   const unlockGames = useCallback(async (games: GameId[]) => {
     if (games.length === 0) return;
@@ -365,5 +392,39 @@ export function PlayerAuthProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={value}>
+      {children}
+
+      {/* Alerta de Segurança: Desconexão por Acesso em Outro Aparelho (Modelo A) */}
+      <Dialog open={Boolean(sessionKickedTime)} onOpenChange={(open) => !open && setSessionKickedTime(null)}>
+        <DialogContent className="w-[92vw] max-w-md rounded-3xl border border-destructive/40 bg-card p-6 shadow-2xl">
+          <DialogHeader className="flex flex-col items-center text-center space-y-2">
+            <div className="grid h-16 w-16 place-items-center rounded-2xl bg-destructive/15 text-destructive border border-destructive/30">
+              <ShieldAlert className="h-9 w-9 animate-pulse" />
+            </div>
+            <DialogTitle className="font-display text-xl font-extrabold text-foreground">
+              Sessão Conectada em Outro Aparelho
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground leading-relaxed">
+              Sua conta foi conectada em outro dispositivo às <b>{sessionKickedTime}</b>.
+              Por medidas de segurança, um perfil só pode permanecer ativo em <b>um único aparelho por vez</b>, e este aparelho foi desconectado automaticamente.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-left text-xs text-amber-700 dark:text-amber-300">
+            ⚠️ <b>Atenção:</b> Se não foi você quem conectou em outro aparelho, comunique seu professor ou a coordenação escolar imediatamente.
+          </div>
+
+          <Button
+            type="button"
+            onClick={() => setSessionKickedTime(null)}
+            className="w-full h-11 rounded-xl text-sm font-bold bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            Entendi
+          </Button>
+        </DialogContent>
+      </Dialog>
+    </Ctx.Provider>
+  );
 }

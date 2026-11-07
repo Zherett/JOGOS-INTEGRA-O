@@ -15,6 +15,7 @@ import {
   Unlock,
   Trash2,
   Award,
+  Compass,
   Mail,
   Plus,
   Zap,
@@ -70,10 +71,12 @@ import {
   isPlayFabConfigured,
   setAdminPin,
   syncStudentRosterFromPlayFab,
+  syncAdminMedalNotificationsFromPlayFab,
   playfabApproveTurmaRequest,
   playfabRejectTurmaRequest,
   type PlayerProfile,
 } from "@/lib/playfab";
+import { getCachedMedalPioneers, formatPioneerLabel } from "@/lib/medal-pioneers";
 import {
   loadTurmaRequests,
   type TurmaChangeRequest,
@@ -342,6 +345,11 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     return counts;
   }, [registeredStudents, auth.stats, auth.profile?.id]);
 
+  // Pioneiros de medalhas (primeiro aluno da rede a conquistar cada medalha)
+  const pioneersMap = useMemo(() => {
+    return getCachedMedalPioneers(registeredStudents);
+  }, [registeredStudents]);
+
   // Identificação de medalhas já atreladas a eventos ativos
   const activeLinkedMedalIds = useMemo(() => {
     const ids = new Set<string>();
@@ -376,12 +384,15 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     setTurmaRequests(loadTurmaRequests());
     refreshRoster();
 
-    // Automatically sync cloud student roster and presence from PlayFab when opening ADM
+    // Automatically sync cloud student roster, presence and medal notifications from PlayFab when opening ADM
     setSyncingRoster(true);
     void syncPresenceFromPlayFab(true);
     void syncStudentRosterFromPlayFab()
       .then(() => refreshRoster())
       .finally(() => setSyncingRoster(false));
+    void syncAdminMedalNotificationsFromPlayFab().then((notifs) => {
+      setDraft((prev) => ({ ...prev, adminMedalNotifications: notifs }));
+    });
 
     const onPresenceChange = () => {
       setPresenceTick((t) => t + 1);
@@ -4560,6 +4571,60 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                       })}
                     </div>
                   )}
+                </div>
+
+                {/* 1.1 Hall dos Pioneiros de Medalhas */}
+                <div className="rounded-2xl border bg-card p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-display text-base font-extrabold text-foreground">
+                      <Compass className="h-5 w-5 text-amber-500" /> Hall dos Pioneiros: 1º Aluno a Conquistar Cada Medalha
+                    </div>
+                    <span className="text-[11px] text-muted-foreground font-semibold">
+                      {Object.keys(pioneersMap).length} medalha(s) desbravada(s)
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Histórico oficial dos alunos pioneiros que foram os primeiros a desbloquear cada medalha.
+                    <span className="block mt-0.5 text-amber-600 dark:text-amber-400 font-medium">
+                      🛡️ Contas de teste ZHERET e LORD (e contas ADM) são automaticamente desconsideradas para garantir a autenticidade dos alunos.
+                    </span>
+                  </p>
+
+                  <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                    {getAllAvailableMedals(draft.customMedals).map((m) => {
+                      const pioneer = pioneersMap[m.id];
+                      const rarity = RARITY_INFO[m.rarity];
+                      return (
+                        <div
+                          key={m.id}
+                          className="flex items-center justify-between gap-3 rounded-xl border bg-background/50 p-2.5 text-xs"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border ${rarity.badgeBgClass}`}>
+                              <div className={rarity.textColor}>
+                                <MedalIcon name={m.iconName} className="h-4 w-4" />
+                              </div>
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-bold truncate text-foreground flex items-center gap-1.5">
+                                <span>{m.title}</span>
+                                <span className={`text-[10px] font-black uppercase ${rarity.textColor}`}>• {rarity.label}</span>
+                              </div>
+                              <div className="text-[11px] text-muted-foreground truncate">
+                                {pioneer ? (
+                                  <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                                    🌟 1º: <b>{pioneer.studentFullName}</b> (@{pioneer.studentNick}) • {pioneer.studentSchool} • {new Date(pioneer.timestampMs).toLocaleDateString("pt-BR")} às {new Date(pioneer.timestampMs).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                                  </span>
+                                ) : (
+                                  <span className="italic text-muted-foreground/70">Ainda não conquistada por nenhum aluno da rede</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* 2. Criação de Novas Medalhas (Eventos Especiais & Competições) */}

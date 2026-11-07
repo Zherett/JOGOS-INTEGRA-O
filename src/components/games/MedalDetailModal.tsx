@@ -1,4 +1,4 @@
-import { Award, CheckCircle, Clock, HelpCircle, Lock, Sparkles, X } from "lucide-react";
+import { Award, CheckCircle, Clock, Compass, HelpCircle, Lock, Sparkles, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +13,7 @@ import {
   type PlayerUnlockedMedal,
 } from "@/lib/medals-catalog";
 import { MEDAL_POINTS_REWARDS } from "@/lib/career-points";
+import { getCachedMedalPioneers, formatPioneerLabel } from "@/lib/medal-pioneers";
 
 interface Props {
   medal: MedalDefinition | null;
@@ -38,6 +39,10 @@ export function MedalDetailModal({
   const rarity = RARITY_INFO[medal.rarity];
   const stackCount = unlockedInfo?.count ?? 1;
   const showStackBadge = isUnlocked && (medal.isStackable || stackCount > 1);
+
+  const pioneers = getCachedMedalPioneers();
+  const pioneer = medal ? pioneers[medal.id] : null;
+  const pioneerInfo = formatPioneerLabel(pioneer);
 
   let formattedDate: string | null = null;
   if (unlockedInfo?.unlockedAt) {
@@ -188,6 +193,17 @@ export function MedalDetailModal({
                 )}
               </div>
             )}
+          </div>
+
+          {/* Primeiro Aluno a Conquistar (Pioneiro da Medalha) */}
+          <div className="mt-3 w-full rounded-2xl border border-amber-500/25 bg-amber-500/5 p-3 text-left">
+            <div className="flex items-center gap-1.5 text-xs font-black text-amber-600 dark:text-amber-400">
+              <Compass className="h-4 w-4 shrink-0" />
+              <span>{pioneerInfo.title}</span>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+              {pioneerInfo.description}
+            </p>
           </div>
 
           <button

@@ -145,7 +145,7 @@ export function isValidSchool(school: string): school is SchoolName {
   return SCHOOLS.some((s) => s.name === school);
 }
 
-/** Turns a nick into a PlayFab-compatible username (3-20 alphanumeric/underscore chars). */
+/** Turns a nick into an internal slug (3-20 alphanumeric/underscore chars), preserving underscores. */
 export function nickSlug(nick: string): string {
   return nick
     .trim()
@@ -153,6 +153,61 @@ export function nickSlug(nick: string): string {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9_]/g, "");
+}
+
+/**
+ * Converte um apelido (que pode conter underlines '_') em um Username 100% válido para a API PlayFab.
+ * O Azure PlayFab proíbe expressamente caracteres especiais e underlines no campo Username (aceita estritamente [a-zA-Z0-9]{3,20}).
+ * Essa codificação mapeia '_' para '0u', garantindo compatibilidade total com a nuvem sem perda do nick original.
+ */
+export function playfabUsernameFromNick(nick: string): string {
+  const slug = nickSlug(nick);
+  // Substitui '_' por '0u' (sequencia estritamente alfanumerica)
+  let clean = slug.replace(/_+/g, "0u").replace(/[^a-z0-9]/g, "");
+  if (clean.length < 3) {
+    clean = (clean + "000").slice(0, 3);
+  }
+  return clean.slice(0, 20);
+}
+
+/**
+ * Verifica se uma conta ou apelido deve ser excluído do cálculo do "Pioneiro da Medalha" (Primeiro a Conquistar).
+ * As contas de teste da administração (ZHERET e LORD) são perfis de jogadores comuns usados pelos ADMs para testes,
+ * devendo ser ignoradas para não tomar o pioneirismo dos alunos reais.
+ */
+export function isPioneerExcludedAccount(p?: {
+  nick?: string;
+  nickNormalized?: string;
+  full_name?: string;
+  isAdmin?: boolean;
+} | null): boolean {
+  if (!p) return false;
+  if (p.isAdmin) return true;
+
+  const rawNick = (p.nick ?? "").toLowerCase();
+  const slugNick = (p.nickNormalized ?? nickSlug(p.nick ?? "")).toLowerCase();
+  const rawName = (p.full_name ?? "").toLowerCase();
+
+  // Exclui perfis de teste da administracao: ZHERET e LORD
+  const testPatterns = ["zheret", "lord"];
+  for (const pattern of testPatterns) {
+    if (
+      slugNick === pattern ||
+      slugNick.startsWith(`${pattern}_`) ||
+      slugNick.endsWith(`_${pattern}`) ||
+      rawNick.includes(pattern) ||
+      rawName.includes(pattern)
+    ) {
+      return true;
+    }
+  }
+
+  // Exclui contas administrativas dedicadas
+  if (slugNick === "josiney" || slugNick === "quemuel" || rawNick.includes("admin")) {
+    return true;
+  }
+
+  return false;
 }
 
 /** Formats a student's full name in UPPERCASE (pt-BR locale) as they type or save. */

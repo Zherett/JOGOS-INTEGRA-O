@@ -22,6 +22,9 @@ import {
   MAX_LEVEL,
   normalizeBirthdatePasswordInput,
   passwordFromBirthdate,
+  playfabUsernameFromNick,
+  nickSlug,
+  isPioneerExcludedAccount,
   RANKING_SERIES_OPTIONS,
   resolveDefaultRankingCategory,
   SCHOOLS,
@@ -859,5 +862,42 @@ describe("Perfil do Jogador, Escolas, Trava de Níveis (1..10) e Limite Diário 
     });
     assert.equal(syncedLvl7.level, 7);
     assert.equal(syncedLvl7.stageProgress.forLevel, 7);
+  });
+
+  it("permite underline no nick preservando o formato e gera Username sanitizado estritamente alfanumérico para a API PlayFab", () => {
+    // 1. nickSlug preserva underlines para uso no jogo e perfil
+    assert.equal(nickSlug("joao_silva"), "joao_silva");
+    assert.equal(nickSlug("ZHERET_TESTE"), "zheret_teste");
+    assert.equal(nickSlug("LORD_123"), "lord_123");
+
+    // 2. playfabUsernameFromNick converte underlines em codificação 100% alfanumérica [a-z0-9] sem erro no PlayFab
+    const pfUser1 = playfabUsernameFromNick("joao_silva");
+    assert.equal(pfUser1, "joao0usilva");
+    assert.ok(/^[a-z0-9]{3,20}$/.test(pfUser1));
+
+    const pfUser2 = playfabUsernameFromNick("ZHERET_TESTE");
+    assert.equal(pfUser2, "zheret0uteste");
+    assert.ok(/^[a-z0-9]{3,20}$/.test(pfUser2));
+
+    const pfUserShort = playfabUsernameFromNick("a_b");
+    assert.ok(/^[a-z0-9]{3,20}$/.test(pfUserShort));
+  });
+
+  it("identifica e exclui contas de teste da administração ZHERET e LORD (e ADMs) do cálculo do Pioneiro da Medalha", () => {
+    // Contas de teste normais do administrador
+    assert.equal(isPioneerExcludedAccount({ nick: "ZHERET", nickNormalized: "zheret" }), true);
+    assert.equal(isPioneerExcludedAccount({ nick: "LORD", nickNormalized: "lord" }), true);
+    assert.equal(isPioneerExcludedAccount({ nick: "zheret_teste", nickNormalized: "zheret_teste" }), true);
+    assert.equal(isPioneerExcludedAccount({ nick: "lord_play", nickNormalized: "lord_play" }), true);
+    assert.equal(isPioneerExcludedAccount({ full_name: "LORD JOGADOR TESTE" }), true);
+
+    // Contas administrativas
+    assert.equal(isPioneerExcludedAccount({ isAdmin: true, nick: "QUALQUER" }), true);
+    assert.equal(isPioneerExcludedAccount({ nick: "JOSINEY", nickNormalized: "josiney" }), true);
+    assert.equal(isPioneerExcludedAccount({ nick: "QUEMUEL", nickNormalized: "quemuel" }), true);
+
+    // Alunos legítimos NÃO são excluídos
+    assert.equal(isPioneerExcludedAccount({ nick: "lucas_10", nickNormalized: "lucas_10", full_name: "LUCAS SILVA" }), false);
+    assert.equal(isPioneerExcludedAccount({ nick: "maria_clara", nickNormalized: "maria_clara", full_name: "MARIA CLARA SOUZA" }), false);
   });
 });

@@ -24,7 +24,8 @@ import { MEDAL_POINTS_REWARDS } from "@/lib/career-points";
 import { MedalIcon } from "./MedalIcon";
 import { MedalDetailModal } from "./MedalDetailModal";
 import { Input } from "@/components/ui/input";
-import type { PlayerProfile, GameStatRow } from "@/lib/playfab";
+import { getAllRegisteredPlayers, type PlayerProfile, type GameStatRow } from "@/lib/playfab";
+import { getCachedMedalPioneers } from "@/lib/medal-pioneers";
 
 interface Props {
   unlockedMedals?: PlayerUnlockedMedal[];
@@ -69,6 +70,15 @@ export function PlayerMedalsInventory({
   const eventMedalsList = allMedals.filter((m) => m.category === "evento" || Boolean(m.eventId));
   const unlockedMap = new Map<string, PlayerUnlockedMedal>();
   unlockedMedals.forEach((u) => unlockedMap.set(u.medalId, u));
+
+  const pioneers = useMemo(() => {
+    try {
+      const players = getAllRegisteredPlayers();
+      return getCachedMedalPioneers(players);
+    } catch {
+      return getCachedMedalPioneers();
+    }
+  }, []);
 
   const showcase = getTopShowcaseMedals(unlockedMedals, allMedals);
 
@@ -437,11 +447,21 @@ export function PlayerMedalsInventory({
                       <h5 className="truncate font-display text-xs font-black text-foreground">
                         {isSecretLocked ? "Medalha Secreta" : m.title}
                       </h5>
-                      {(m.category === "evento" || m.eventName) && !isSecretLocked && (
-                        <span className="inline-flex items-center gap-1 mt-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.2 text-[9px] font-extrabold text-amber-600 dark:text-amber-400">
-                          🎪 {m.eventName ? `Evento: ${m.eventName}` : "Evento Especial"}
-                        </span>
-                      )}
+                      <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                        {(m.category === "evento" || m.eventName) && !isSecretLocked && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.2 text-[9px] font-extrabold text-amber-600 dark:text-amber-400">
+                            🎪 {m.eventName ? `Evento: ${m.eventName}` : "Evento Especial"}
+                          </span>
+                        )}
+                        {pioneers[m.id] && !isSecretLocked && (
+                          <span
+                            className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 border border-amber-500/25 px-1.5 py-0.2 text-[9px] font-bold text-amber-600 dark:text-amber-400"
+                            title={`Pioneiro: ${pioneers[m.id].studentNick} (${pioneers[m.id].studentSchool})`}
+                          >
+                            🌟 1º: {pioneers[m.id].studentNick}
+                          </span>
+                        )}
+                      </div>
                       <p className="line-clamp-2 text-[10px] text-muted-foreground leading-tight mt-0.5">
                         {isSecretLocked
                           ? "Medalha secreta. Jogue e descubra como conquistá-la!"

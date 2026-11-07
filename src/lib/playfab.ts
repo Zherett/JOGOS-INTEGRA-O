@@ -40,6 +40,8 @@ import {
   nickSlug,
   normalizeBirthdatePasswordInput,
   passwordFromBirthdate,
+  playfabUsernameFromNick,
+  isPioneerExcludedAccount,
   schoolNeedsGrade,
   SCHOOLS,
   schoolSlug,
@@ -110,6 +112,12 @@ import {
 } from "./career-points.ts";
 import { removePlayerFromPresence } from "./presence.ts";
 import { removePlayerFromTournament } from "./weekly-tournament.ts";
+import {
+  createInboxMessage,
+  recordDeviceSecurityAlert,
+  ADMIN_NOTIFICATIONS_SHARED_GROUP_ID,
+} from "./inbox-messages.ts";
+import { invalidatePioneersCache } from "./medal-pioneers.ts";
 
 const SESSION_KEY = "desafios-playfab-session-v1";
 const REGISTRY_KEY = "desafios-playfab-registry-v1";
@@ -226,6 +234,8 @@ export interface PlayerProfile {
   badges: Badge[];
   isAdmin?: boolean;
   seasonId: number;
+  activeSessionId?: string;
+  activeSessionUpdatedAt?: string;
   deletedAt?: string;
   deleteScheduledPermanentAt?: string;
 }
@@ -291,6 +301,7 @@ interface StoredSession {
   playerId: string;
   sessionTicket?: string;
   playfabId?: string;
+  activeSessionId?: string;
 }
 
 function simpleHash(str: string): string {
@@ -935,6 +946,11 @@ export function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdmin
   ensurePlayerCareerPointsInitialized(acc.profile);
   checkAndApplyDailyLoginPoints(acc.profile);
 
+  // Sincroniza a senha estritamente com a data de nascimento atual do aluno
+  if (acc.profile.birthdate && !acc.profile.isAdmin && !isSpecialAdminAccount(acc.profile)) {
+    acc.passwordHash = simpleHash(passwordFromBirthdate(acc.profile.birthdate));
+  }
+
   const todayKey = getLocalDateKey();
   if (acc.profile.dailyXpDate !== todayKey) {
     acc.profile.dailyXp = 0;
@@ -1512,19 +1528,31 @@ export async function playfabSignUp(data: SignUpData): Promise<{
     };
   }
 
-  if (reg[slug]) {
-    return { account: null, error: "Esse apelido já está em uso. Escolha outro." };
+  const nickCleanLower = data.nick.trim().toLowerCase();
+  const isNickTaken =
+    Boolean(reg[slug]) ||
+    isTombstoned(slug) ||
+    Object.values(reg).some(
+      (a) =>
+        a.profile.nickNormalized === slug ||
+        a.profile.nick.trim().toLowerCase() === nickCleanLower
+    );
+  if (isNickTaken) {
+    return { account: null, error: "Esse apelido já está em uso por outro jogador. Por favor, escolha outro apelido." };
   }
 
   let playfabId: string | undefined;
   let sessionTicket: string | undefined;
 
   if (isPlayFabConfigured()) {
+    // Mapeia o Username para formato alfanumérico seguro (PlayFab proíbe '_' no campo Username)
+    // O apelido original com underlines é preservado integralmente no DisplayName e no perfil
+    const pfUsername = playfabUsernameFromNick(data.nick);
     const res = await callPlayFabClient<{
       PlayFabId: string;
       SessionTicket: string;
     }>("RegisterPlayFabUser", {
-      Username: slug,
+      Username: pfUsername,
       Password: derivedPassword,
       DisplayName: data.nick.trim().slice(0, 25),
       RequireBothUsernameAndEmail: false,
@@ -1534,9 +1562,11 @@ export async function playfabSignUp(data: SignUpData): Promise<{
       if (
         res.errorCode === "UsernameNotAvailable" ||
         res.errorCode === "NameNotAvailable" ||
-        res.error.toLowerCase().includes("available")
+        res.error.toLowerCase().includes("available") ||
+        res.error.toLowerCase().includes("taken") ||
+        res.error.toLowerCase().includes("already in use")
       ) {
-        return { account: null, error: "Esse apelido já está em uso no PlayFab. Escolha outro." };
+        return { account: null, error: "Esse apelido já está em uso por outro jogador. Por favor, escolha outro apelido." };
       }
       return { account: null, error: `PlayFab: ${res.error}` };
     }
@@ -1544,16 +1574,32 @@ export async function playfabSignUp(data: SignUpData): Promise<{
     playfabId = res.data?.PlayFabId;
     sessionTicket = res.data?.SessionTicket;
 
-    // Link deterministic CustomId (Full Name + DDMMAA) so the student can always log in or recover by Full Name + Birthdate
+    // Link CustomId para o Nick (suporta underlines nativamente) e CustomId para Nome Completo + DDMMAA
     if (sessionTicket) {
-      await callPlayFabClient(
-        "LinkCustomID",
-        {
-          CustomId: studentCustomId(data.fullName, derivedPassword),
-          ForceLink: true,
-        },
-        sessionTicket,
-      );
+      try {
+        await callPlayFabClient(
+          "LinkCustomID",
+          {
+            CustomId: `nick_${slug}`,
+            ForceLink: true,
+          },
+          sessionTicket,
+        );
+      } catch {
+        // ignore optional link
+      }
+      try {
+        await callPlayFabClient(
+          "LinkCustomID",
+          {
+            CustomId: studentCustomId(data.fullName, derivedPassword),
+            ForceLink: false,
+          },
+          sessionTicket,
+        );
+      } catch {
+        // ignore optional link
+      }
     }
   }
 
@@ -1569,6 +1615,8 @@ export async function playfabSignUp(data: SignUpData): Promise<{
   const isNoSchool = resolvedSchool === "Nenhuma" || resolvedSchool === "Outro" || isOver15;
   const resolvedGrade = isNoSchool ? null : data.grade;
   const resolvedTurma = isNoSchool ? null : data.turma;
+
+  const newActiveSessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
   const profile: PlayerProfile = {
     id: playfabId ?? `pf_local_${slug}`,
@@ -1593,6 +1641,8 @@ export async function playfabSignUp(data: SignUpData): Promise<{
     badges: [],
     isAdmin: slug === "admin" || slug === "semed_admin",
     seasonId: cfg.seasonId,
+    activeSessionId: newActiveSessionId,
+    activeSessionUpdatedAt: new Date().toISOString(),
   };
 
   const account: StoredAccount = {
@@ -1605,7 +1655,7 @@ export async function playfabSignUp(data: SignUpData): Promise<{
 
   reg[slug] = account;
   saveRegistry(reg);
-  saveStoredSession({ playerId: slug, sessionTicket, playfabId });
+  saveStoredSession({ playerId: slug, sessionTicket, playfabId, activeSessionId: newActiveSessionId });
   clearLocalStats();
   clearUnlocked();
 
@@ -1742,10 +1792,11 @@ export async function playfabSignIn(
   const resolvedSlug = matchedLocal ? matchedLocal.profile.nickNormalized : slugCandidate;
 
   if (isPlayFabConfigured()) {
-    // 1. Try LoginWithPlayFab (Username + Password) if we have a valid username slug
-    if (resolvedSlug.length >= 3 && resolvedSlug.length <= 20) {
+    // 1. Try LoginWithPlayFab (Username + Password) usando o Username sanitizado para PlayFab
+    const pfUsername = playfabUsernameFromNick(resolvedSlug);
+    if (pfUsername.length >= 3 && pfUsername.length <= 20) {
       const res = await callPlayFabClient<PlayFabLoginPayload>("LoginWithPlayFab", {
-        Username: resolvedSlug,
+        Username: pfUsername,
         Password: normalizedPassword,
         InfoRequestParameters: {
           GetUserData: true,
@@ -1772,12 +1823,32 @@ export async function playfabSignIn(
               "Esta conta foi suspensa e movida para a lixeira pelo administrador. Procure a coordenação escolar.",
           };
         }
+
+        // Sessão Única Modelo A: Gera novo activeSessionId e desloga aparelhos anteriores
+        const previousSessionId = account.profile.activeSessionId;
+        const currentLocalSessionId = loadStoredSession()?.activeSessionId;
+        const newActiveSessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+        if (previousSessionId && previousSessionId !== currentLocalSessionId) {
+          recordDeviceSecurityAlert({
+            studentNick: account.profile.nick,
+            studentFullName: account.profile.full_name,
+            studentId: account.profile.nickNormalized,
+            deviceInfo: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 80) : "Navegador Web",
+            timestamp: Date.now(),
+          });
+        }
+
+        account.profile.activeSessionId = newActiveSessionId;
+        account.profile.activeSessionUpdatedAt = new Date().toISOString();
+
         reg[account.profile.nickNormalized] = account;
         saveRegistry(reg);
         saveStoredSession({
           playerId: account.profile.nickNormalized,
           sessionTicket: res.data.SessionTicket,
           playfabId: res.data.PlayFabId,
+          activeSessionId: newActiveSessionId,
         });
         syncLocalBrowserFromAccount(account);
         return {
@@ -1786,6 +1857,69 @@ export async function playfabSignIn(
           recoveredNick: typedAsFullName ? account.profile.nick : undefined,
         };
       }
+    }
+
+    // 1.1 Try LoginWithCustomID por nick (suporta underlines)
+    const nickCustomRes = await callPlayFabClient<PlayFabLoginPayload>("LoginWithCustomID", {
+      CustomId: `nick_${resolvedSlug}`,
+      CreateAccount: false,
+      InfoRequestParameters: {
+        GetUserData: true,
+        GetPlayerStatistics: true,
+        GetUserAccountInfo: true,
+      },
+    });
+
+    if (!nickCustomRes.error && nickCustomRes.data) {
+      const account = buildAccountFromPlayFabPayload(
+        nickCustomRes.data,
+        matchedLocal?.profile.nick ?? cleanId,
+        normalizedPassword,
+        cfg,
+      );
+      if (
+        account.profile.deletedAt &&
+        !account.profile.isAdmin &&
+        !isSpecialAdminAccount(account.profile)
+      ) {
+        return {
+          account: null,
+          error:
+            "Esta conta foi suspensa e movida para a lixeira pelo administrador. Procure a coordenação escolar.",
+        };
+      }
+
+      const previousSessionId = account.profile.activeSessionId;
+      const currentLocalSessionId = loadStoredSession()?.activeSessionId;
+      const newActiveSessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+      if (previousSessionId && previousSessionId !== currentLocalSessionId) {
+        recordDeviceSecurityAlert({
+          studentNick: account.profile.nick,
+          studentFullName: account.profile.full_name,
+          studentId: account.profile.nickNormalized,
+          deviceInfo: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 80) : "Navegador Web",
+          timestamp: Date.now(),
+        });
+      }
+
+      account.profile.activeSessionId = newActiveSessionId;
+      account.profile.activeSessionUpdatedAt = new Date().toISOString();
+
+      reg[account.profile.nickNormalized] = account;
+      saveRegistry(reg);
+      saveStoredSession({
+        playerId: account.profile.nickNormalized,
+        sessionTicket: nickCustomRes.data.SessionTicket,
+        playfabId: nickCustomRes.data.PlayFabId,
+        activeSessionId: newActiveSessionId,
+      });
+      syncLocalBrowserFromAccount(account);
+      return {
+        account,
+        error: null,
+        recoveredNick: typedAsFullName ? account.profile.nick : undefined,
+      };
     }
 
     // 2. If the student typed their Full Name, try LoginWithCustomID (stu_<fullName>_<DDMMAA>)
@@ -1806,12 +1940,31 @@ export async function playfabSignIn(
         normalizedPassword,
         cfg,
       );
+
+      const previousSessionId = account.profile.activeSessionId;
+      const currentLocalSessionId = loadStoredSession()?.activeSessionId;
+      const newActiveSessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+      if (previousSessionId && previousSessionId !== currentLocalSessionId) {
+        recordDeviceSecurityAlert({
+          studentNick: account.profile.nick,
+          studentFullName: account.profile.full_name,
+          studentId: account.profile.nickNormalized,
+          deviceInfo: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 80) : "Navegador Web",
+          timestamp: Date.now(),
+        });
+      }
+
+      account.profile.activeSessionId = newActiveSessionId;
+      account.profile.activeSessionUpdatedAt = new Date().toISOString();
+
       reg[account.profile.nickNormalized] = account;
       saveRegistry(reg);
       saveStoredSession({
         playerId: account.profile.nickNormalized,
         sessionTicket: customRes.data.SessionTicket,
         playfabId: customRes.data.PlayFabId,
+        activeSessionId: newActiveSessionId,
       });
       syncLocalBrowserFromAccount(account);
       return {
@@ -1868,9 +2021,26 @@ export async function playfabSignIn(
     aligned.profile.isAdmin = true;
     setAdminUnlockedSession(true);
   }
+  const previousSessionId = aligned.profile.activeSessionId;
+  const currentLocalSessionId = loadStoredSession()?.activeSessionId;
+  const newActiveSessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+  if (previousSessionId && previousSessionId !== currentLocalSessionId && !aligned.profile.isAdmin) {
+    recordDeviceSecurityAlert({
+      studentNick: aligned.profile.nick,
+      studentFullName: aligned.profile.full_name,
+      studentId: aligned.profile.nickNormalized,
+      deviceInfo: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 80) : "Navegador Web",
+      timestamp: Date.now(),
+    });
+  }
+
+  aligned.profile.activeSessionId = newActiveSessionId;
+  aligned.profile.activeSessionUpdatedAt = new Date().toISOString();
+
   reg[aligned.profile.nickNormalized] = aligned;
   saveRegistry(reg);
-  saveStoredSession({ playerId: aligned.profile.nickNormalized });
+  saveStoredSession({ playerId: aligned.profile.nickNormalized, activeSessionId: newActiveSessionId });
   syncLocalBrowserFromAccount(aligned);
   return {
     account: aligned,
@@ -1927,12 +2097,16 @@ export async function playfabRecoverByNameAndBirthdate(
         derivedPassword,
         cfg,
       );
+      const newActiveSessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      account.profile.activeSessionId = newActiveSessionId;
+      account.profile.activeSessionUpdatedAt = new Date().toISOString();
       reg[account.profile.nickNormalized] = account;
       saveRegistry(reg);
       saveStoredSession({
         playerId: account.profile.nickNormalized,
         sessionTicket: customRes.data.SessionTicket,
         playfabId: customRes.data.PlayFabId,
+        activeSessionId: newActiveSessionId,
       });
       syncLocalBrowserFromAccount(account);
       return {
@@ -1955,9 +2129,26 @@ export async function playfabRecoverByNameAndBirthdate(
   }
 
   const aligned = ensurePlayerSeasonAligned(found, cfg);
+  const previousSessionId = aligned.profile.activeSessionId;
+  const currentLocalSessionId = loadStoredSession()?.activeSessionId;
+  const newActiveSessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+  if (previousSessionId && previousSessionId !== currentLocalSessionId && !aligned.profile.isAdmin) {
+    recordDeviceSecurityAlert({
+      studentNick: aligned.profile.nick,
+      studentFullName: aligned.profile.full_name,
+      studentId: aligned.profile.nickNormalized,
+      deviceInfo: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 80) : "Navegador Web",
+      timestamp: Date.now(),
+    });
+  }
+
+  aligned.profile.activeSessionId = newActiveSessionId;
+  aligned.profile.activeSessionUpdatedAt = new Date().toISOString();
+
   reg[aligned.profile.nickNormalized] = aligned;
   saveRegistry(reg);
-  saveStoredSession({ playerId: aligned.profile.nickNormalized });
+  saveStoredSession({ playerId: aligned.profile.nickNormalized, activeSessionId: newActiveSessionId });
   syncLocalBrowserFromAccount(aligned);
 
   return {
@@ -2670,6 +2861,135 @@ export async function syncStudentRosterFromPlayFab(sessionTicket?: string): Prom
 }
 
 /**
+ * Valida se o identificador de sessão local coincide com a sessão ativa mais recente da conta.
+ * Se outro aparelho efetuou login, esta validação retornará false, disparando a desconexão automática (Modelo A).
+ */
+export function validateActiveSession(playerId: string, currentSessionId?: string): boolean {
+  if (!playerId) return false;
+  const reg = loadRegistry();
+  const slug = nickSlug(playerId);
+  const acc = reg[slug] || Object.values(reg).find((a) => a.profile.nickNormalized === slug);
+  if (!acc || !acc.profile.activeSessionId) return true;
+  const expected = acc.profile.activeSessionId;
+  const activeLocal = currentSessionId ?? loadStoredSession()?.activeSessionId;
+  if (!activeLocal) return true;
+  return expected === activeLocal;
+}
+
+/**
+ * Reconcilia e sincroniza todas as senhas de todos os alunos registrados
+ * para que correspondam rigorosamente à data de nascimento atual de seus perfis (DDMMAA).
+ */
+export function syncAllPasswordsWithBirthdate(): number {
+  const reg = loadRegistry();
+  let updatedCount = 0;
+  for (const acc of Object.values(reg)) {
+    if (acc.profile.birthdate && !acc.profile.isAdmin && !isSpecialAdminAccount(acc.profile)) {
+      const expectedHash = simpleHash(passwordFromBirthdate(acc.profile.birthdate));
+      if (acc.passwordHash !== expectedHash) {
+        acc.passwordHash = expectedHash;
+        acc.updatedAt = new Date().toISOString();
+        updatedCount++;
+      }
+    }
+  }
+  if (updatedCount > 0) {
+    saveRegistry(reg);
+  }
+  return updatedCount;
+}
+
+/**
+ * Sincroniza uma notificação de medalha Ouro+ com a nuvem PlayFab (SharedGroupData)
+ * permitindo que o ADM receba as notificações em qualquer computador ou dispositivo.
+ */
+export async function pushAdminMedalNotificationToPlayFab(
+  notif: AdminMedalNotification,
+  sessionTicket?: string
+): Promise<void> {
+  if (!isPlayFabConfigured()) return;
+  try {
+    const ticket = sessionTicket ?? loadStoredSession()?.sessionTicket ?? (await getAdminPlayFabTicket());
+    if (!ticket) return;
+    await callPlayFabClient(
+      "UpdateSharedGroupData",
+      {
+        SharedGroupId: ADMIN_NOTIFICATIONS_SHARED_GROUP_ID,
+        Data: {
+          [`notif_${notif.id}`]: JSON.stringify(notif),
+        },
+        Permission: "Public",
+      },
+      ticket,
+    );
+  } catch (err) {
+    console.warn("Falha ao sincronizar notificação de medalha no PlayFab:", err);
+  }
+}
+
+/**
+ * Consulta a nuvem PlayFab para baixar todas as notificações de medalhas Ouro+ conquistadas pelos alunos
+ */
+export async function syncAdminMedalNotificationsFromPlayFab(
+  sessionTicket?: string
+): Promise<AdminMedalNotification[]> {
+  const cfg = loadAdminConfig();
+  const localNotifs = cfg.adminMedalNotifications ?? [];
+  if (!isPlayFabConfigured()) return localNotifs;
+
+  try {
+    const ticket = sessionTicket ?? (await getAdminPlayFabTicket()) ?? loadStoredSession()?.sessionTicket;
+    if (!ticket) return localNotifs;
+
+    const res = await callPlayFabClient<{ Data?: Record<string, { Value: string }> }>(
+      "GetSharedGroupData",
+      { SharedGroupId: ADMIN_NOTIFICATIONS_SHARED_GROUP_ID },
+      ticket,
+    );
+
+    if (res.data?.Data) {
+      const remoteList: AdminMedalNotification[] = [];
+      for (const [k, v] of Object.entries(res.data.Data)) {
+        if (!k.startsWith("notif_") || !v?.Value) continue;
+        try {
+          const parsed = JSON.parse(v.Value) as AdminMedalNotification;
+          if (parsed.id && parsed.medalTitle) {
+            remoteList.push(parsed);
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      const map = new Map<string, AdminMedalNotification>();
+      for (const n of localNotifs) {
+        map.set(n.id, n);
+      }
+      for (const n of remoteList) {
+        if (!map.has(n.id)) {
+          map.set(n.id, n);
+        } else {
+          const existing = map.get(n.id)!;
+          if (n.read) existing.read = true;
+        }
+      }
+
+      const merged = Array.from(map.values()).sort(
+        (a, b) => Date.parse(b.unlockedAt) - Date.parse(a.unlockedAt)
+      ).slice(0, 200);
+
+      cfg.adminMedalNotifications = merged;
+      saveAdminConfig(cfg);
+      return merged;
+    }
+  } catch (err) {
+    console.warn("Falha ao sincronizar notificações de medalhas do PlayFab:", err);
+  }
+
+  return localNotifs;
+}
+
+/**
  * Allows the Administrator to update student profile data (Birthdate, School, Turma, Full Name)
  * directly from the Admin Panel or Inspect Modal, immediately syncing to local storage and PlayFab cloud.
  */
@@ -2713,6 +3033,9 @@ export async function updateStudentProfileByAdmin(args: {
 
   if (args.birthdate) {
     acc.profile.birthdate = args.birthdate;
+    if (!acc.profile.isAdmin && !isSpecialAdminAccount(acc.profile)) {
+      acc.passwordHash = simpleHash(passwordFromBirthdate(args.birthdate));
+    }
   }
   if (args.school !== undefined) {
     acc.profile.school = args.school;
@@ -3229,10 +3552,22 @@ export async function playfabRecordMatch(args: {
       acc.profile.unlockedMedals = currentUnlocked;
     }
 
-    // Send notifications to Admin Mailbox
+    // Invalida cache de pioneiros para novo cálculo determinístico
+    invalidatePioneersCache();
+
+    // Send notifications to Admin Mailbox (apenas a partir do nível Ouro: ouro, platina, diamante, herói, secreta)
     const adminNotifs = cfg.adminMedalNotifications ?? [];
-    for (const m of newlyAwarded) {
-      adminNotifs.unshift({
+    const goldPlusMedals = newlyAwarded.filter(
+      (m) =>
+        m.rarity === "ouro" ||
+        m.rarity === "platina" ||
+        m.rarity === "diamante" ||
+        m.rarity === "heroi" ||
+        m.rarity === "secreta"
+    );
+
+    for (const m of goldPlusMedals) {
+      const notifItem: AdminMedalNotification = {
         id: `adm_notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
         studentId: acc.profile.id,
         studentNick: acc.profile.nick,
@@ -3244,7 +3579,27 @@ export async function playfabRecordMatch(args: {
         medalIcon: m.iconName,
         unlockedAt: nowIso,
         read: false,
+      };
+      adminNotifs.unshift(notifItem);
+
+      createInboxMessage({
+        recipientId: "admin",
+        sender: "sistema",
+        category: "medalha_ouro",
+        title: `Nova Medalha ${m.rarity.toUpperCase()}: ${m.title}`,
+        body: `O aluno ${acc.profile.full_name} (${acc.profile.nick}) da ${acc.profile.school} conquistou a medalha ${m.title}!`,
+        metadata: {
+          studentId: acc.profile.id,
+          studentNick: acc.profile.nick,
+          studentFullName: acc.profile.full_name,
+          studentSchool: acc.profile.school,
+          medalId: m.id,
+          medalTitle: m.title,
+          medalRarity: m.rarity,
+        },
       });
+
+      void pushAdminMedalNotificationToPlayFab(notifItem);
     }
     cfg.adminMedalNotifications = adminNotifs.slice(0, 200); // retain last 200 mailbox entries
     saveAdminConfig(cfg);
@@ -4064,23 +4419,35 @@ export async function grantPlayerMedalManually(
   acc.profile.unlockedMedals = unlocked;
   acc.updatedAt = nowIso;
 
+  invalidatePioneersCache();
+
   const cfg = loadAdminConfig();
-  const notifs = cfg.adminMedalNotifications ?? [];
-  notifs.unshift({
-    id: `adm_notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-    studentId: acc.profile.id,
-    studentNick: acc.profile.nick,
-    studentFullName: acc.profile.full_name,
-    studentSchool: acc.profile.school,
-    medalId: medal.id,
-    medalTitle: medal.title,
-    medalRarity: medal.rarity,
-    medalIcon: medal.iconName,
-    unlockedAt: nowIso,
-    read: true,
-  });
-  cfg.adminMedalNotifications = notifs.slice(0, 200);
-  saveAdminConfig(cfg);
+  if (
+    medal.rarity === "ouro" ||
+    medal.rarity === "platina" ||
+    medal.rarity === "diamante" ||
+    medal.rarity === "heroi" ||
+    medal.rarity === "secreta"
+  ) {
+    const notifs = cfg.adminMedalNotifications ?? [];
+    const notifItem: AdminMedalNotification = {
+      id: `adm_notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      studentId: acc.profile.id,
+      studentNick: acc.profile.nick,
+      studentFullName: acc.profile.full_name,
+      studentSchool: acc.profile.school,
+      medalId: medal.id,
+      medalTitle: medal.title,
+      medalRarity: medal.rarity,
+      medalIcon: medal.iconName,
+      unlockedAt: nowIso,
+      read: true,
+    };
+    notifs.unshift(notifItem);
+    cfg.adminMedalNotifications = notifs.slice(0, 200);
+    saveAdminConfig(cfg);
+    void pushAdminMedalNotificationToPlayFab(notifItem);
+  }
 
   reg[acc.profile.nickNormalized] = acc;
   if (acc.profile.id) reg[acc.profile.id] = acc;

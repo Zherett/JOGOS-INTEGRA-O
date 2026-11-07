@@ -9,6 +9,7 @@ import {
   getPlayFabTitleId,
   isPlayFabConfigured,
   loadStoredSession,
+  validateActiveSession,
 } from "./playfab.ts";
 
 export type PresenceStatus = "online" | "idle" | "offline";
@@ -782,6 +783,24 @@ export function usePresenceTracker(player?: {
     //Pulso imediato e periodico a cada 12 segundos (local + nuvem PlayFab)
     const pulse = (disconnected = false) => {
       const now = Date.now();
+
+      // Sessão Única Modelo A: Verifica se a conta foi acessada em outro aparelho
+      if (!disconnected && playerId) {
+        if (!validateActiveSession(playerId)) {
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent("desafios:session-terminated", {
+                detail: {
+                  reason: "outro_aparelho",
+                  timestamp: now,
+                },
+              })
+            );
+          }
+          return;
+        }
+      }
+
       const activeAt = getLocalUserLastActiveAt();
       const idleMs = Math.max(0, now - activeAt);
       const rec = recordPlayerHeartbeat(playerId, {
