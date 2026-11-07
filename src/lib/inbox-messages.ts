@@ -55,6 +55,12 @@ export interface SystemInboxMessage {
   mentionedEventId?: string; // ID do evento referenciado na tag [event]
   mentionedEventTitle?: string; // Nome do evento para cache e fallback
   linkEventDetails?: boolean; // Se true (padrão), o nome do evento é clicável e abre modal com detalhes
+  mentionedGames?: Record<string, string>; // Tags indexadas de jogos: { game: "velha", game1: "memoria", game2: "quebra-cabeca" }
+  mentionedEvents?: Record<string, {
+    eventId: string;
+    eventTitle?: string;
+    linkEventDetails?: boolean;
+  }>; // Tags indexadas de eventos: { event: { eventId, ... }, event1: { ... } }
   reward?: InboxReward;
   metadata?: {
     deviceInfo?: string;
@@ -276,6 +282,8 @@ export function createInboxMessage(
     mentionedEventId: data.mentionedEventId,
     mentionedEventTitle: data.mentionedEventTitle,
     linkEventDetails: data.linkEventDetails,
+    mentionedGames: data.mentionedGames ?? {},
+    mentionedEvents: data.mentionedEvents ?? {},
     reward: data.reward,
     metadata: data.metadata,
     read: false,
@@ -316,6 +324,12 @@ export interface AdminBroadcastDraft {
   mentionedEventId?: string;
   mentionedEventTitle?: string;
   linkEventDetails?: boolean;
+  mentionedGames?: Record<string, string>;
+  mentionedEvents?: Record<string, {
+    eventId: string;
+    eventTitle?: string;
+    linkEventDetails?: boolean;
+  }>;
   reward?: {
     type: InboxRewardType;
     pointsAmount?: number;
@@ -324,8 +338,111 @@ export interface AdminBroadcastDraft {
   };
 }
 
+export interface ExtractedInboxTags {
+  games: string[]; // e.g. ["game", "game1", "game2"]
+  events: string[]; // e.g. ["event", "event1", "event2"]
+  gifs: string[]; // e.g. ["gif1", "gif2"]
+  imgs: string[]; // e.g. ["img1", "img2"]
+}
+
 /**
- * Resolve tags dinâmicas de texto como [nick], [game] e [event]
+ * Extrai todas as tags entre colchetes presentes no texto da mensagem
+ * (ignora menções de texto plano sem colchetes como a palavra isolada 'event' ou 'game')
+ */
+export function extractInboxTags(text: string): ExtractedInboxTags {
+  if (!text) return { games: [], events: [], gifs: [], imgs: [] };
+  const tagMatches = text.match(/\[([a-zA-Z0-9_-]+)\]/g) || [];
+  const gamesSet = new Set<string>();
+  const eventsSet = new Set<string>();
+  const gifsSet = new Set<string>();
+  const imgsSet = new Set<string>();
+
+  for (const raw of tagMatches) {
+    const inner = raw.slice(1, -1).toLowerCase().trim();
+    if (/^game\d*$/.test(inner)) {
+      gamesSet.add(inner);
+    } else if (/^event\d*$/.test(inner)) {
+      eventsSet.add(inner);
+    } else if (/^gif\d+$/.test(inner)) {
+      gifsSet.add(inner);
+    } else if (/^img\d+$/.test(inner)) {
+      imgsSet.add(inner);
+    }
+  }
+
+  return {
+    games: Array.from(gamesSet),
+    events: Array.from(eventsSet),
+    gifs: Array.from(gifsSet),
+    imgs: Array.from(imgsSet),
+  };
+}
+
+/**
+ * Validação rigorosa pré-envio do Administrador:
+ * Se houver qualquer tag [gameX], [eventX], [gifX] ou [imgX] no texto sem o respectivo item/link selecionado,
+ * bloqueia o envio e retorna mensagem explicativa.
+ */
+export function validateMessageTags(
+  body: string,
+  config: {
+    mentionedGames?: Record<string, string>;
+    mentionedEvents?: Record<string, { eventId?: string }>;
+    gifLinks?: Record<string, string>;
+    imageLinks?: Record<string, string>;
+    singleGameId?: string;
+    singleEventId?: string;
+  }
+): { valid: boolean; errorMessage?: string } {
+  const { games, events, gifs, imgs } = extractInboxTags(body);
+
+  for (const gTag of games) {
+    const selected =
+      config.mentionedGames?.[gTag] || (gTag === "game" ? config.singleGameId : undefined);
+    if (!selected || !selected.trim()) {
+      return {
+        valid: false,
+        errorMessage: `Você inseriu a tag [${gTag}] no texto da mensagem, mas não selecionou nenhum jogo vinculado a ela. Por favor, selecione um jogo para [${gTag}] ou remova a tag antes de transmitir.`,
+      };
+    }
+  }
+
+  for (const eTag of events) {
+    const selected =
+      config.mentionedEvents?.[eTag]?.eventId || (eTag === "event" ? config.singleEventId : undefined);
+    if (!selected || !selected.trim()) {
+      return {
+        valid: false,
+        errorMessage: `Você inseriu a tag [${eTag}] no texto da mensagem, mas não selecionou nenhum evento vinculado a ela. Por favor, selecione um evento para [${eTag}] ou remova a tag antes de transmitir.`,
+      };
+    }
+  }
+
+  for (const gifTag of gifs) {
+    const url = config.gifLinks?.[gifTag];
+    if (!url || !url.trim()) {
+      return {
+        valid: false,
+        errorMessage: `Você inseriu a tag [${gifTag}] no texto da mensagem, mas não informou o link do GIF correspondente. Por favor, cole a URL do GIF ou remova a tag antes de transmitir.`,
+      };
+    }
+  }
+
+  for (const imgTag of imgs) {
+    const url = config.imageLinks?.[imgTag];
+    if (!url || !url.trim()) {
+      return {
+        valid: false,
+        errorMessage: `Você inseriu a tag [${imgTag}] no texto da mensagem, mas não informou o link da imagem correspondente. Por favor, cole a URL da imagem ou remova a tag antes de transmitir.`,
+      };
+    }
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Resolve tags dinâmicas de texto como [nick], [game]/[game1] e [event]/[event1]
  */
 export function formatInboxMessageText(
   text: string,
@@ -333,7 +450,9 @@ export function formatInboxMessageText(
     playerNick?: string;
     mentionedGameId?: string;
     mentionedGameName?: string;
+    mentionedGames?: Record<string, string>;
     mentionedEventTitle?: string;
+    mentionedEvents?: Record<string, { eventTitle?: string }>;
   }
 ): string {
   if (!text) return "";
@@ -341,15 +460,25 @@ export function formatInboxMessageText(
   if (options?.playerNick !== undefined) {
     res = res.replace(/\[nick\]/gi, options.playerNick || "Aluno");
   }
-  const gameName =
-    options?.mentionedGameName ||
-    (options?.mentionedGameId ? GAME_NAMES[options.mentionedGameId as GameId] || options.mentionedGameId : "");
-  if (gameName) {
-    res = res.replace(/\[game\]/gi, gameName);
-  }
-  if (options?.mentionedEventTitle !== undefined) {
-    res = res.replace(/\[event\]/gi, options.mentionedEventTitle || "Evento Especial");
-  }
+
+  // Substitui tags de jogos: [game], [game1], [game2], etc.
+  res = res.replace(/\[(game\d*)\]/gi, (match, tagKey) => {
+    const key = tagKey.toLowerCase();
+    const gId = options?.mentionedGames?.[key] || (key === "game" ? options?.mentionedGameId : "");
+    const gName = gId
+      ? GAME_NAMES[gId as GameId] || gId
+      : (key === "game" ? options?.mentionedGameName : undefined);
+    return gName || match;
+  });
+
+  // Substitui tags de eventos: [event], [event1], [event2], etc.
+  res = res.replace(/\[(event\d*)\]/gi, (match, tagKey) => {
+    const key = tagKey.toLowerCase();
+    const ev = options?.mentionedEvents?.[key];
+    const evTitle = ev?.eventTitle || (key === "event" ? options?.mentionedEventTitle : undefined);
+    return evTitle || match;
+  });
+
   return res;
 }
 
@@ -376,6 +505,12 @@ export function sendAdminBroadcastMessage(draft: AdminBroadcastDraft): SystemInb
     excludedStudentIds: draft.excludedStudentIds ?? [],
   };
 
+  const defaultGameId = draft.mentionedGames?.["game"] || draft.mentionedGameId || undefined;
+  const defaultEvent = draft.mentionedEvents?.["event"];
+  const defaultEventId = defaultEvent?.eventId || draft.mentionedEventId || undefined;
+  const defaultEventTitle = defaultEvent?.eventTitle || draft.mentionedEventTitle || undefined;
+  const defaultLinkDetails = defaultEvent?.linkEventDetails ?? (draft.linkEventDetails !== false);
+
   const msg = createInboxMessage({
     recipientId: draft.mode === "students" && draft.targetStudentIds?.length === 1 ? draft.targetStudentIds[0] : "ALL",
     recipientFilter: broadcastFilter,
@@ -386,10 +521,12 @@ export function sendAdminBroadcastMessage(draft: AdminBroadcastDraft): SystemInb
     body: draft.body.trim(),
     gifLinks: draft.gifLinks ?? {},
     imageLinks: draft.imageLinks ?? {},
-    mentionedGameId: draft.mentionedGameId || undefined,
-    mentionedEventId: draft.mentionedEventId || undefined,
-    mentionedEventTitle: draft.mentionedEventTitle || undefined,
-    linkEventDetails: draft.linkEventDetails !== false,
+    mentionedGameId: defaultGameId,
+    mentionedEventId: defaultEventId,
+    mentionedEventTitle: defaultEventTitle,
+    linkEventDetails: defaultLinkDetails,
+    mentionedGames: draft.mentionedGames ?? {},
+    mentionedEvents: draft.mentionedEvents ?? {},
     reward: rewardObj,
   });
 

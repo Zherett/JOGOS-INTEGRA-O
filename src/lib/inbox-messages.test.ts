@@ -17,6 +17,8 @@ import {
   mergeStudentReads,
   formatInboxMessageText,
   runRetroactiveInboxReadsScan,
+  extractInboxTags,
+  validateMessageTags,
 } from "./inbox-messages.ts";
 import type { PlayerProfile } from "./playfab.ts";
 
@@ -509,6 +511,82 @@ describe("Sistema Completo de Caixa de Entrada e Correio (inbox-messages)", () =
       const twentyFiveHoursLater = Date.now() + 25 * 60 * 60 * 1000;
       const msgs = getInboxMessagesForPlayer(student, twentyFiveHoursLater);
       assert.equal(msgs.some((m) => m.id === msg.id), false);
+    });
+  });
+
+  describe("Validação Pré-Envio e Tags Dinâmicas Indexadas ([gameX], [eventX], [gifX], [imgX])", () => {
+    it("extrai corretamente tags entre colchetes e ignora palavras de texto plano sem colchetes", () => {
+      const text = "Atenção [nick]: confira o [game1] e o [game2]. O event de hoje é [event1] com o [gif1] e a [img1]. Apenas game ou event solto sem colchetes não deve ser tag.";
+      const extracted = extractInboxTags(text);
+
+      assert.deepEqual(extracted.games.sort(), ["game1", "game2"].sort());
+      assert.deepEqual(extracted.events, ["event1"]);
+      assert.deepEqual(extracted.gifs, ["gif1"]);
+      assert.deepEqual(extracted.imgs, ["img1"]);
+    });
+
+    it("bloqueia o envio se o texto contiver tag [game1] mas nenhum jogo foi selecionado para ela", () => {
+      const body = "Jogue agora [game1] e vença!";
+      const res = validateMessageTags(body, {
+        mentionedGames: {},
+      });
+
+      assert.equal(res.valid, false);
+      assert.match(res.errorMessage || "", /tag \[game1\]/);
+    });
+
+    it("bloqueia o envio se o texto contiver tag [event1] mas nenhum evento foi vinculado a ela", () => {
+      const body = "Participe do nosso [event1] no fim de semana!";
+      const res = validateMessageTags(body, {
+        mentionedEvents: {},
+      });
+
+      assert.equal(res.valid, false);
+      assert.match(res.errorMessage || "", /tag \[event1\]/);
+    });
+
+    it("bloqueia o envio se o texto contiver tag [gif1] ou [img1] sem URL válida preenchida", () => {
+      const bodyGif = "Veja a animação: [gif1]";
+      const resGif = validateMessageTags(bodyGif, {
+        gifLinks: {},
+      });
+      assert.equal(resGif.valid, false);
+      assert.match(resGif.errorMessage || "", /tag \[gif1\]/);
+
+      const bodyImg = "Veja a imagem: [img1]";
+      const resImg = validateMessageTags(bodyImg, {
+        imageLinks: { img1: "   " },
+      });
+      assert.equal(resImg.valid, false);
+      assert.match(resImg.errorMessage || "", /tag \[img1\]/);
+    });
+
+    it("aprova o envio quando todas as tags adicionadas ao texto estiverem devidamente atribuídas", () => {
+      const body = "Olá [nick], jogue [game1] durante o [event1] e veja [gif1] e [img1]!";
+      const res = validateMessageTags(body, {
+        mentionedGames: { game1: "velha" },
+        mentionedEvents: { event1: { eventId: "ev_123" } },
+        gifLinks: { gif1: "https://example.com/anim.gif" },
+        imageLinks: { img1: "https://example.com/banner.png" },
+      });
+
+      assert.equal(res.valid, true);
+      assert.equal(res.errorMessage, undefined);
+    });
+
+    it("formata tags dinâmicas indexadas [game1], [game2] e [event1] com títulos correspondentes", () => {
+      const body = "Jogue [game1] e depois [game2] no [event1]!";
+      const formatted = formatInboxMessageText(body, {
+        mentionedGames: {
+          game1: "rpg",
+          game2: "memoria",
+        },
+        mentionedEvents: {
+          event1: { eventTitle: "Torneio Relâmpago" },
+        },
+      });
+
+      assert.equal(formatted, "Jogue Batalha de Robôs e depois Memória das Cores no Torneio Relâmpago!");
     });
   });
 });

@@ -73,18 +73,14 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
   };
 
   useEffect(() => {
+    if (open) {
+      setSelectedMessageId(null);
+    }
+  }, [open]);
+
+  useEffect(() => {
     if (open && profile) {
       refreshMessages();
-      const list = getInboxMessagesForPlayer(profile);
-      if (list.length > 0) {
-        // Se ainda não há mensagem selecionada, prioriza a primeira não lida ou a primeira da lista
-        const target = (!selectedMessageId ? (list.find((m) => !m.read) || list[0]) : list.find((m) => m.id === selectedMessageId)) || list[0];
-        if (target) {
-          setSelectedMessageId(target.id);
-          markInboxMessageAsRead(target.id, profile);
-          pushInboxReadToPlayFab(target.id, profile).catch(console.warn);
-        }
-      }
       // Escuta novos eventos de correio em tempo real
       const handleNew = () => refreshMessages();
       window.addEventListener("desafios:inbox-message-received", handleNew);
@@ -195,20 +191,15 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
     });
   };
 
-  // Renderiza tags inline substituindo [nick] (negrito destacado), [game] (negrito) e [event] (clicável ou negrito)
+  // Renderiza tags inline substituindo [nick], [game]/[gameX] (negrito) e [event]/[eventX] (clicável ou negrito)
   const renderInlineTags = (
     text: string,
     msg?: SystemInboxMessage | null
   ) => {
     const userNick = profile?.nick || profile?.id || "Jogador";
-    const gameName = msg?.mentionedGameId
-      ? GAME_NAMES[msg.mentionedGameId as GameId] || msg.mentionedGameId
-      : "Jogo de Lógica";
-    const eventTitle = msg?.mentionedEventTitle || "Evento Especial";
-    const canLinkEvent = msg?.linkEventDetails !== false && Boolean(msg?.mentionedEventId || msg?.mentionedEventTitle);
 
-    // Divide pelas tags [nick], [game], [event]
-    const subParts = text.split(/(\[(?:nick|game|event)\])/gi);
+    // Divide pelas tags [nick], [gameX], [eventX]
+    const subParts = text.split(/(\[(?:nick|game\d*|event\d*)\])/gi);
 
     return subParts.map((sub, sIdx) => {
       const lower = sub.toLowerCase();
@@ -216,29 +207,49 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
         return (
           <strong
             key={sIdx}
-            className="font-black text-primary bg-primary/10 px-1 py-0.5 rounded tracking-wide shadow-2xs inline-block"
+            className="font-black text-primary bg-primary/10 px-1.5 py-0.5 rounded tracking-wide shadow-2xs inline-block"
           >
             {userNick}
           </strong>
         );
       }
-      if (lower === "[game]") {
+      const gameMatch = /^\[(game\d*)\]$/i.exec(lower);
+      if (gameMatch) {
+        const tagKey = gameMatch[1];
+        const gId =
+          msg?.mentionedGames?.[tagKey] ||
+          (tagKey === "game" ? msg?.mentionedGameId : undefined);
+        const gameName = gId ? GAME_NAMES[gId as GameId] || gId : "Jogo de Lógica";
         return (
           <strong
             key={sIdx}
-            className="font-black text-amber-600 dark:text-amber-400 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded-lg tracking-wide shadow-2xs inline-block mx-0.5"
+            className="font-black text-amber-600 dark:text-amber-400 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-lg tracking-wide shadow-2xs inline-block mx-0.5 align-middle"
           >
             🎮 {gameName}
           </strong>
         );
       }
-      if (lower === "[event]") {
-        if (canLinkEvent) {
+      const eventMatch = /^\[(event\d*)\]$/i.exec(lower);
+      if (eventMatch) {
+        const tagKey = eventMatch[1];
+        const evData =
+          msg?.mentionedEvents?.[tagKey] ||
+          (tagKey === "event"
+            ? {
+                eventId: msg?.mentionedEventId || "",
+                eventTitle: msg?.mentionedEventTitle,
+                linkEventDetails: msg?.linkEventDetails,
+              }
+            : undefined);
+        const eventTitle = evData?.eventTitle || "Evento Especial";
+        const canLink = evData?.linkEventDetails !== false && Boolean(evData?.eventId || evData?.eventTitle);
+
+        if (canLink) {
           return (
             <button
               key={sIdx}
               type="button"
-              onClick={() => handleOpenEventDetails(msg?.mentionedEventId, msg?.mentionedEventTitle)}
+              onClick={() => handleOpenEventDetails(evData?.eventId, eventTitle)}
               className="inline-flex items-center gap-1 rounded-xl border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-xs font-black text-amber-600 dark:text-amber-400 hover:bg-amber-500 hover:text-zinc-950 transition-all cursor-pointer shadow-2xs underline underline-offset-2 my-0.5 align-middle"
               title="Clique para ver os detalhes completos deste evento"
             >
@@ -248,7 +259,7 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
           );
         }
         return (
-          <strong key={sIdx} className="font-extrabold text-foreground">
+          <strong key={sIdx} className="font-extrabold text-foreground px-1 py-0.5 bg-muted rounded">
             {eventTitle}
           </strong>
         );
@@ -257,7 +268,7 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
     });
   };
 
-  // Renderiza corpo da mensagem substituindo tags como [gif1], [gif2], [img1], [img2], [nick], [game], [event]
+  // Renderiza corpo da mensagem sem caixas/bordas azuis nos GIFs e sem legendas "GIF ANIMADO"
   const renderMessageBody = (
     body: string,
     gifLinks?: Record<string, string>,
@@ -279,22 +290,16 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
 
             if (url) {
               return (
-                <div
-                  key={index}
-                  className="my-3 overflow-hidden rounded-2xl border-2 border-primary/30 bg-muted/40 shadow-md flex flex-col items-center p-2"
-                >
+                <div key={index} className="my-3 flex justify-center">
                   <img
                     src={url}
-                    alt={isGif ? `Animação ${tagKey}` : `Imagem ${tagKey}`}
-                    className="max-h-80 w-auto object-contain rounded-xl shadow-xs"
+                    alt={isGif ? "GIF animado" : "Imagem"}
+                    className="max-h-80 w-auto rounded-2xl object-contain shadow-lg"
                     loading="lazy"
                     onError={(e) => {
                       (e.target as HTMLElement).style.display = "none";
                     }}
                   />
-                  <span className="text-[10px] text-muted-foreground mt-1 font-mono uppercase">
-                    {isGif ? `GIF Animado (${tagKey})` : `Imagem Anexa (${tagKey})`}
-                  </span>
                 </div>
               );
             }
@@ -353,19 +358,19 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
           <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
             {/* Barra lateral de filtros e lista (oculta no mobile quando lendo mensagem) */}
             <div
-              className={`w-full md:w-80 border-r flex flex-col shrink-0 bg-secondary/15 ${
+              className={`w-full md:w-88 border-r flex flex-col shrink-0 bg-slate-900/60 dark:bg-zinc-950/80 backdrop-blur-sm ${
                 activeMessage ? "hidden md:flex" : "flex"
               }`}
             >
               {/* Filtros em Abas */}
-              <div className="p-3 border-b grid grid-cols-3 gap-1 bg-background">
+              <div className="p-3 border-b grid grid-cols-3 gap-1.5 bg-slate-950/40 dark:bg-zinc-900/60">
                 <button
                   type="button"
                   onClick={() => setFilterTab("all")}
-                  className={`py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  className={`py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                     filterTab === "all"
                       ? "bg-primary text-primary-foreground shadow-xs"
-                      : "text-muted-foreground hover:bg-secondary"
+                      : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
                   }`}
                 >
                   Todas ({messages.length})
@@ -373,10 +378,10 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
                 <button
                   type="button"
                   onClick={() => setFilterTab("unread")}
-                  className={`py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  className={`py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                     filterTab === "unread"
                       ? "bg-primary text-primary-foreground shadow-xs"
-                      : "text-muted-foreground hover:bg-secondary"
+                      : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
                   }`}
                 >
                   Novas ({unreadCount})
@@ -384,18 +389,18 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
                 <button
                   type="button"
                   onClick={() => setFilterTab("rewards")}
-                  className={`py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  className={`py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                     filterTab === "rewards"
                       ? "bg-amber-500 text-zinc-950 font-black shadow-xs"
-                      : "text-muted-foreground hover:bg-secondary"
+                      : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
                   }`}
                 >
                   Presentes ({unclaimedRewardsCount})
                 </button>
               </div>
 
-              {/* Lista com Rolagem */}
-              <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
+              {/* Lista com Rolagem — visualmente destacada do fundo da caixa */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-slate-950/30 dark:bg-black/40">
                 {filteredMessages.length === 0 ? (
                   <div className="py-16 text-center space-y-2 px-4">
                     <Mail className="mx-auto h-10 w-10 text-muted-foreground/40" />
@@ -409,35 +414,47 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
                 ) : (
                   filteredMessages.map((msg) => {
                     const isSelected = selectedMessageId === msg.id;
+                    const isUnread = !msg.read;
                     const hasUnclaimedReward = msg.reward && !msg.reward.claimed;
 
                     return (
                       <div
                         key={msg.id}
                         onClick={() => handleSelectMessage(msg)}
-                        className={`rounded-2xl border p-3.5 cursor-pointer transition-all ${
+                        className={`group relative rounded-2xl p-4 cursor-pointer transition-all duration-200 ${
                           isSelected
-                            ? "border-primary bg-primary/10 shadow-sm ring-2 ring-primary/30"
-                            : !msg.read
-                              ? "border-primary/40 bg-card hover:border-primary shadow-xs"
-                              : "border-border/60 bg-card/60 opacity-80 hover:opacity-100 hover:bg-card"
+                            ? "border-2 border-primary bg-primary/20 shadow-lg ring-2 ring-primary/40 -translate-y-0.5"
+                            : isUnread
+                              ? "border-2 border-sky-500/70 dark:border-sky-400/60 bg-gradient-to-br from-slate-800 via-slate-800/95 to-slate-900 dark:from-zinc-800 dark:via-zinc-850 dark:to-zinc-900 shadow-md ring-1 ring-sky-500/30 hover:border-primary hover:shadow-xl hover:-translate-y-0.5"
+                              : "border border-border/50 bg-slate-950/50 dark:bg-zinc-950/70 opacity-75 hover:opacity-100 hover:bg-slate-900/60 hover:border-border"
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5">
-                              {!msg.read && (
-                                <span className="h-2 w-2 rounded-full bg-primary shrink-0" />
+                        <div className="flex items-start justify-between gap-2.5">
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="flex items-center gap-2">
+                              {isUnread ? (
+                                <span
+                                  className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-red-600 text-white font-mono text-[10px] font-black shadow-md ring-2 ring-red-400/50 animate-pulse shrink-0"
+                                  title="Nova mensagem não lida"
+                                >
+                                  1
+                                </span>
+                              ) : (
+                                <span className="h-2 w-2 rounded-full bg-muted-foreground/40 shrink-0" />
                               )}
                               <h4
-                                className={`truncate font-display text-xs ${
-                                  !msg.read ? "font-black text-foreground" : "font-bold text-foreground/80"
+                                className={`truncate font-display ${
+                                  isUnread ? "text-sm font-black text-white dark:text-zinc-50" : "text-xs font-bold text-foreground/75"
                                 }`}
                               >
                                 {formatText(msg.title, msg)}
                               </h4>
                             </div>
-                            <p className="line-clamp-2 text-[11px] text-muted-foreground mt-1">
+                            <p
+                              className={`line-clamp-2 text-xs leading-relaxed ${
+                                isUnread ? "text-slate-300 dark:text-zinc-300" : "text-muted-foreground/80"
+                              }`}
+                            >
                               {formatText(msg.body, msg)
                                 .replace(/\[gif\d+\]/gi, " [GIF] ")
                                 .replace(/\[img\d+\]/gi, " [IMAGEM] ")}
@@ -446,7 +463,7 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
 
                           {hasUnclaimedReward && (
                             <span
-                              className="shrink-0 grid h-7 w-7 place-items-center rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 animate-bounce"
+                              className="shrink-0 grid h-8 w-8 place-items-center rounded-xl bg-amber-500/20 text-amber-500 border border-amber-500/40 shadow-sm animate-bounce text-sm"
                               title="Contém presente para resgatar!"
                             >
                               🎁
@@ -454,9 +471,11 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
                           )}
                         </div>
 
-                        <div className="mt-2.5 flex items-center justify-between text-[10px] text-muted-foreground border-t pt-2">
-                          <span className="font-semibold">{msg.senderName}</span>
-                          <span>
+                        <div className="mt-3 flex items-center justify-between text-[10.5px] border-t border-border/40 pt-2 text-muted-foreground">
+                          <span className={isUnread ? "font-bold text-primary" : "font-medium"}>
+                            {msg.senderName}
+                          </span>
+                          <span className="font-mono">
                             {new Date(msg.createdAt).toLocaleDateString("pt-BR", {
                               day: "2-digit",
                               month: "short",

@@ -47,6 +47,8 @@ import {
   getMessageReaders,
   runRetroactiveInboxReadsScan,
   subscribeToInboxSync,
+  extractInboxTags,
+  validateMessageTags,
   type SystemInboxMessage,
   type AdminBroadcastDraft,
 } from "@/lib/inbox-messages";
@@ -164,12 +166,19 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
   const [mediaList, setMediaList] = useState<{ id: string; type: "gif" | "img"; url: string }[]>([]);
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
 
-  // Menção a Jogo na Tag [game]
+  // Menção a Jogo na Tag [game] e tags dinâmicas [game1], [game2]
   const [selectedMentionGame, setSelectedMentionGame] = useState<string>("");
+  const [mentionedGames, setMentionedGames] = useState<Record<string, string>>({});
 
-  // Menção a Evento na Tag [event]
+  // Menção a Evento na Tag [event] e tags dinâmicas [event1], [event2]
   const [selectedMentionEventId, setSelectedMentionEventId] = useState<string>("");
   const [linkEventDetails, setLinkEventDetails] = useState<boolean>(true);
+  const [mentionedEvents, setMentionedEvents] = useState<
+    Record<string, { eventId: string; linkEventDetails: boolean }>
+  >({});
+
+  // Tags dinamicamente detectadas no texto da mensagem imediata
+  const detectedTags = useMemo(() => extractInboxTags(body), [body]);
 
   // Lista de todos os eventos configurados (pontuais e recorrentes) para menção na tag [event]
   const allConfiguredEvents = useMemo(() => {
@@ -211,8 +220,15 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
   const [schedValidUntil, setSchedValidUntil] = useState<string>("");
   const [schedMediaList, setSchedMediaList] = useState<{ id: string; type: "gif" | "img"; url: string }[]>([]);
   const [schedMentionGame, setSchedMentionGame] = useState<string>("");
+  const [schedMentionGames, setSchedMentionGames] = useState<Record<string, string>>({});
   const [schedMentionEventId, setSchedMentionEventId] = useState<string>("");
   const [schedLinkEventDetails, setSchedLinkEventDetails] = useState<boolean>(true);
+  const [schedMentionEvents, setSchedMentionEvents] = useState<
+    Record<string, { eventId: string; linkEventDetails: boolean }>
+  >({});
+
+  // Tags dinamicamente detectadas no texto da mensagem programada
+  const schedDetectedTags = useMemo(() => extractInboxTags(schedBody), [schedBody]);
   const [schedHasReward, setSchedHasReward] = useState<boolean>(false);
   const [schedRewardType, setSchedRewardType] = useState<"points" | "medal" | "future_item">("points");
   const [schedRewardPoints, setSchedRewardPoints] = useState<number>(100);
@@ -547,6 +563,40 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
       }
     }
 
+    // Consolidação de jogos e eventos para a mensagem
+    const effectiveGames: Record<string, string> = { ...mentionedGames };
+    if (selectedMentionGame && !effectiveGames["game"]) {
+      effectiveGames["game"] = selectedMentionGame;
+    }
+    const effectiveEvents: Record<string, { eventId: string; eventTitle?: string; linkEventDetails?: boolean }> = { ...mentionedEvents };
+    if (selectedMentionEventId && !effectiveEvents["event"]) {
+      effectiveEvents["event"] = {
+        eventId: selectedMentionEventId,
+        eventTitle: allConfiguredEvents.find((e) => e.id === selectedMentionEventId)?.title,
+        linkEventDetails,
+      };
+    }
+    for (const [k, evObj] of Object.entries(effectiveEvents)) {
+      if (evObj && evObj.eventId && !evObj.eventTitle) {
+        evObj.eventTitle = allConfiguredEvents.find((e) => e.id === evObj.eventId)?.title;
+      }
+    }
+
+    // REGRA DO USUÁRIO: Validação rigorosa pré-envio
+    // Se houver tags [gameX], [eventX], [gifX], [imgX] no texto sem o respectivo item/link selecionado, bloqueia o envio
+    const tagValidation = validateMessageTags(body, {
+      mentionedGames: effectiveGames,
+      mentionedEvents: effectiveEvents,
+      gifLinks,
+      imageLinks,
+      singleGameId: selectedMentionGame,
+      singleEventId: selectedMentionEventId,
+    });
+    if (!tagValidation.valid) {
+      alert(tagValidation.errorMessage);
+      return;
+    }
+
     const foundMentionEvent = allConfiguredEvents.find((e) => e.id === selectedMentionEventId);
 
     const draft: AdminBroadcastDraft = {
@@ -563,6 +613,8 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
       mentionedEventId: selectedMentionEventId || undefined,
       mentionedEventTitle: foundMentionEvent?.title || undefined,
       linkEventDetails: linkEventDetails,
+      mentionedGames: Object.keys(effectiveGames).length > 0 ? effectiveGames : undefined,
+      mentionedEvents: Object.keys(effectiveEvents).length > 0 ? effectiveEvents : undefined,
       reward: hasReward
         ? {
             type: rewardType,
@@ -597,7 +649,9 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
     setBody("");
     setMediaList([]);
     setSelectedMentionGame("");
+    setMentionedGames({});
     setSelectedMentionEventId("");
+    setMentionedEvents({});
     setLinkEventDetails(true);
     setHasReward(false);
     setIsSecretReward(false);
@@ -698,7 +752,9 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
     setSchedValidUntil("");
     setSchedMediaList([]);
     setSchedMentionGame("");
+    setSchedMentionGames({});
     setSchedMentionEventId("");
+    setSchedMentionEvents({});
     setSchedLinkEventDetails(true);
     setSchedHasReward(false);
     setSchedIsSecretReward(false);
@@ -745,6 +801,39 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
       }
     }
 
+    // Consolidação de jogos e eventos para a mensagem programada
+    const effectiveGames: Record<string, string> = { ...schedMentionGames };
+    if (schedMentionGame && !effectiveGames["game"]) {
+      effectiveGames["game"] = schedMentionGame;
+    }
+    const effectiveEvents: Record<string, { eventId: string; eventTitle?: string; linkEventDetails?: boolean }> = { ...schedMentionEvents };
+    if (schedMentionEventId && !effectiveEvents["event"]) {
+      effectiveEvents["event"] = {
+        eventId: schedMentionEventId,
+        eventTitle: allConfiguredEvents.find((e) => e.id === schedMentionEventId)?.title,
+        linkEventDetails: schedLinkEventDetails,
+      };
+    }
+    for (const [k, evObj] of Object.entries(effectiveEvents)) {
+      if (evObj && evObj.eventId && !evObj.eventTitle) {
+        evObj.eventTitle = allConfiguredEvents.find((e) => e.id === evObj.eventId)?.title;
+      }
+    }
+
+    // REGRA DO USUÁRIO: Validação rigorosa antes de salvar agendamento
+    const tagValidation = validateMessageTags(schedBody, {
+      mentionedGames: effectiveGames,
+      mentionedEvents: effectiveEvents,
+      gifLinks,
+      imageLinks,
+      singleGameId: schedMentionGame,
+      singleEventId: schedMentionEventId,
+    });
+    if (!tagValidation.valid) {
+      alert(tagValidation.errorMessage);
+      return;
+    }
+
     const foundEvent = allConfiguredEvents.find((e) => e.id === schedMentionEventId);
     const existingRule = editingRuleId
       ? scheduledRules.find((r) => r.id === editingRuleId)
@@ -773,6 +862,8 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
       mentionedEventId: schedMentionEventId || undefined,
       mentionedEventTitle: foundEvent?.title || undefined,
       linkEventDetails: schedLinkEventDetails,
+      mentionedGames: Object.keys(effectiveGames).length > 0 ? effectiveGames : undefined,
+      mentionedEvents: Object.keys(effectiveEvents).length > 0 ? effectiveEvents : undefined,
       reward: schedHasReward
         ? {
             type: schedRewardType,
@@ -818,7 +909,19 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
     setSchedValidFrom(rule.validFrom || "");
     setSchedValidUntil(rule.validUntil || "");
     setSchedMentionGame(rule.mentionedGameId || "");
+    setSchedMentionGames(rule.mentionedGames || (rule.mentionedGameId ? { game: rule.mentionedGameId } : {}));
     setSchedMentionEventId(rule.mentionedEventId || "");
+    setSchedMentionEvents(
+      rule.mentionedEvents ||
+        (rule.mentionedEventId
+          ? {
+              event: {
+                eventId: rule.mentionedEventId,
+                linkEventDetails: rule.linkEventDetails !== false,
+              },
+            }
+          : {})
+    );
     setSchedLinkEventDetails(rule.linkEventDetails !== false);
 
     const media: { id: string; type: "gif" | "img"; url: string }[] = [];
@@ -1243,7 +1346,7 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
               />
             </div>
 
-            {/* MENÇÕES DINÂMICAS: [nick], [game] e [event] */}
+            {/* MENÇÕES DINÂMICAS: [nick], [gameX] e [eventX] */}
             <div className="rounded-2xl border bg-secondary/20 p-3.5 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
@@ -1262,7 +1365,7 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
                       insertTagIntoTextarea(bodyTextareaRef.current, body, setBody, "[nick]");
                     }}
                     className="h-7 rounded-xl text-[11px] font-bold cursor-pointer"
-                    title="Insere a tag [nick] exatamente na posição do cursor, que menciona dinamicamente o nick do aluno em negrito destacado"
+                    title="Insere a tag [nick] exatamente na posição do cursor"
                   >
                     + Inserir [nick]
                   </Button>
@@ -1272,12 +1375,13 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
                     size="sm"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => {
-                      insertTagIntoTextarea(bodyTextareaRef.current, body, setBody, "[game]");
+                      const nextTag = detectedTags.games.length === 0 ? "[game1]" : `[game${detectedTags.games.length + 1}]`;
+                      insertTagIntoTextarea(bodyTextareaRef.current, body, setBody, nextTag);
                     }}
                     className="h-7 rounded-xl text-[11px] font-bold cursor-pointer border-primary/40 text-primary hover:bg-primary/10"
-                    title="Insere a tag [game] exatamente na posição do cursor, que escreve o nome do jogo selecionado em negrito"
+                    title="Insere a tag de jogo no ponto do cursor"
                   >
-                    + Inserir [game]
+                    + Inserir {detectedTags.games.length === 0 ? "[game1]" : `[game${detectedTags.games.length + 1}]`}
                   </Button>
                   <Button
                     type="button"
@@ -1285,83 +1389,226 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
                     size="sm"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => {
-                      insertTagIntoTextarea(bodyTextareaRef.current, body, setBody, "[event]");
+                      const nextTag = detectedTags.events.length === 0 ? "[event1]" : `[event${detectedTags.events.length + 1}]`;
+                      insertTagIntoTextarea(bodyTextareaRef.current, body, setBody, nextTag);
                     }}
                     className="h-7 rounded-xl text-[11px] font-bold cursor-pointer border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
-                    title="Insere a tag [event] exatamente na posição do cursor, que exibe o nome do evento vinculado"
+                    title="Insere a tag de evento no ponto do cursor"
                   >
                     <Sparkles className="h-3 w-3 mr-1" />
-                    + Inserir [event]
+                    + Inserir {detectedTags.events.length === 0 ? "[event1]" : `[event${detectedTags.events.length + 1}]`}
                   </Button>
                 </div>
               </div>
 
-              {/* Seletor de Jogo para [game] */}
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                <Label htmlFor="mention-game-select" className="text-[11px] font-bold text-muted-foreground whitespace-nowrap">
-                  Jogo para a tag <code className="bg-muted px-1.5 py-0.5 rounded text-primary font-mono">[game]</code>:
-                </Label>
-                <select
-                  id="mention-game-select"
-                  value={selectedMentionGame}
-                  onChange={(e) => setSelectedMentionGame(e.target.value)}
-                  className="h-8 rounded-xl border bg-background px-3 text-xs font-bold flex-1"
-                >
-                  <option value="">(Nenhum jogo selecionado — tag [game] inativa)</option>
-                  {ALL_GAME_IDS.map((gId) => (
-                    <option key={gId} value={gId}>
-                      🎯 {GAME_NAMES[gId]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Seletor e Opção de Linkar para [event] */}
-              <div className="space-y-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+              {/* Seletores Dinâmicos de Jogo: gera automaticamente uma linha para cada tag [gameX] encontrada no texto */}
+              {detectedTags.games.length === 0 ? (
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                  <Label htmlFor="mention-event-select" className="text-[11px] font-bold text-amber-700 dark:text-amber-300 whitespace-nowrap flex items-center gap-1.5">
-                    <Calendar className="h-3.5 w-3.5" />
-                    Evento para a tag <code className="bg-amber-500/20 px-1.5 py-0.5 rounded text-amber-700 dark:text-amber-300 font-mono">[event]</code>:
+                  <Label htmlFor="mention-game-select" className="text-[11px] font-bold text-muted-foreground whitespace-nowrap">
+                    Jogo para a tag <code className="bg-muted px-1.5 py-0.5 rounded text-primary font-mono">[game]</code>:
                   </Label>
                   <select
-                    id="mention-event-select"
-                    value={selectedMentionEventId}
-                    onChange={(e) => setSelectedMentionEventId(e.target.value)}
+                    id="mention-game-select"
+                    value={selectedMentionGame}
+                    onChange={(e) => {
+                      setSelectedMentionGame(e.target.value);
+                      setMentionedGames((prev) => ({ ...prev, game: e.target.value }));
+                    }}
                     className="h-8 rounded-xl border bg-background px-3 text-xs font-bold flex-1"
                   >
-                    <option value="">(Nenhum evento selecionado — exibe título padrão)</option>
-                    {allConfiguredEvents.map((ev) => (
-                      <option key={ev.id} value={ev.id}>
-                        ✨ [{ev.type}] {ev.title}
+                    <option value="">(Nenhum jogo selecionado — tag [game] inativa)</option>
+                    {ALL_GAME_IDS.map((gId) => (
+                      <option key={gId} value={gId}>
+                        🎯 {GAME_NAMES[gId]}
                       </option>
                     ))}
                   </select>
                 </div>
-
-                <div className="flex items-center justify-between gap-3 pt-2 border-t border-amber-500/20">
-                  <div className="space-y-0.5">
-                    <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                      <span>Linkar detalhes completos do evento</span>
-                      <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/20 px-1.5 py-0.2 rounded">
-                        Padrão: Ativado
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      Se <b>marcado</b>, o nome do evento é exibido em cor de destaque e se torna clicável para abrir um modal sobreposto com as informações do evento. Se <b>desmarcado</b>, o nome do evento é exibido apenas em <b>negrito</b>.
-                    </p>
+              ) : (
+                <div className="space-y-2 border-t pt-2.5">
+                  <div className="text-[11px] font-bold text-primary flex items-center gap-1.5">
+                    <Gamepad2 className="h-3.5 w-3.5" />
+                    <span>Jogos Vinculados às Tags Detectadas no Texto ({detectedTags.games.length}):</span>
                   </div>
-                  <Switch
-                    checked={linkEventDetails}
-                    onCheckedChange={setLinkEventDetails}
-                    aria-label="Linkar detalhes do evento"
-                  />
+                  {detectedTags.games.map((gTag) => {
+                    const currentVal = mentionedGames[gTag] || (gTag === "game" ? selectedMentionGame : "");
+                    return (
+                      <div
+                        key={gTag}
+                        className={`flex flex-col sm:flex-row sm:items-center gap-2 rounded-xl border p-2.5 transition-all ${
+                          !currentVal ? "border-amber-500/60 bg-amber-500/10" : "border-primary/30 bg-background"
+                        }`}
+                      >
+                        <Label className="text-[11px] font-bold text-foreground whitespace-nowrap">
+                          Jogo para a tag <code className="bg-primary/20 text-primary px-1.5 py-0.5 rounded font-mono font-black">[{gTag}]</code>:
+                        </Label>
+                        <select
+                          value={currentVal}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setMentionedGames((prev) => ({ ...prev, [gTag]: val }));
+                            if (gTag === "game") setSelectedMentionGame(val);
+                          }}
+                          className={`h-8 rounded-xl border bg-background px-3 text-xs font-bold flex-1 ${
+                            !currentVal ? "border-amber-500 text-amber-700 dark:text-amber-300" : ""
+                          }`}
+                        >
+                          <option value="">⚠️ (Selecione o jogo correspondente à tag [{gTag}])</option>
+                          {ALL_GAME_IDS.map((gId) => (
+                            <option key={gId} value={gId}>
+                              🎯 {GAME_NAMES[gId]}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })}
                 </div>
-              </div>
+              )}
+
+              {/* Seletores Dinâmicos de Evento: gera automaticamente uma linha para cada tag [eventX] encontrada no texto */}
+              {detectedTags.events.length === 0 ? (
+                <div className="space-y-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                    <Label htmlFor="mention-event-select" className="text-[11px] font-bold text-amber-700 dark:text-amber-300 whitespace-nowrap flex items-center gap-1.5">
+                      <Calendar className="h-3.5 w-3.5" />
+                      Evento para a tag <code className="bg-amber-500/20 px-1.5 py-0.5 rounded text-amber-700 dark:text-amber-300 font-mono">[event]</code>:
+                    </Label>
+                    <select
+                      id="mention-event-select"
+                      value={selectedMentionEventId}
+                      onChange={(e) => {
+                        setSelectedMentionEventId(e.target.value);
+                        setMentionedEvents((prev) => ({
+                          ...prev,
+                          event: {
+                            eventId: e.target.value,
+                            linkEventDetails: prev["event"]?.linkEventDetails ?? linkEventDetails,
+                          },
+                        }));
+                      }}
+                      className="h-8 rounded-xl border bg-background px-3 text-xs font-bold flex-1"
+                    >
+                      <option value="">(Nenhum evento selecionado — exibe título padrão)</option>
+                      {allConfiguredEvents.map((ev) => (
+                        <option key={ev.id} value={ev.id}>
+                          ✨ [{ev.type}] {ev.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 pt-2 border-t border-amber-500/20">
+                    <div className="space-y-0.5">
+                      <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                        <span>Linkar detalhes completos do evento</span>
+                        <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/20 px-1.5 py-0.2 rounded">
+                          Padrão: Ativado
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground leading-relaxed">
+                        Se <b>marcado</b>, o nome do evento é exibido em cor de destaque e se torna clicável para abrir um modal sobreposto com as informações do evento. Se <b>desmarcado</b>, o nome do evento é exibido apenas em <b>negrito</b>.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={linkEventDetails}
+                      onCheckedChange={(checked) => {
+                        setLinkEventDetails(checked);
+                        setMentionedEvents((prev) => ({
+                          ...prev,
+                          event: {
+                            eventId: prev["event"]?.eventId || selectedMentionEventId,
+                            linkEventDetails: checked,
+                          },
+                        }));
+                      }}
+                      aria-label="Linkar detalhes do evento"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2.5 border-t pt-2.5">
+                  <div className="text-[11px] font-bold text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>Eventos Vinculados às Tags Detectadas no Texto ({detectedTags.events.length}):</span>
+                  </div>
+                  {detectedTags.events.map((eTag) => {
+                    const currentVal = mentionedEvents[eTag]?.eventId || (eTag === "event" ? selectedMentionEventId : "");
+                    const canLink = mentionedEvents[eTag]?.linkEventDetails ?? (eTag === "event" ? linkEventDetails : true);
+                    return (
+                      <div
+                        key={eTag}
+                        className={`space-y-2.5 rounded-xl border p-3 transition-all ${
+                          !currentVal
+                            ? "border-amber-500 bg-amber-500/10"
+                            : "border-amber-500/40 bg-amber-500/5"
+                        }`}
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                          <Label className="text-[11px] font-bold text-amber-700 dark:text-amber-300 whitespace-nowrap flex items-center gap-1.5">
+                            <Calendar className="h-3.5 w-3.5" />
+                            Evento para a tag <code className="bg-amber-500/20 px-1.5 py-0.5 rounded text-amber-700 dark:text-amber-300 font-mono font-black">[{eTag}]</code>:
+                          </Label>
+                          <select
+                            value={currentVal}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setMentionedEvents((prev) => ({
+                                ...prev,
+                                [eTag]: {
+                                  eventId: val,
+                                  linkEventDetails: prev[eTag]?.linkEventDetails ?? canLink,
+                                },
+                              }));
+                              if (eTag === "event") setSelectedMentionEventId(val);
+                            }}
+                            className={`h-8 rounded-xl border bg-background px-3 text-xs font-bold flex-1 ${
+                              !currentVal ? "border-amber-500 text-amber-700 dark:text-amber-300 font-black" : ""
+                            }`}
+                          >
+                            <option value="">⚠️ (Selecione o evento correspondente à tag [{eTag}])</option>
+                            {allConfiguredEvents.map((ev) => (
+                              <option key={ev.id} value={ev.id}>
+                                ✨ [{ev.type}] {ev.title}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3 pt-2 border-t border-amber-500/20">
+                          <div className="space-y-0.5">
+                            <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                              <span>Linkar detalhes completos para [{eTag}]</span>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground leading-relaxed">
+                              Torna a menção <b>[{eTag}]</b> clicável para exibir o modal de detalhes do evento.
+                            </p>
+                          </div>
+                          <Switch
+                            checked={canLink}
+                            onCheckedChange={(checked) => {
+                              setMentionedEvents((prev) => ({
+                                ...prev,
+                                [eTag]: {
+                                  eventId: prev[eTag]?.eventId || currentVal,
+                                  linkEventDetails: checked,
+                                },
+                              }));
+                              if (eTag === "event") setLinkEventDetails(checked);
+                            }}
+                            aria-label={`Linkar detalhes do evento ${eTag}`}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               <p className="text-[10px] text-muted-foreground leading-relaxed">
                 💡 <b>[nick]</b> menciona dinamicamente o apelido do aluno em <b>negrito destacado</b>.<br />
-                💡 <b>[game]</b> escreve o nome do jogo selecionado como menção em <b>negrito</b>.<br />
-                💡 <b>[event]</b> exibe o nome do evento vinculado como link clicável (abre modal com multiplicadores e regras) ou em <b>negrito</b> conforme o botão acima.
+                💡 <b>[game]</b> ou <b>[game1]</b>, <b>[game2]</b> escreve o nome do jogo selecionado como menção em <b>negrito</b>.<br />
+                💡 <b>[event]</b> ou <b>[event1]</b>, <b>[event2]</b> exibe o nome do evento vinculado como link clicável (abre modal com multiplicadores e regras) ou em <b>negrito</b> conforme o botão acima.
               </p>
             </div>
 
@@ -1870,12 +2117,13 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
                     size="sm"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => {
-                      insertTagIntoTextarea(schedBodyTextareaRef.current, schedBody, setSchedBody, "[game]");
+                      const nextTag = schedDetectedTags.games.length === 0 ? "[game1]" : `[game${schedDetectedTags.games.length + 1}]`;
+                      insertTagIntoTextarea(schedBodyTextareaRef.current, schedBody, setSchedBody, nextTag);
                     }}
                     className="h-7 rounded-xl text-[11px] font-bold cursor-pointer border-primary/40 text-primary hover:bg-primary/10"
-                    title="Insere a tag [game] exatamente na posição do cursor"
+                    title="Insere a tag de jogo no ponto do cursor"
                   >
-                    + Inserir [game]
+                    + Inserir {schedDetectedTags.games.length === 0 ? "[game1]" : `[game${schedDetectedTags.games.length + 1}]`}
                   </Button>
                   <Button
                     type="button"
@@ -1883,75 +2131,218 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
                     size="sm"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => {
-                      insertTagIntoTextarea(schedBodyTextareaRef.current, schedBody, setSchedBody, "[event]");
+                      const nextTag = schedDetectedTags.events.length === 0 ? "[event1]" : `[event${schedDetectedTags.events.length + 1}]`;
+                      insertTagIntoTextarea(schedBodyTextareaRef.current, schedBody, setSchedBody, nextTag);
                     }}
                     className="h-7 rounded-xl text-[11px] font-bold cursor-pointer border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
-                    title="Insere a tag [event] exatamente na posição do cursor"
+                    title="Insere a tag de evento no ponto do cursor"
                   >
                     <Sparkles className="h-3 w-3 mr-1" />
-                    + Inserir [event]
+                    + Inserir {schedDetectedTags.events.length === 0 ? "[event1]" : `[event${schedDetectedTags.events.length + 1}]`}
                   </Button>
                 </div>
               </div>
 
-              {/* Seletor de Jogo para [game] */}
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                <Label htmlFor="sched-mention-game-select" className="text-[11px] font-bold text-muted-foreground whitespace-nowrap">
-                  Jogo para a tag <code className="bg-muted px-1.5 py-0.5 rounded text-primary font-mono">[game]</code>:
-                </Label>
-                <select
-                  id="sched-mention-game-select"
-                  value={schedMentionGame}
-                  onChange={(e) => setSchedMentionGame(e.target.value)}
-                  className="h-8 rounded-xl border bg-background px-3 text-xs font-bold flex-1"
-                >
-                  <option value="">(Nenhum jogo selecionado — tag [game] inativa)</option>
-                  {ALL_GAME_IDS.map((gId) => (
-                    <option key={gId} value={gId}>
-                      🎯 {GAME_NAMES[gId]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Seletor de Evento para [event] */}
-              <div className="space-y-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+              {/* Seletores Dinâmicos de Jogo da Mensagem Programada */}
+              {schedDetectedTags.games.length === 0 ? (
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                  <Label htmlFor="sched-mention-event-select" className="text-[11px] font-bold text-amber-700 dark:text-amber-300 whitespace-nowrap flex items-center gap-1.5">
-                    <Calendar className="h-3.5 w-3.5" />
-                    Evento para a tag <code className="bg-amber-500/20 px-1.5 py-0.5 rounded text-amber-700 dark:text-amber-300 font-mono">[event]</code>:
+                  <Label htmlFor="sched-mention-game-select" className="text-[11px] font-bold text-muted-foreground whitespace-nowrap">
+                    Jogo para a tag <code className="bg-muted px-1.5 py-0.5 rounded text-primary font-mono">[game]</code>:
                   </Label>
                   <select
-                    id="sched-mention-event-select"
-                    value={schedMentionEventId}
-                    onChange={(e) => setSchedMentionEventId(e.target.value)}
+                    id="sched-mention-game-select"
+                    value={schedMentionGame}
+                    onChange={(e) => {
+                      setSchedMentionGame(e.target.value);
+                      setSchedMentionGames((prev) => ({ ...prev, game: e.target.value }));
+                    }}
                     className="h-8 rounded-xl border bg-background px-3 text-xs font-bold flex-1"
                   >
-                    <option value="">(Nenhum evento selecionado — exibe título padrão)</option>
-                    {allConfiguredEvents.map((ev) => (
-                      <option key={ev.id} value={ev.id}>
-                        ✨ [{ev.type}] {ev.title}
+                    <option value="">(Nenhum jogo selecionado — tag [game] inativa)</option>
+                    {ALL_GAME_IDS.map((gId) => (
+                      <option key={gId} value={gId}>
+                        🎯 {GAME_NAMES[gId]}
                       </option>
                     ))}
                   </select>
                 </div>
-
-                <div className="flex items-center justify-between gap-3 pt-2 border-t border-amber-500/20">
-                  <div className="space-y-0.5">
-                    <div className="text-xs font-bold text-foreground">
-                      Linkar detalhes completos do evento
-                    </div>
-                    <p className="text-[10px] text-muted-foreground">
-                      Se ativado, torna o nome do evento clicável para abrir o modal de detalhes.
-                    </p>
+              ) : (
+                <div className="space-y-2 border-t pt-2.5">
+                  <div className="text-[11px] font-bold text-primary flex items-center gap-1.5">
+                    <Gamepad2 className="h-3.5 w-3.5" />
+                    <span>Jogos Vinculados às Tags Detectadas no Agendamento ({schedDetectedTags.games.length}):</span>
                   </div>
-                  <Switch
-                    checked={schedLinkEventDetails}
-                    onCheckedChange={setSchedLinkEventDetails}
-                    aria-label="Linkar detalhes do evento"
-                  />
+                  {schedDetectedTags.games.map((gTag) => {
+                    const currentVal = schedMentionGames[gTag] || (gTag === "game" ? schedMentionGame : "");
+                    return (
+                      <div
+                        key={gTag}
+                        className={`flex flex-col sm:flex-row sm:items-center gap-2 rounded-xl border p-2.5 transition-all ${
+                          !currentVal ? "border-amber-500/60 bg-amber-500/10" : "border-primary/30 bg-background"
+                        }`}
+                      >
+                        <Label className="text-[11px] font-bold text-foreground whitespace-nowrap">
+                          Jogo para a tag <code className="bg-primary/20 text-primary px-1.5 py-0.5 rounded font-mono font-black">[{gTag}]</code>:
+                        </Label>
+                        <select
+                          value={currentVal}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSchedMentionGames((prev) => ({ ...prev, [gTag]: val }));
+                            if (gTag === "game") setSchedMentionGame(val);
+                          }}
+                          className={`h-8 rounded-xl border bg-background px-3 text-xs font-bold flex-1 ${
+                            !currentVal ? "border-amber-500 text-amber-700 dark:text-amber-300" : ""
+                          }`}
+                        >
+                          <option value="">⚠️ (Selecione o jogo correspondente à tag [{gTag}])</option>
+                          {ALL_GAME_IDS.map((gId) => (
+                            <option key={gId} value={gId}>
+                              🎯 {GAME_NAMES[gId]}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })}
                 </div>
-              </div>
+              )}
+
+              {/* Seletores Dinâmicos de Evento da Mensagem Programada */}
+              {schedDetectedTags.events.length === 0 ? (
+                <div className="space-y-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                    <Label htmlFor="sched-mention-event-select" className="text-[11px] font-bold text-amber-700 dark:text-amber-300 whitespace-nowrap flex items-center gap-1.5">
+                      <Calendar className="h-3.5 w-3.5" />
+                      Evento para a tag <code className="bg-amber-500/20 px-1.5 py-0.5 rounded text-amber-700 dark:text-amber-300 font-mono">[event]</code>:
+                    </Label>
+                    <select
+                      id="sched-mention-event-select"
+                      value={schedMentionEventId}
+                      onChange={(e) => {
+                        setSchedMentionEventId(e.target.value);
+                        setSchedMentionEvents((prev) => ({
+                          ...prev,
+                          event: {
+                            eventId: e.target.value,
+                            linkEventDetails: prev["event"]?.linkEventDetails ?? schedLinkEventDetails,
+                          },
+                        }));
+                      }}
+                      className="h-8 rounded-xl border bg-background px-3 text-xs font-bold flex-1"
+                    >
+                      <option value="">(Nenhum evento selecionado — exibe título padrão)</option>
+                      {allConfiguredEvents.map((ev) => (
+                        <option key={ev.id} value={ev.id}>
+                          ✨ [{ev.type}] {ev.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 pt-2 border-t border-amber-500/20">
+                    <div className="space-y-0.5">
+                      <div className="text-xs font-bold text-foreground">
+                        Linkar detalhes completos do evento
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">
+                        Se ativado, torna o nome do evento clicável para abrir o modal de detalhes.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={schedLinkEventDetails}
+                      onCheckedChange={(checked) => {
+                        setSchedLinkEventDetails(checked);
+                        setSchedMentionEvents((prev) => ({
+                          ...prev,
+                          event: {
+                            eventId: prev["event"]?.eventId || schedMentionEventId,
+                            linkEventDetails: checked,
+                          },
+                        }));
+                      }}
+                      aria-label="Linkar detalhes do evento"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2.5 border-t pt-2.5">
+                  <div className="text-[11px] font-bold text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>Eventos Vinculados às Tags Detectadas no Agendamento ({schedDetectedTags.events.length}):</span>
+                  </div>
+                  {schedDetectedTags.events.map((eTag) => {
+                    const currentVal = schedMentionEvents[eTag]?.eventId || (eTag === "event" ? schedMentionEventId : "");
+                    const canLink = schedMentionEvents[eTag]?.linkEventDetails ?? (eTag === "event" ? schedLinkEventDetails : true);
+                    return (
+                      <div
+                        key={eTag}
+                        className={`space-y-2.5 rounded-xl border p-3 transition-all ${
+                          !currentVal
+                            ? "border-amber-500 bg-amber-500/10"
+                            : "border-amber-500/40 bg-amber-500/5"
+                        }`}
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                          <Label className="text-[11px] font-bold text-amber-700 dark:text-amber-300 whitespace-nowrap flex items-center gap-1.5">
+                            <Calendar className="h-3.5 w-3.5" />
+                            Evento para a tag <code className="bg-amber-500/20 px-1.5 py-0.5 rounded text-amber-700 dark:text-amber-300 font-mono font-black">[{eTag}]</code>:
+                          </Label>
+                          <select
+                            value={currentVal}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setSchedMentionEvents((prev) => ({
+                                ...prev,
+                                [eTag]: {
+                                  eventId: val,
+                                  linkEventDetails: prev[eTag]?.linkEventDetails ?? canLink,
+                                },
+                              }));
+                              if (eTag === "event") setSchedMentionEventId(val);
+                            }}
+                            className={`h-8 rounded-xl border bg-background px-3 text-xs font-bold flex-1 ${
+                              !currentVal ? "border-amber-500 text-amber-700 dark:text-amber-300 font-black" : ""
+                            }`}
+                          >
+                            <option value="">⚠️ (Selecione o evento correspondente à tag [{eTag}])</option>
+                            {allConfiguredEvents.map((ev) => (
+                              <option key={ev.id} value={ev.id}>
+                                ✨ [{ev.type}] {ev.title}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3 pt-2 border-t border-amber-500/20">
+                          <div className="space-y-0.5">
+                            <div className="text-xs font-bold text-foreground">
+                              Linkar detalhes completos para [{eTag}]
+                            </div>
+                            <p className="text-[10px] text-muted-foreground">
+                              Torna a menção <b>[{eTag}]</b> clicável para abrir o modal de detalhes do evento.
+                            </p>
+                          </div>
+                          <Switch
+                            checked={canLink}
+                            onCheckedChange={(checked) => {
+                              setSchedMentionEvents((prev) => ({
+                                ...prev,
+                                [eTag]: {
+                                  eventId: prev[eTag]?.eventId || currentVal,
+                                  linkEventDetails: checked,
+                                },
+                              }));
+                              if (eTag === "event") setSchedLinkEventDetails(checked);
+                            }}
+                            aria-label={`Linkar detalhes do evento ${eTag}`}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* GERENCIADOR DE MÍDIAS DA MENSAGEM PROGRAMADA */}

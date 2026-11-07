@@ -46,6 +46,12 @@ export interface ScheduledInboxRule {
   mentionedEventId?: string;
   mentionedEventTitle?: string;
   linkEventDetails?: boolean;
+  mentionedGames?: Record<string, string>;
+  mentionedEvents?: Record<string, {
+    eventId: string;
+    eventTitle?: string;
+    linkEventDetails?: boolean;
+  }>;
 
   // Recompensa
   reward?: {
@@ -243,6 +249,8 @@ export function triggerScheduledRule(
     mentionedEventId: rule.mentionedEventId,
     mentionedEventTitle: rule.mentionedEventTitle,
     linkEventDetails: rule.linkEventDetails,
+    mentionedGames: rule.mentionedGames,
+    mentionedEvents: rule.mentionedEvents,
     reward: rule.reward,
   };
 

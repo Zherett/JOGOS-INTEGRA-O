@@ -223,13 +223,12 @@ export function PlayerMenu({ onConfigChanged }: Props) {
     previousUnread = currentCounts.unreadCount;
 
     // Se o jogador acabou de logar (ou carregou a sessão) e possui mensagens não lidas:
-    // Abre automaticamente o modal no centro da tela e toca som de notificação
+    // Notifica com o som suave e atualiza o badge no botão do correio
     if (currentCounts.unreadCount > 0) {
-      const sessionKey = `desafios_auto_opened_inbox_${profile.id}_${currentCounts.unreadCount}`;
+      const sessionKey = `desafios_notified_inbox_${profile.id}_${currentCounts.unreadCount}`;
       try {
         if (!sessionStorage.getItem(sessionKey)) {
           sessionStorage.setItem(sessionKey, "1");
-          setInboxOpen(true);
           playNotificationChime();
         }
       } catch {
@@ -244,7 +243,6 @@ export function PlayerMenu({ onConfigChanged }: Props) {
         const counts = updateCounts();
         if (counts.unreadCount > previousUnread) {
           playNotificationChime();
-          setInboxOpen(true);
         }
         previousUnread = counts.unreadCount;
       } catch {
@@ -267,7 +265,6 @@ export function PlayerMenu({ onConfigChanged }: Props) {
         const counts = updateCounts();
         if (counts.unreadCount > 0 && (!payload.message || isMessageEligibleForPlayer(payload.message, profile))) {
           playNotificationChime();
-          setInboxOpen(true);
         }
         previousUnread = counts.unreadCount;
       } else if (payload.type === "message_read" || payload.type === "rewards_claimed") {
@@ -283,7 +280,6 @@ export function PlayerMenu({ onConfigChanged }: Props) {
 
       if (counts.unreadCount > 0 && (!msg || isMessageEligibleForPlayer(msg, profile))) {
         playNotificationChime();
-        setInboxOpen(true);
       }
       previousUnread = counts.unreadCount;
     };
