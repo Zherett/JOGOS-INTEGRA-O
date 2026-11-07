@@ -37,7 +37,7 @@ import {
   getDistinctGamesPlayed,
   getEffectivePlayerProgression,
 } from "@/lib/medals-catalog";
-import { getInboxCountsForPlayer } from "@/lib/inbox-messages";
+import { getInboxCountsForPlayer, isMessageEligibleForPlayer } from "@/lib/inbox-messages";
 import { PresenceDot } from "./PresenceDot";
 import { usePlayerAuth } from "@/lib/player-auth";
 import {
@@ -62,7 +62,7 @@ import {
   type TurmaCode,
 } from "@/lib/player-profile";
 import { ALL_GAME_IDS, GAME_NAMES, type GameId } from "@/lib/game-storage";
-import { useSoundMuted } from "@/lib/sound";
+import { useSoundMuted, playNotificationChime } from "@/lib/sound";
 import {
   fetchLeaderboard,
   playfabCompleteInitialSchoolSetup,
@@ -199,19 +199,52 @@ export function PlayerMenu({ onConfigChanged }: Props) {
       .catch(() => setPlayerRank(null));
   }, [profileOpen, profile]);
 
-  // Atualiza contador de mensagens da caixa de entrada em tempo real
+  // Atualiza contador de mensagens da caixa de entrada em tempo real, toca som e abre modal automaticamente
   useEffect(() => {
     if (!profile) {
       setInboxCounts({ unreadCount: 0, unclaimedRewardsCount: 0, totalAlerts: 0 });
       return;
     }
+
     const updateCounts = () => {
-      setInboxCounts(getInboxCountsForPlayer(profile));
+      const counts = getInboxCountsForPlayer(profile);
+      setInboxCounts(counts);
+      return counts;
     };
-    updateCounts();
-    window.addEventListener("desafios:inbox-message-received", updateCounts);
+
+    const currentCounts = updateCounts();
+
+    // Se o jogador acabou de logar (ou carregou a sessão) e possui mensagens não lidas:
+    // Abre automaticamente o modal no centro da tela e toca som de notificação
+    if (currentCounts.unreadCount > 0) {
+      const sessionKey = `desafios_auto_opened_inbox_${profile.id}_${currentCounts.unreadCount}`;
+      try {
+        if (!sessionStorage.getItem(sessionKey)) {
+          sessionStorage.setItem(sessionKey, "1");
+          setInboxOpen(true);
+          playNotificationChime();
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    // Escuta novas mensagens transmitidas enquanto o jogador estiver online
+    const handleNewMessageOnline = (evt: Event) => {
+      const counts = updateCounts();
+      const customEvt = evt as CustomEvent;
+      const msg = customEvt.detail;
+
+      // Se a mensagem for elegível para este aluno e não lida, toca som de sino e abre o modal centralizado
+      if (counts.unreadCount > 0 && (!msg || isMessageEligibleForPlayer(msg, profile))) {
+        playNotificationChime();
+        setInboxOpen(true);
+      }
+    };
+
+    window.addEventListener("desafios:inbox-message-received", handleNewMessageOnline);
     return () => {
-      window.removeEventListener("desafios:inbox-message-received", updateCounts);
+      window.removeEventListener("desafios:inbox-message-received", handleNewMessageOnline);
     };
   }, [profile, inboxOpen]);
 

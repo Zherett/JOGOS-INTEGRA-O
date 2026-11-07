@@ -28,6 +28,7 @@ import {
 } from "@/lib/inbox-messages";
 import { getAllAvailableMedals, RARITY_INFO } from "@/lib/medals-catalog";
 import { usePlayerAuth } from "@/lib/player-auth";
+import { pushInboxReadToPlayFab } from "@/lib/playfab";
 import { MedalIcon } from "./MedalIcon";
 
 interface Props {
@@ -66,6 +67,16 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
   useEffect(() => {
     if (open && profile) {
       refreshMessages();
+      const list = getInboxMessagesForPlayer(profile);
+      if (list.length > 0) {
+        // Se ainda não há mensagem selecionada, prioriza a primeira não lida ou a primeira da lista
+        const target = (!selectedMessageId ? (list.find((m) => !m.read) || list[0]) : list.find((m) => m.id === selectedMessageId)) || list[0];
+        if (target) {
+          setSelectedMessageId(target.id);
+          markInboxMessageAsRead(target.id, profile);
+          pushInboxReadToPlayFab(target.id, profile).catch(console.warn);
+        }
+      }
       // Escuta novos eventos de correio em tempo real
       const handleNew = () => refreshMessages();
       window.addEventListener("desafios:inbox-message-received", handleNew);
@@ -89,8 +100,9 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
 
   const handleSelectMessage = (msg: SystemInboxMessage) => {
     setSelectedMessageId(msg.id);
-    if (!msg.read && profile) {
+    if (profile) {
       markInboxMessageAsRead(msg.id, profile);
+      pushInboxReadToPlayFab(msg.id, profile).catch(console.warn);
       refreshMessages();
     }
   };
@@ -98,6 +110,9 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
   const handleMarkAllRead = () => {
     if (profile) {
       markAllInboxMessagesAsReadForRecipient(profile.id, profile);
+      for (const m of messages) {
+        pushInboxReadToPlayFab(m.id, profile).catch(console.warn);
+      }
       refreshMessages();
     }
   };
@@ -141,6 +156,8 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
     const res = claimInboxReward(msgId, profile);
     if (res.success) {
       setRevealedRewardModal(null);
+      markInboxMessageAsRead(msgId, profile);
+      pushInboxReadToPlayFab(msgId, profile).catch(console.warn);
       await auth.refresh();
       refreshMessages();
     } else {
@@ -459,9 +476,6 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
                             <h4 className="font-display text-base font-black text-foreground">
                               Recompensa Secreta Oculta
                             </h4>
-                            <p className="text-xs text-muted-foreground max-w-md mx-auto">
-                              O administrador marcou esta recompensa como secreta. Clique abaixo para iniciar a revelação!
-                            </p>
                           </div>
 
                           {isRevealing ? (

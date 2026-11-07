@@ -121,9 +121,20 @@ export function playVictory() {
   }
 }
 
-export function playSound(type: "correct" | "wrong" | "click" | "victory") {
+/** Som de sino/chime agradável para notificação de correio ou mensagem recebida */
+export function playNotificationChime() {
+  if (isMuted()) return;
+  // Dois tons harmônicos ascendentes suaves em onda senoidal (D5 -> A5)
+  playTone(587.33, 0.14, "sine", 0.1);
+  if (typeof window !== "undefined") {
+    window.setTimeout(() => playTone(880, 0.25, "sine", 0.12), 110);
+  }
+}
+
+export function playSound(type: "correct" | "wrong" | "click" | "victory" | "notification") {
   if (type === "correct") playCorrect();
   else if (type === "wrong") playWrong();
   else if (type === "victory") playVictory();
+  else if (type === "notification") playNotificationChime();
   else playClick();
 }

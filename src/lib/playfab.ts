@@ -116,6 +116,7 @@ import {
   createInboxMessage,
   recordDeviceSecurityAlert,
   ADMIN_NOTIFICATIONS_SHARED_GROUP_ID,
+  mergeStudentReads,
 } from "./inbox-messages.ts";
 import { invalidatePioneersCache } from "./medal-pioneers.ts";
 
@@ -2992,6 +2993,116 @@ export async function syncAdminMedalNotificationsFromPlayFab(
   }
 
   return localNotifs;
+}
+
+export interface InboxReadReceipt {
+  messageId: string;
+  studentId: string;
+  studentNick?: string;
+  studentSchool?: string;
+  readAt: string;
+}
+
+/**
+ * Publica um recibo de leitura de mensagem na nuvem PlayFab (SharedGroup público)
+ * para que o painel administrativo saiba em tempo real quem já abriu cada comunicado.
+ */
+export async function pushInboxReadToPlayFab(
+  messageId: string,
+  player: { id: string; nick?: string; nickNormalized?: string; school?: string },
+  sessionTicket?: string
+): Promise<void> {
+  if (!isPlayFabConfigured() || !messageId || !player) return;
+  try {
+    const ticket = sessionTicket ?? loadStoredSession()?.sessionTicket ?? (await getAdminPlayFabTicket());
+    if (!ticket) return;
+
+    const receipt: InboxReadReceipt = {
+      messageId,
+      studentId: player.id,
+      studentNick: player.nick,
+      studentSchool: player.school,
+      readAt: new Date().toISOString(),
+    };
+
+    const cleanNick = (player.nick || player.id).toLowerCase().replace(/[^a-z0-9_]/g, "_");
+    const cleanMsg = messageId.replace(/[^a-z0-9_]/gi, "_");
+    const key = `inbox_read_${cleanNick}_${cleanMsg}`.substring(0, 100);
+
+    await callPlayFabClient(
+      "UpdateSharedGroupData",
+      {
+        SharedGroupId: ADMIN_NOTIFICATIONS_SHARED_GROUP_ID,
+        Data: {
+          [key]: JSON.stringify(receipt),
+        },
+        Permission: "Public",
+      },
+      ticket
+    );
+  } catch (err) {
+    console.warn("Falha ao registrar leitura no PlayFab:", err);
+  }
+}
+
+/**
+ * Consulta a nuvem PlayFab para sincronizar todos os recibos de abertura de comunicados
+ * feitos pelos alunos, integrando-os ao cache local de leituras.
+ */
+export async function syncInboxReadsFromPlayFab(
+  sessionTicket?: string
+): Promise<InboxReadReceipt[]> {
+  if (!isPlayFabConfigured()) return [];
+  try {
+    const ticket = sessionTicket ?? (await getAdminPlayFabTicket()) ?? loadStoredSession()?.sessionTicket;
+    if (!ticket) return [];
+
+    const res = await callPlayFabClient<{ Data?: Record<string, { Value: string }> }>(
+      "GetSharedGroupData",
+      { SharedGroupId: ADMIN_NOTIFICATIONS_SHARED_GROUP_ID },
+      ticket
+    );
+
+    if (res.data?.Data) {
+      const receipts: InboxReadReceipt[] = [];
+      const remoteReadsToMerge: Array<{ studentKey: string; messageId: string; readAt?: string }> = [];
+
+      for (const [k, v] of Object.entries(res.data.Data)) {
+        if (!k.startsWith("inbox_read_") || !v?.Value) continue;
+        try {
+          const parsed = JSON.parse(v.Value) as InboxReadReceipt;
+          if (parsed && parsed.messageId && (parsed.studentId || parsed.studentNick)) {
+            receipts.push(parsed);
+            if (parsed.studentId) {
+              remoteReadsToMerge.push({
+                studentKey: parsed.studentId,
+                messageId: parsed.messageId,
+                readAt: parsed.readAt,
+              });
+            }
+            if (parsed.studentNick) {
+              remoteReadsToMerge.push({
+                studentKey: parsed.studentNick,
+                messageId: parsed.messageId,
+                readAt: parsed.readAt,
+              });
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+
+      if (remoteReadsToMerge.length > 0) {
+        mergeStudentReads(remoteReadsToMerge);
+      }
+
+      return receipts;
+    }
+  } catch (err) {
+    console.warn("Falha ao sincronizar leituras do PlayFab:", err);
+  }
+  return [];
 }
 
 /**

@@ -359,10 +359,16 @@ export function getInboxMessagesForPlayer(
   player: PlayerProfile | { id: string; nick?: string; school?: string; birthdate?: string }
 ): SystemInboxMessage[] {
   const all = loadAllInboxMessages();
-  const pId = player.id.toLowerCase().trim();
+  const pId = (player.id || "").toLowerCase().trim();
+  const pNick = (player.nick || "").toLowerCase().trim();
 
   const deletesMap = loadStudentMap(STUDENT_DELETES_KEY, memoryStudentDeletes)[pId] || {};
-  const readsMap = loadStudentMap(STUDENT_READS_KEY, memoryStudentReads)[pId] || {};
+  const allReads = loadStudentMap(STUDENT_READS_KEY, memoryStudentReads);
+  const readsMap: Record<string, any> = {
+    ...(allReads[pId] || {}),
+    ...(pNick ? allReads[pNick] || {} : {}),
+    ...(pId.startsWith("pf_local_") ? allReads[pId.replace(/^pf_local_/, "")] || {} : {}),
+  };
   const claimsMap = loadStudentMap(STUDENT_CLAIMS_KEY, memoryStudentClaims)[pId] || {};
 
   const playerMessages: SystemInboxMessage[] = [];
@@ -372,7 +378,10 @@ export function getInboxMessagesForPlayer(
     if (deletesMap[raw.id]) continue;
 
     if (isMessageEligibleForPlayer(raw, player)) {
-      const isRead = readsMap[raw.id] ?? raw.read;
+      // Para mensagens de transmissão (ALL), o status de lida pertence exclusivamente a este aluno
+      const isRead = raw.recipientId === "ALL"
+        ? Boolean(readsMap[raw.id])
+        : Boolean(readsMap[raw.id] ?? raw.read);
       const claimedAt = claimsMap[raw.id];
 
       // Clone com estados locais do aluno
@@ -422,22 +431,49 @@ export function markInboxMessageAsRead(
     };
 
     markKey(id);
+    if (id && id.startsWith("pf_local_")) {
+      markKey(id.replace(/^pf_local_/, ""));
+    }
     markKey(nick);
     markKey(nickNorm);
     markKey(playfabId);
     saveStudentMap(STUDENT_READS_KEY, reads, (d) => (memoryStudentReads = d));
   }
 
+  // Apenas altera m.read na mensagem mestra se for uma mensagem direta para 1 aluno específico
   const all = loadAllInboxMessages();
   let changed = false;
   for (const m of all) {
-    if (m.id === messageId && !m.read) {
+    if (m.id === messageId && m.recipientId !== "ALL" && !m.read) {
       m.read = true;
       changed = true;
     }
   }
   if (changed) {
     saveAllInboxMessages(all);
+  }
+}
+
+/**
+ * Mescla leituras vindas da nuvem PlayFab com a base local
+ */
+export function mergeStudentReads(
+  remoteReads: Array<{ studentKey: string; messageId: string; readAt?: string }>
+): void {
+  const reads = loadStudentMap(STUDENT_READS_KEY, memoryStudentReads);
+  let changed = false;
+  for (const item of remoteReads) {
+    if (!item.studentKey || !item.messageId) continue;
+    const clean = item.studentKey.toLowerCase().trim();
+    if (!clean) continue;
+    if (!reads[clean]) reads[clean] = {};
+    if (!reads[clean][item.messageId]) {
+      reads[clean][item.messageId] = item.readAt || new Date().toISOString();
+      changed = true;
+    }
+  }
+  if (changed) {
+    saveStudentMap(STUDENT_READS_KEY, reads, (d) => (memoryStudentReads = d));
   }
 }
 
@@ -466,11 +502,22 @@ export function getMessageReaders(
     const pNickNorm = (st.nickNormalized || "").toLowerCase().trim();
     const pPlayfabId = (st.playfabId || "").toLowerCase().trim();
 
-    const readVal =
+    let readVal =
       (reads[pId] && reads[pId][msg.id]) ||
-      (reads[pNick] && reads[pNick][msg.id]) ||
+      (pId.startsWith("pf_local_") && reads[pId.replace(/^pf_local_/, "")] && reads[pId.replace(/^pf_local_/, "")][msg.id]) ||
+      (pNick && reads[pNick] && reads[pNick][msg.id]) ||
       (pNickNorm && reads[pNickNorm] && reads[pNickNorm][msg.id]) ||
       (pPlayfabId && reads[pPlayfabId] && reads[pPlayfabId][msg.id]);
+
+    if (!readVal) {
+      // Varredura tolerante caso a chave salva na leitura corresponda ao aluno
+      for (const [key, msgMap] of Object.entries(reads)) {
+        if (msgMap && msgMap[msg.id] && matchPlayerIdentifier(key, st)) {
+          readVal = msgMap[msg.id];
+          break;
+        }
+      }
+    }
 
     if (readVal) {
       const readAt = typeof readVal === "string" ? readVal : undefined;
@@ -567,6 +614,9 @@ export function claimInboxReward(
   // Salva registro de resgate individual para o aluno
   claims[pId][messageId] = nowIso;
   saveStudentMap(STUDENT_CLAIMS_KEY, claims, (d) => (memoryStudentClaims = d));
+
+  // Resgatar a recompensa garante que a mensagem também seja marcada como lida
+  markInboxMessageAsRead(messageId, profile);
 
   // Se a mensagem for direta (não ALL), atualiza o objeto global da mensagem
   if (msg.recipientId !== "ALL") {

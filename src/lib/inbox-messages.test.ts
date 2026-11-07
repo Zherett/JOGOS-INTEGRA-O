@@ -14,6 +14,7 @@ import {
   deleteInboxMessageForPlayer,
   getInboxCountsForPlayer,
   getMessageReaders,
+  mergeStudentReads,
 } from "./inbox-messages.ts";
 import type { PlayerProfile } from "./playfab.ts";
 
@@ -243,5 +244,76 @@ describe("Sistema Completo de Caixa de Entrada e Correio (inbox-messages)", () =
     assert.equal(readers.readStudents.length, 2);
     assert.equal(readers.unreadStudents.length, 1);
     assert.equal(readers.unreadStudents[0].nick, "Pedro");
+  });
+
+  it("garante que mensagem de transmissão ALL não vaza status lido entre alunos diferentes", () => {
+    const s1 = createTestStudent({ id: "st_a", nick: "Zheret", nickNormalized: "zheret" });
+    const s2 = createTestStudent({ id: "st_b", nick: "Lord", nickNormalized: "lord" });
+
+    const msg = sendAdminBroadcastMessage({
+      mode: "all",
+      title: "Transmissão Oficial",
+      body: "Para todos os alunos",
+    });
+
+    // Inicialmente nenhum leu
+    const msgs1Before = getInboxMessagesForPlayer(s1);
+    const msgs2Before = getInboxMessagesForPlayer(s2);
+    assert.equal(msgs1Before[0].read, false);
+    assert.equal(msgs2Before[0].read, false);
+
+    // Zheret abre a mensagem
+    markInboxMessageAsRead(msg.id, s1);
+
+    // Zheret vê como lida, mas Lord AINDA vê como não lida
+    const msgs1After = getInboxMessagesForPlayer(s1);
+    const msgs2After = getInboxMessagesForPlayer(s2);
+    assert.equal(msgs1After[0].read, true);
+    assert.equal(msgs2After[0].read, false);
+  });
+
+  it("resgatar recompensa marca a mensagem como lida e conta em getMessageReaders", () => {
+    const s1 = createTestStudent({ id: "st_claim", nick: "Zheret", nickNormalized: "zheret" });
+
+    const msg = sendAdminBroadcastMessage({
+      mode: "all",
+      title: "Presente",
+      body: "Pegue seus pontos",
+      reward: { type: "points", pointsAmount: 30, isSecret: false },
+    });
+
+    const before = getMessageReaders(msg, [s1]);
+    assert.equal(before.readCount, 0);
+
+    // Resgata o prêmio
+    claimInboxReward(msg.id, s1);
+
+    const after = getMessageReaders(msg, [s1]);
+    assert.equal(after.readCount, 1);
+    assert.equal(after.readStudents[0].student.nick, "Zheret");
+  });
+
+  it("mergeStudentReads mescla leituras remotas com tolerância a nick, id e pf_local", () => {
+    const s1 = createTestStudent({ id: "pf_local_zheret", nick: "ZHERET", nickNormalized: "zheret" });
+
+    const msg = sendAdminBroadcastMessage({
+      mode: "all",
+      title: "Nuvem PlayFab",
+      body: "Testando sinc remota",
+    });
+
+    // Simula recibo chegado do PlayFab gravado apenas com nick em minúsculo
+    mergeStudentReads([
+      {
+        studentKey: "zheret",
+        messageId: msg.id,
+        readAt: "2026-11-07T04:00:00.000Z",
+      },
+    ]);
+
+    const readers = getMessageReaders(msg, [s1]);
+    assert.equal(readers.readCount, 1);
+    assert.equal(readers.readStudents[0].student.nick, "ZHERET");
+    assert.equal(readers.readStudents[0].readAt, "2026-11-07T04:00:00.000Z");
   });
 });

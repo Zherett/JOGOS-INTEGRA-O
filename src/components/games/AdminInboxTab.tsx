@@ -25,6 +25,7 @@ import {
   MessageSquare,
   CheckCircle2,
   Clock3,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,7 +46,11 @@ import {
   stageFromBirthdate,
   levelProgress,
 } from "@/lib/player-profile";
-import { getAllRegisteredPlayers, type PlayerProfile } from "@/lib/playfab";
+import {
+  getAllRegisteredPlayers,
+  syncInboxReadsFromPlayFab,
+  type PlayerProfile,
+} from "@/lib/playfab";
 import { usePlayerAuth } from "@/lib/player-auth";
 import { MedalIcon } from "./MedalIcon";
 
@@ -111,12 +116,19 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
     }
   }, [availableMedals, selectedMedalId]);
 
+  const [readersRefreshCount, setReadersRefreshCount] = useState(0);
+  const [isSyncingReaders, setIsSyncingReaders] = useState(false);
+
   // Carrega histórico de mensagens enviadas
   const refreshHistory = () => {
     try {
       const all = loadAllInboxMessages();
       const admMsgs = all.filter((m) => m && m.sender === "adm");
       setSentHistory(admMsgs.slice().reverse());
+      // Dispara sincronização em segundo plano das leituras na nuvem
+      syncInboxReadsFromPlayFab()
+        .then(() => setReadersRefreshCount((c) => c + 1))
+        .catch(console.warn);
     } catch (err) {
       console.error("Erro ao carregar histórico de mensagens:", err);
       setSentHistory([]);
@@ -126,6 +138,42 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
   useEffect(() => {
     refreshHistory();
   }, []);
+
+  // Sincroniza ativamente da nuvem PlayFab sempre que o modal de detalhes de leitura for aberto
+  useEffect(() => {
+    if (readersModalMsg) {
+      let isSubscribed = true;
+      setIsSyncingReaders(true);
+      syncInboxReadsFromPlayFab()
+        .then(() => {
+          if (isSubscribed) {
+            setReadersRefreshCount((c) => c + 1);
+          }
+        })
+        .catch(console.warn)
+        .finally(() => {
+          if (isSubscribed) {
+            setIsSyncingReaders(false);
+          }
+        });
+
+      return () => {
+        isSubscribed = false;
+      };
+    }
+  }, [readersModalMsg]);
+
+  const handleManualSyncReaders = async () => {
+    setIsSyncingReaders(true);
+    try {
+      await syncInboxReadsFromPlayFab();
+      setReadersRefreshCount((c) => c + 1);
+    } catch (err) {
+      console.warn("Falha na sincronização manual de leituras:", err);
+    } finally {
+      setIsSyncingReaders(false);
+    }
+  };
 
   // Alunos elegíveis de acordo com os filtros de escola e etapa
   const eligibleStudents = useMemo(() => {
@@ -343,8 +391,10 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
   // Estatísticas de leitura para o modal de inspeção
   const activeReadersData = useMemo(() => {
     if (!readersModalMsg) return null;
+    // readersRefreshCount garante recalculo imediato após retorno do PlayFab
+    void readersRefreshCount;
     return getMessageReaders(readersModalMsg, studentsList);
-  }, [readersModalMsg, studentsList]);
+  }, [readersModalMsg, studentsList, readersRefreshCount]);
 
   return (
     <div className="space-y-6">
@@ -1007,10 +1057,24 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
       <Dialog open={Boolean(readersModalMsg)} onOpenChange={() => setReadersModalMsg(null)}>
         <DialogContent className="w-[95vw] max-w-lg rounded-3xl p-6">
           <DialogHeader>
-            <DialogTitle className="font-display text-lg font-black text-foreground flex items-center gap-2">
-              <Eye className="h-5 w-5 text-primary" />
-              Controle de Leitura do Comunicado
-            </DialogTitle>
+            <div className="flex items-center justify-between gap-2 pr-6">
+              <DialogTitle className="font-display text-lg font-black text-foreground flex items-center gap-2">
+                <Eye className="h-5 w-5 text-primary" />
+                Controle de Leitura do Comunicado
+              </DialogTitle>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={isSyncingReaders}
+                onClick={handleManualSyncReaders}
+                className="h-8 px-2.5 rounded-xl text-xs font-bold gap-1.5 text-primary hover:bg-primary/10 cursor-pointer"
+                title="Sincronizar leituras registradas na nuvem PlayFab"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${isSyncingReaders ? "animate-spin" : ""}`} />
+                <span>{isSyncingReaders ? "Sincronizando..." : "Sincronizar"}</span>
+              </Button>
+            </div>
             <p className="text-xs text-muted-foreground truncate">
               {readersModalMsg?.title}
             </p>
