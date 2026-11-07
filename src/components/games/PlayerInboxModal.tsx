@@ -90,7 +90,7 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
   const handleSelectMessage = (msg: SystemInboxMessage) => {
     setSelectedMessageId(msg.id);
     if (!msg.read && profile) {
-      markInboxMessageAsRead(msg.id, profile.id);
+      markInboxMessageAsRead(msg.id, profile);
       refreshMessages();
     }
   };

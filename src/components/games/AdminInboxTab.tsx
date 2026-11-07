@@ -23,14 +23,18 @@ import {
   AlertCircle,
   HelpCircle,
   MessageSquare,
+  CheckCircle2,
+  Clock3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   sendAdminBroadcastMessage,
   loadAllInboxMessages,
+  getMessageReaders,
   type SystemInboxMessage,
   type AdminBroadcastDraft,
 } from "@/lib/inbox-messages";
@@ -42,6 +46,7 @@ import {
   levelProgress,
 } from "@/lib/player-profile";
 import { getAllRegisteredPlayers, type PlayerProfile } from "@/lib/playfab";
+import { usePlayerAuth } from "@/lib/player-auth";
 import { MedalIcon } from "./MedalIcon";
 
 interface Props {
@@ -50,6 +55,8 @@ interface Props {
 }
 
 export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Props) {
+  const auth = usePlayerAuth();
+
   // Lista de alunos garantida (usa prop ou fallback direto para a base local)
   const studentsList = useMemo(() => {
     if (Array.isArray(registeredStudents) && registeredStudents.length > 0) {
@@ -65,6 +72,7 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
   const [studentSearch, setStudentSearch] = useState("");
 
   // Conjunto de IDs de alunos explicitamente selecionados
+  // REGRA DO USUÁRIO: Por padrão, os alunos começam DESMARCADOS
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
 
   // Dados da mensagem
@@ -82,8 +90,10 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
   const [selectedMedalId, setSelectedMedalId] = useState<string>("");
   const [isSecretReward, setIsSecretReward] = useState<boolean>(false);
 
-  // Histórico de mensagens enviadas
+  // Histórico de mensagens enviadas e visualizador de leituras
   const [sentHistory, setSentHistory] = useState<SystemInboxMessage[]>([]);
+  const [readersModalMsg, setReadersModalMsg] = useState<SystemInboxMessage | null>(null);
+  const [readersTab, setReadersTab] = useState<"read" | "unread">("read");
 
   // Carrega lista de medalhas disponíveis de forma segura
   const availableMedals = useMemo(() => {
@@ -183,22 +193,10 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
     return counts;
   }, [studentsList]);
 
-  // Inicialização estável da seleção (executa na carga inicial e quando troca de modo/escola/etapa)
-  const [hasInitialized, setHasInitialized] = useState(false);
+  // Ao alternar o modo ou alterar o filtro de escola/etapa:
+  // Por regra, os alunos começam DESMARCADOS (seleção limpa)
   useEffect(() => {
-    if (!hasInitialized && studentsList.length > 0) {
-      setSelectedStudentIds(new Set(studentsList.map((s) => s.id)));
-      setHasInitialized(true);
-    }
-  }, [studentsList, hasInitialized]);
-
-  // Atualiza seleção apenas quando o modo ou os filtros específicos são alterados pelo ADM
-  useEffect(() => {
-    if (hasInitialized) {
-      const allIds = new Set(eligibleStudents.map((s) => s.id));
-      setSelectedStudentIds(allIds);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setSelectedStudentIds(new Set());
   }, [recipientMode, selectedSchool, selectedStage]);
 
   // Verifica se todos os alunos elegíveis estão marcados atualmente
@@ -255,7 +253,7 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
   };
 
   // Envio da Mensagem
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!title.trim()) {
       alert("Por favor, informe o título da mensagem.");
       return;
@@ -266,13 +264,26 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
     }
 
     if (selectedStudentIds.size === 0) {
-      alert("Nenhum aluno está selecionado para receber a mensagem. Marque pelo menos um aluno.");
+      alert(
+        "Nenhum aluno está selecionado para receber a mensagem. Marque pelo menos um aluno ou utilize o botão 'Marcar Todos'."
+      );
       return;
     }
 
-    // Calcula excluídos em caso de modo all/school/stage
-    const allEligibleIds = eligibleStudents.map((s) => s.id);
-    const excludedStudentIds = allEligibleIds.filter((id) => !selectedStudentIds.has(id));
+    // Coleta todos os identificadores (id, nick, nickNormalizado, playfabId) dos alunos marcados
+    const selectedStudents = studentsList.filter((s) => selectedStudentIds.has(s.id));
+    const targetIdentifiers: string[] = [];
+    for (const s of selectedStudents) {
+      if (s.id) targetIdentifiers.push(s.id);
+      if (s.nick) targetIdentifiers.push(s.nick);
+      if (s.nickNormalized) targetIdentifiers.push(s.nickNormalized);
+      if (s.playfabId) targetIdentifiers.push(s.playfabId);
+    }
+
+    // Alunos que foram desmarcados dentro do escopo elegível
+    const excludedStudentIds = eligibleStudents
+      .filter((s) => !selectedStudentIds.has(s.id))
+      .map((s) => s.id);
 
     // Constrói mapa de gifLinks
     const gifLinks: Record<string, string> = {};
@@ -286,7 +297,7 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
       mode: recipientMode,
       targetSchool: recipientMode === "school" ? selectedSchool : undefined,
       targetStage: recipientMode === "stage" ? selectedStage : undefined,
-      targetStudentIds: Array.from(selectedStudentIds),
+      targetStudentIds: targetIdentifiers,
       excludedStudentIds: excludedStudentIds,
       title: title.trim(),
       body: body.trim(),
@@ -302,19 +313,38 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
     };
 
     const sent = sendAdminBroadcastMessage(draft);
+
+    // Sincroniza imediatamente com PlayFab Cloud através de PlatformAdminConfig
+    const allMsgs = loadAllInboxMessages();
+    try {
+      await auth.updateAdminConfig({
+        ...auth.adminConfig,
+        inboxMessages: allMsgs.slice(0, 50),
+      });
+    } catch (err) {
+      console.warn("Aviso ao salvar configuração remota:", err);
+    }
+
     refreshHistory();
 
     const recipientCount = selectedStudentIds.size;
     const msgFeedback = `✅ Mensagem "${sent.title}" transmitida com sucesso para ${recipientCount} aluno(s)!`;
     onBroadcastSent?.(msgFeedback);
 
-    // Limpa campos do compositor
+    // Limpa campos do compositor e seleção
     setTitle("");
     setBody("");
     setGifList([]);
     setHasReward(false);
     setIsSecretReward(false);
+    setSelectedStudentIds(new Set());
   };
+
+  // Estatísticas de leitura para o modal de inspeção
+  const activeReadersData = useMemo(() => {
+    if (!readersModalMsg) return null;
+    return getMessageReaders(readersModalMsg, studentsList);
+  }, [readersModalMsg, studentsList]);
 
   return (
     <div className="space-y-6">
@@ -483,7 +513,7 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
                 <button
                   type="button"
                   onClick={handleToggleSelectAll}
-                  className={`flex items-center gap-1.5 font-bold text-xs py-1 px-3 rounded-xl transition-all cursor-pointer border ${
+                  className={`flex items-center gap-1.5 font-bold text-xs py-1.5 px-3 rounded-xl transition-all cursor-pointer border ${
                     isAllSelected
                       ? "bg-destructive/10 text-destructive border-destructive/30 hover:bg-destructive/20"
                       : "bg-primary/10 text-primary border-primary/30 hover:bg-primary/20"
@@ -854,14 +884,14 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
             <Button
               type="button"
               size="lg"
-              onClick={handleSendMessage}
+              onClick={() => void handleSendMessage()}
               className="h-12 w-full rounded-2xl font-display text-sm font-extrabold gap-2 shadow-lg cursor-pointer"
             >
               <Send className="h-4 w-4" /> Transmitir Mensagem para {selectedStudentIds.size} Aluno(s)
             </Button>
           </div>
 
-          {/* HISTÓRICO DE MENSAGENS TRANSMITIDAS */}
+          {/* HISTÓRICO DE MENSAGENS TRANSMITIDAS COM CONTADOR DE LEITURAS */}
           <div className="rounded-3xl border bg-card p-5 space-y-3 shadow-xs">
             <div className="flex items-center justify-between border-b pb-2.5">
               <div className="flex items-center gap-2">
@@ -885,7 +915,7 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
                 Nenhum comunicado foi transmitido recentemente.
               </div>
             ) : (
-              <div className="max-h-60 overflow-y-auto space-y-2">
+              <div className="max-h-72 overflow-y-auto space-y-2.5">
                 {sentHistory.map((msg) => {
                   let formattedDate = "Recente";
                   try {
@@ -900,37 +930,70 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
                     formattedDate = "Recente";
                   }
 
+                  const stats = getMessageReaders(msg, studentsList);
+                  const readPercent =
+                    stats.totalTargeted > 0
+                      ? Math.round((stats.readCount / stats.totalTargeted) * 100)
+                      : 0;
+
                   return (
                     <div
                       key={msg.id}
-                      className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 rounded-xl border bg-secondary/30 p-3 text-xs"
+                      className="flex flex-col gap-2 rounded-2xl border bg-secondary/25 p-3.5 text-xs transition-colors hover:bg-secondary/40"
                     >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-display font-bold text-foreground truncate">
-                            {msg.title}
-                          </span>
-                          {msg.reward && (
-                            <span className="rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 text-[10px] font-bold px-1.5 py-0.2 shrink-0">
-                              🎁 Recompensa
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-display font-bold text-foreground truncate text-sm">
+                              {msg.title}
                             </span>
-                          )}
+                            {msg.reward && (
+                              <span className="rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 text-[10px] font-bold px-2 py-0.5 shrink-0">
+                                🎁 Recompensa
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground truncate mt-0.5">
+                            {formattedDate} • Destinatários:{" "}
+                            {msg.recipientId === "ALL"
+                              ? msg.recipientFilter?.school
+                                ? `Escola: ${msg.recipientFilter.school}`
+                                : msg.recipientFilter?.stage
+                                  ? `Etapa: ${msg.recipientFilter.stage}`
+                                  : "Todos os Alunos"
+                              : `Aluno: ${msg.recipientId}`}
+                          </div>
                         </div>
-                        <div className="text-[10px] text-muted-foreground truncate mt-0.5">
-                          {formattedDate} • Destinatários:{" "}
-                          {msg.recipientId === "ALL"
-                            ? msg.recipientFilter?.school
-                              ? `Escola: ${msg.recipientFilter.school}`
-                              : msg.recipientFilter?.stage
-                                ? `Etapa: ${msg.recipientFilter.stage}`
-                                : "Todos os Alunos"
-                            : `Aluno: ${msg.recipientId}`}
-                        </div>
+
+                        <span className="text-[10px] font-mono text-muted-foreground shrink-0 bg-background/80 px-2 py-0.5 rounded-md border">
+                          ID: {msg.id.substring(0, 8)}
+                        </span>
                       </div>
 
-                      <span className="text-[10px] font-mono text-muted-foreground shrink-0">
-                        ID: {msg.id.substring(0, 10)}...
-                      </span>
+                      {/* ESTATÍSTICA DE LEITURAS / QUEM ABRIU A MENSAGEM */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border/40">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1 text-[11px] font-bold text-primary">
+                            <Eye className="h-3.5 w-3.5" />
+                            <span>
+                              {stats.readCount} de {stats.totalTargeted} alunos abriram ({readPercent}%)
+                            </span>
+                          </span>
+                        </div>
+
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setReadersModalMsg(msg);
+                            setReadersTab("read");
+                          }}
+                          className="h-7 rounded-xl text-[11px] font-bold gap-1 cursor-pointer"
+                        >
+                          <Users className="h-3 w-3" /> Ver Detalhes de Leitura
+                        </Button>
+                      </div>
                     </div>
                   );
                 })}
@@ -939,6 +1002,144 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
           </div>
         </div>
       </div>
+
+      {/* MODAL DE DETALHES DE LEITURA (QUEM ABRIU / QUEM NÃO ABRIU) */}
+      <Dialog open={Boolean(readersModalMsg)} onOpenChange={() => setReadersModalMsg(null)}>
+        <DialogContent className="w-[95vw] max-w-lg rounded-3xl p-6">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg font-black text-foreground flex items-center gap-2">
+              <Eye className="h-5 w-5 text-primary" />
+              Controle de Leitura do Comunicado
+            </DialogTitle>
+            <p className="text-xs text-muted-foreground truncate">
+              {readersModalMsg?.title}
+            </p>
+          </DialogHeader>
+
+          {activeReadersData && (
+            <div className="space-y-4 pt-2">
+              {/* RESUMO EM NÚMEROS */}
+              <div className="grid grid-cols-2 gap-2 text-center">
+                <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3">
+                  <div className="font-display text-2xl font-black text-emerald-600 dark:text-emerald-400">
+                    {activeReadersData.readCount}
+                  </div>
+                  <div className="text-[11px] font-bold text-muted-foreground">
+                    Já Abriram ({activeReadersData.totalTargeted > 0 ? Math.round((activeReadersData.readCount / activeReadersData.totalTargeted) * 100) : 0}%)
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-secondary/40 p-3">
+                  <div className="font-display text-2xl font-black text-foreground">
+                    {activeReadersData.unreadStudents.length}
+                  </div>
+                  <div className="text-[11px] font-bold text-muted-foreground">
+                    Ainda Não Abriram
+                  </div>
+                </div>
+              </div>
+
+              {/* SELETOR DE ABA DENTRO DO MODAL */}
+              <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-secondary p-1">
+                <button
+                  type="button"
+                  onClick={() => setReadersTab("read")}
+                  className={`rounded-lg py-1.5 text-xs font-bold transition-all cursor-pointer ${
+                    readersTab === "read"
+                      ? "bg-card text-emerald-600 dark:text-emerald-400 shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  🟢 Já Abriram ({activeReadersData.readStudents.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReadersTab("unread")}
+                  className={`rounded-lg py-1.5 text-xs font-bold transition-all cursor-pointer ${
+                    readersTab === "unread"
+                      ? "bg-card text-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  ⚪ Não Abriram ({activeReadersData.unreadStudents.length})
+                </button>
+              </div>
+
+              {/* LISTA ROLÁVEL DE ALUNOS */}
+              <div className="max-h-60 overflow-y-auto space-y-1.5 rounded-2xl border bg-background/50 p-2 text-xs">
+                {readersTab === "read" ? (
+                  activeReadersData.readStudents.length === 0 ? (
+                    <div className="py-6 text-center text-muted-foreground">
+                      Nenhum aluno abriu esta mensagem ainda.
+                    </div>
+                  ) : (
+                    activeReadersData.readStudents.map(({ student, readAt }) => (
+                      <div
+                        key={student.id}
+                        className="flex items-center justify-between gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-2.5"
+                      >
+                        <div>
+                          <div className="font-display font-bold text-foreground">
+                            {student.nick}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">
+                            {student.school || "Sem escola"}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-mono font-bold">
+                          <CheckCircle2 className="h-3 w-3" />
+                          <span>
+                            {readAt
+                              ? new Date(readAt).toLocaleTimeString("pt-BR", {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })
+                              : "Lida"}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )
+                ) : activeReadersData.unreadStudents.length === 0 ? (
+                  <div className="py-6 text-center text-emerald-600 font-bold">
+                    🎉 Todos os alunos destinatários já abriram esta mensagem!
+                  </div>
+                ) : (
+                  activeReadersData.unreadStudents.map((student) => (
+                    <div
+                      key={student.id}
+                      className="flex items-center justify-between gap-2 rounded-xl border bg-card/60 p-2.5"
+                    >
+                      <div>
+                        <div className="font-display font-bold text-foreground">
+                          {student.nick}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">
+                          {student.school || "Sem escola"}
+                        </div>
+                      </div>
+
+                      <span className="text-[10px] text-muted-foreground flex items-center gap-1 font-mono">
+                        <Clock3 className="h-3 w-3" /> Pendente
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setReadersModalMsg(null)}
+                className="w-full rounded-xl text-xs font-bold"
+              >
+                Fechar
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -74,13 +74,15 @@ const INBOX_STORAGE_KEY = "desafios_inbox_messages_v2";
 const STUDENT_CLAIMS_KEY = "desafios_student_claimed_rewards_v1";
 const STUDENT_READS_KEY = "desafios_student_read_messages_v1";
 const STUDENT_DELETES_KEY = "desafios_student_deleted_messages_v1";
+const ADMIN_CONFIG_LOCAL_KEY = "desafios-logica-admin-config-v1";
+const ADMIN_CONFIG_REMOTE_KEY = "desafios-remote-admin-config-v1";
 
 export const BROADCAST_SHARED_GROUP_ID = "SEMED_INBOX_BROADCAST_V1";
 export const ADMIN_NOTIFICATIONS_SHARED_GROUP_ID = "SEMED_ADMIN_NOTIFICATIONS_V1";
 
 let memoryInboxMessages: SystemInboxMessage[] = [];
 let memoryStudentClaims: Record<string, Record<string, string>> = {}; // playerId -> { messageId: claimedAt }
-let memoryStudentReads: Record<string, Record<string, boolean>> = {}; // playerId -> { messageId: true }
+let memoryStudentReads: Record<string, Record<string, any>> = {}; // playerId -> { messageId: timestamp | true }
 let memoryStudentDeletes: Record<string, Record<string, boolean>> = {}; // playerId -> { messageId: true }
 
 export function clearMemoryInboxMessages(): void {
@@ -91,7 +93,7 @@ export function clearMemoryInboxMessages(): void {
 }
 
 // ----------------------------------------------------------------------------
-// PERSISTÊNCIA BROWSER / LOCAL
+// PERSISTÊNCIA BROWSER / LOCAL & NUVEM
 // ----------------------------------------------------------------------------
 
 export function loadAllInboxMessages(): SystemInboxMessage[] {
@@ -100,9 +102,39 @@ export function loadAllInboxMessages(): SystemInboxMessage[] {
   }
   try {
     const raw = window.localStorage.getItem(INBOX_STORAGE_KEY);
-    if (!raw) return [...memoryInboxMessages];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    const localList: SystemInboxMessage[] = raw ? JSON.parse(raw) : [];
+
+    const map = new Map<string, SystemInboxMessage>();
+    if (Array.isArray(localList)) {
+      for (const m of localList) {
+        if (m && m.id) map.set(m.id, m);
+      }
+    }
+
+    // Mescla com mensagens salvas no cache de configuração do ADM (nuvem/PlayFab)
+    for (const key of [ADMIN_CONFIG_LOCAL_KEY, ADMIN_CONFIG_REMOTE_KEY]) {
+      try {
+        const cRaw = window.localStorage.getItem(key);
+        if (cRaw) {
+          const cfg = JSON.parse(cRaw);
+          if (Array.isArray(cfg?.inboxMessages)) {
+            for (const m of cfg.inboxMessages) {
+              if (m && m.id && !map.has(m.id)) {
+                map.set(m.id, m);
+              }
+            }
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const merged = Array.from(map.values()).sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    memoryInboxMessages = [...merged];
+    return merged;
   } catch {
     return [...memoryInboxMessages];
   }
@@ -238,17 +270,39 @@ export function sendAdminBroadcastMessage(draft: AdminBroadcastDraft): SystemInb
 // ----------------------------------------------------------------------------
 
 /**
+ * Compara de forma tolerante e sanitizada qualquer identificador do aluno (ID, nick, nickNormalizado, PlayFabId)
+ */
+export function matchPlayerIdentifier(target: string, player: any): boolean {
+  if (!target || !player) return false;
+  const t = target.toLowerCase().trim();
+  const id = (player.id || "").toLowerCase().trim();
+  const nick = (player.nick || "").toLowerCase().trim();
+  const nickNorm = (player.nickNormalized || "").toLowerCase().trim();
+  const playfabId = (player.playfabId || "").toLowerCase().trim();
+
+  if (t === id || t === nick || (nickNorm && t === nickNorm) || (playfabId && t === playfabId)) {
+    return true;
+  }
+  if (t.replace(/^pf_local_/, "") === nick || t.replace(/^pf_local_/, "") === nickNorm) {
+    return true;
+  }
+  if (id.replace(/^pf_local_/, "") === t) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Avalia se o aluno tem direito a receber uma mensagem de transmissão
  */
 export function isMessageEligibleForPlayer(
   msg: SystemInboxMessage,
-  player: { id: string; nick?: string; school?: string; birthdate?: string }
+  player: PlayerProfile | { id: string; nick?: string; nickNormalized?: string; playfabId?: string; school?: string; birthdate?: string }
 ): boolean {
-  const pId = player.id.toLowerCase().trim();
-  const pNick = (player.nick || "").toLowerCase().trim();
+  if (!player) return false;
 
   // Mensagem direta para o aluno
-  if (msg.recipientId.toLowerCase().trim() === pId || msg.recipientId.toLowerCase().trim() === pNick) {
+  if (matchPlayerIdentifier(msg.recipientId, player)) {
     return true;
   }
 
@@ -258,24 +312,22 @@ export function isMessageEligibleForPlayer(
     if (!filter) return true;
 
     // Se estiver explicitamente excluído
-    if (Array.isArray(filter.excludedStudentIds)) {
-      const isExcluded = filter.excludedStudentIds.some(
-        (ex) => ex.toLowerCase().trim() === pId || ex.toLowerCase().trim() === pNick
-      );
+    if (Array.isArray(filter.excludedStudentIds) && filter.excludedStudentIds.length > 0) {
+      const isExcluded = filter.excludedStudentIds.some((ex) => matchPlayerIdentifier(ex, player));
       if (isExcluded) return false;
     }
 
     // Se o filtro for para alunos específicos
     if (Array.isArray(filter.targetStudentIds) && filter.targetStudentIds.length > 0) {
-      const isTargeted = filter.targetStudentIds.some(
-        (t) => t.toLowerCase().trim() === pId || t.toLowerCase().trim() === pNick
-      );
+      const isTargeted = filter.targetStudentIds.some((t) => matchPlayerIdentifier(t, player));
       if (!isTargeted) return false;
     }
 
     // Filtro por escola
     if (filter.school && filter.school !== "TODAS") {
-      if (!player.school || player.school.toLowerCase().trim() !== filter.school.toLowerCase().trim()) {
+      const sSchool = (player.school || "").toLowerCase().trim();
+      const fSchool = filter.school.toLowerCase().trim();
+      if (!sSchool || sSchool !== fSchool) {
         return false;
       }
     }
@@ -283,9 +335,13 @@ export function isMessageEligibleForPlayer(
     // Filtro por etapa
     if (filter.stage && filter.stage !== "TODAS") {
       if (player.birthdate) {
-        const st = stageFromBirthdate(player.birthdate, new Date(), player.school);
-        if (st.id !== filter.stage && st.shortLabel !== filter.stage) {
-          return false;
+        try {
+          const st = stageFromBirthdate(player.birthdate, new Date(), player.school);
+          if (st.id !== filter.stage && st.shortLabel !== filter.stage) {
+            return false;
+          }
+        } catch {
+          /* ignore */
         }
       }
     }
@@ -343,14 +399,32 @@ export function getInboxMessagesForPlayer(
 }
 
 /**
- * Marca uma mensagem como lida para o aluno
+ * Marca uma mensagem como lida para o aluno com carimbo de data
  */
-export function markInboxMessageAsRead(messageId: string, playerId?: string): void {
-  if (playerId) {
-    const pId = playerId.toLowerCase().trim();
+export function markInboxMessageAsRead(
+  messageId: string,
+  playerOrId?: string | { id: string; nick?: string; nickNormalized?: string; playfabId?: string }
+): void {
+  if (playerOrId) {
+    const nowIso = new Date().toISOString();
+    const id = typeof playerOrId === "string" ? playerOrId : playerOrId.id;
+    const nick = typeof playerOrId === "object" ? playerOrId.nick : undefined;
+    const nickNorm = typeof playerOrId === "object" ? playerOrId.nickNormalized : undefined;
+    const playfabId = typeof playerOrId === "object" ? playerOrId.playfabId : undefined;
+
     const reads = loadStudentMap(STUDENT_READS_KEY, memoryStudentReads);
-    if (!reads[pId]) reads[pId] = {};
-    reads[pId][messageId] = true;
+    const markKey = (k?: string) => {
+      if (!k) return;
+      const clean = k.toLowerCase().trim();
+      if (!clean) return;
+      if (!reads[clean]) reads[clean] = {};
+      reads[clean][messageId] = nowIso;
+    };
+
+    markKey(id);
+    markKey(nick);
+    markKey(nickNorm);
+    markKey(playfabId);
     saveStudentMap(STUDENT_READS_KEY, reads, (d) => (memoryStudentReads = d));
   }
 
@@ -365,6 +439,53 @@ export function markInboxMessageAsRead(messageId: string, playerId?: string): vo
   if (changed) {
     saveAllInboxMessages(all);
   }
+}
+
+/**
+ * Calcula quem eram os destinatários de um comunicado e quem já abriu a mensagem
+ */
+export function getMessageReaders(
+  msg: SystemInboxMessage,
+  allStudents: PlayerProfile[]
+): {
+  readCount: number;
+  totalTargeted: number;
+  readStudents: { student: PlayerProfile; readAt?: string }[];
+  unreadStudents: PlayerProfile[];
+} {
+  const reads = loadStudentMap(STUDENT_READS_KEY, memoryStudentReads);
+  const readStudents: { student: PlayerProfile; readAt?: string }[] = [];
+  const unreadStudents: PlayerProfile[] = [];
+
+  // Filtra apenas os alunos que eram de fato elegíveis para receber este comunicado
+  const targeted = allStudents.filter((st) => isMessageEligibleForPlayer(msg, st));
+
+  for (const st of targeted) {
+    const pId = (st.id || "").toLowerCase().trim();
+    const pNick = (st.nick || "").toLowerCase().trim();
+    const pNickNorm = (st.nickNormalized || "").toLowerCase().trim();
+    const pPlayfabId = (st.playfabId || "").toLowerCase().trim();
+
+    const readVal =
+      (reads[pId] && reads[pId][msg.id]) ||
+      (reads[pNick] && reads[pNick][msg.id]) ||
+      (pNickNorm && reads[pNickNorm] && reads[pNickNorm][msg.id]) ||
+      (pPlayfabId && reads[pPlayfabId] && reads[pPlayfabId][msg.id]);
+
+    if (readVal) {
+      const readAt = typeof readVal === "string" ? readVal : undefined;
+      readStudents.push({ student: st, readAt });
+    } else {
+      unreadStudents.push(st);
+    }
+  }
+
+  return {
+    readCount: readStudents.length,
+    totalTargeted: targeted.length,
+    readStudents,
+    unreadStudents,
+  };
 }
 
 /**

@@ -13,6 +13,7 @@ import {
   claimInboxReward,
   deleteInboxMessageForPlayer,
   getInboxCountsForPlayer,
+  getMessageReaders,
 } from "./inbox-messages.ts";
 import type { PlayerProfile } from "./playfab.ts";
 
@@ -217,5 +218,30 @@ describe("Sistema Completo de Caixa de Entrada e Correio (inbox-messages)", () =
     assert.equal(counts1.unreadCount, 2);
     assert.equal(counts1.unclaimedRewardsCount, 1);
     assert.equal(counts1.totalAlerts, 3);
+  });
+
+  it("rastreia estatísticas de leitura (quem já abriu e quem ainda não abriu) no perfil ADM", () => {
+    const s1 = createTestStudent({ id: "st_1", nick: "Lucas", nickNormalized: "lucas" });
+    const s2 = createTestStudent({ id: "st_2", nick: "Ana", nickNormalized: "ana" });
+    const s3 = createTestStudent({ id: "st_3", nick: "Pedro", nickNormalized: "pedro" });
+
+    const msg = sendAdminBroadcastMessage({
+      mode: "all",
+      title: "Desafio SEMED",
+      body: "Para todos",
+      targetStudentIds: [s1.id, s2.id, s3.id],
+    });
+
+    // s1 e s2 abrem a mensagem
+    markInboxMessageAsRead(msg.id, s1);
+    markInboxMessageAsRead(msg.id, s2);
+
+    // s3 ainda não abriu
+    const readers = getMessageReaders(msg, [s1, s2, s3]);
+    assert.equal(readers.readCount, 2);
+    assert.equal(readers.totalTargeted, 3);
+    assert.equal(readers.readStudents.length, 2);
+    assert.equal(readers.unreadStudents.length, 1);
+    assert.equal(readers.unreadStudents[0].nick, "Pedro");
   });
 });

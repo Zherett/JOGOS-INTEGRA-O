@@ -137,6 +137,8 @@ export interface PlatformAdminConfig {
   hideAllDefaultNotices?: boolean;
   /** Pausar a rotação automática do slide do quadro de avisos */
   pauseNoticeBoard?: boolean;
+  /** Mensagens transmitidas do Correio / Caixa de Entrada */
+  inboxMessages?: any[];
   /** Optional PlayFab Title ID configured via Admin UI. */
   playfabTitleId?: string;
   updatedAt: string;
@@ -205,6 +207,7 @@ export const DEFAULT_ADMIN_CONFIG: PlatformAdminConfig = {
   enabledDefaultNotices: { ...DEFAULT_ENABLED_DEFAULT_NOTICES },
   hideAllDefaultNotices: false,
   pauseNoticeBoard: false,
+  inboxMessages: [],
   playfabTitleId: "186F63",
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
@@ -265,6 +268,7 @@ export function loadAdminConfig(): PlatformAdminConfig {
         typeof parsed.hideAllDefaultNotices === "boolean" ? parsed.hideAllDefaultNotices : false,
       pauseNoticeBoard:
         typeof parsed.pauseNoticeBoard === "boolean" ? parsed.pauseNoticeBoard : false,
+      inboxMessages: Array.isArray(parsed.inboxMessages) ? parsed.inboxMessages : [],
       dailyXpCap:
         typeof parsed.dailyXpCap === "number" && parsed.dailyXpCap >= 100
           ? Math.floor(parsed.dailyXpCap)
@@ -296,6 +300,7 @@ export function saveAdminConfig(config: PlatformAdminConfig): PlatformAdminConfi
       typeof config.hideAllDefaultNotices === "boolean" ? config.hideAllDefaultNotices : false,
     pauseNoticeBoard:
       typeof config.pauseNoticeBoard === "boolean" ? config.pauseNoticeBoard : false,
+    inboxMessages: Array.isArray(config.inboxMessages) ? config.inboxMessages : [],
     updatedAt: new Date().toISOString(),
   };
   if (typeof window !== "undefined") {
