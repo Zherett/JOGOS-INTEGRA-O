@@ -404,6 +404,18 @@ export function createSpecialEvent(args: {
   return ev;
 }
 
+export function updateSpecialEvent(
+  id: string,
+  updates: Partial<Omit<SpecialEvent, "id" | "createdAt">>
+): SpecialEvent | null {
+  const list = loadSpecialEvents();
+  const idx = list.findIndex((e) => e.id === id);
+  if (idx === -1) return null;
+  list[idx] = { ...list[idx], ...updates };
+  saveSpecialEvents(list);
+  return list[idx];
+}
+
 /* ---------------------- EVENTOS RECORRENTES ---------------------- */
 
 export interface RecurringEvent {
@@ -582,6 +594,18 @@ export function createRecurringEvent(args: {
   list.unshift(ev);
   saveRecurringEvents(list);
   return ev;
+}
+
+export function updateRecurringEvent(
+  id: string,
+  updates: Partial<Omit<RecurringEvent, "id" | "createdAt">>
+): RecurringEvent | null {
+  const list = loadRecurringEvents();
+  const idx = list.findIndex((e) => e.id === id);
+  if (idx === -1) return null;
+  list[idx] = { ...list[idx], ...updates };
+  saveRecurringEvents(list);
+  return list[idx];
 }
 
 /* ---------------------- MODELO UNIFICADO DE EXIBIÇÃO NO MENU ---------------------- */

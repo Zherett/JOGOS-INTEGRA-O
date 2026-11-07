@@ -27,6 +27,7 @@ import {
   Clock3,
   RefreshCw,
   Image as ImageIcon,
+  Gamepad2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,10 +38,12 @@ import {
   sendAdminBroadcastMessage,
   loadAllInboxMessages,
   getMessageReaders,
+  runRetroactiveInboxReadsScan,
   type SystemInboxMessage,
   type AdminBroadcastDraft,
 } from "@/lib/inbox-messages";
 import { getAllAvailableMedals, RARITY_INFO } from "@/lib/medals-catalog";
+import { ALL_GAME_IDS, GAME_NAMES, type GameId } from "@/lib/game-storage";
 import {
   SCHOOLS,
   AGE_STAGES,
@@ -85,11 +88,12 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
 
-  // Tags de GIF: [{ tagKey: "gif1", url: "" }]
-  const [gifList, setGifList] = useState<{ tagKey: string; url: string }[]>([]);
-  // Tags de Imagens Estáticas: [{ tagKey: "img1", url: "" }]
-  const [imageList, setImageList] = useState<{ tagKey: string; url: string }[]>([]);
+  // Tags de Mídia unificadas (GIFs e Imagens Estáticas): [{ id: "...", type: "img" | "gif", url: "" }]
+  const [mediaList, setMediaList] = useState<{ id: string; type: "gif" | "img"; url: string }[]>([]);
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
+
+  // Menção a Jogo na Tag [game]
+  const [selectedMentionGame, setSelectedMentionGame] = useState<string>("");
 
   // Configurações de Recompensa
   const [hasReward, setHasReward] = useState(false);
@@ -142,14 +146,21 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
     refreshHistory();
   }, []);
 
-  // Sincroniza ativamente da nuvem PlayFab sempre que o modal de detalhes de leitura for aberto
+  // Sincroniza ativamente da nuvem PlayFab e executa retrobusca sempre que o modal de detalhes de leitura for aberto
   useEffect(() => {
     if (readersModalMsg) {
       let isSubscribed = true;
       setIsSyncingReaders(true);
+
+      // 1. Executa retrobusca imediata no registro local de alunos e claims
+      runRetroactiveInboxReadsScan(studentsList);
+      setReadersRefreshCount((c) => c + 1);
+
+      // 2. Consulta a nuvem PlayFab
       syncInboxReadsFromPlayFab()
         .then(() => {
           if (isSubscribed) {
+            runRetroactiveInboxReadsScan(studentsList);
             setReadersRefreshCount((c) => c + 1);
           }
         })
@@ -164,12 +175,14 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
         isSubscribed = false;
       };
     }
-  }, [readersModalMsg]);
+  }, [readersModalMsg, studentsList]);
 
   const handleManualSyncReaders = async () => {
     setIsSyncingReaders(true);
     try {
+      runRetroactiveInboxReadsScan(studentsList);
       await syncInboxReadsFromPlayFab();
+      runRetroactiveInboxReadsScan(studentsList);
       setReadersRefreshCount((c) => c + 1);
     } catch (err) {
       console.warn("Falha na sincronização manual de leituras:", err);
@@ -279,48 +292,44 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
     });
   };
 
-  // Manipulação de GIFs
-  const handleAddGifTag = () => {
-    const nextIdx = gifList.length + 1;
-    const tagKey = `gif${nextIdx}`;
-    setGifList((prev) => [...prev, { tagKey, url: "" }]);
+  // Mídias indexadas dinamicamente com numeração incremental por tipo (gif1, gif2... img1, img2...)
+  const indexedMediaList = useMemo(() => {
+    let gifCount = 0;
+    let imgCount = 0;
+    return mediaList.map((item) => {
+      if (item.type === "gif") {
+        gifCount++;
+        return { ...item, tagKey: `gif${gifCount}` };
+      } else {
+        imgCount++;
+        return { ...item, tagKey: `img${imgCount}` };
+      }
+    });
+  }, [mediaList]);
+
+  // Manipulação de Mídias (+ Adicionar Mídia)
+  const handleAddMedia = (type: "gif" | "img" = "img") => {
+    const id = `media_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    setMediaList((prev) => [...prev, { id, type, url: "" }]);
   };
 
-  const handleRemoveGifTag = (idx: number) => {
-    setGifList((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  const handleUpdateGifUrl = (idx: number, url: string) => {
-    setGifList((prev) =>
-      prev.map((item, i) => (i === idx ? { ...item, url: url.trim() } : item))
+  const handleToggleMediaType = (id: string, newType: "gif" | "img") => {
+    setMediaList((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, type: newType } : m))
     );
   };
 
-  const handleInsertGifIntoBody = (tagKey: string) => {
-    const tag = `[${tagKey}]`;
-    setBody((prev) => (prev ? `${prev}\n${tag}\n` : `${tag}\n`));
-    setCopiedTag(tagKey);
-    setTimeout(() => setCopiedTag(null), 2000);
-  };
-
-  // Manipulação de Imagens Estáticas ([img1], [img2], etc.)
-  const handleAddImageTag = () => {
-    const nextIdx = imageList.length + 1;
-    const tagKey = `img${nextIdx}`;
-    setImageList((prev) => [...prev, { tagKey, url: "" }]);
-  };
-
-  const handleRemoveImageTag = (idx: number) => {
-    setImageList((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  const handleUpdateImageUrl = (idx: number, url: string) => {
-    setImageList((prev) =>
-      prev.map((item, i) => (i === idx ? { ...item, url: url.trim() } : item))
+  const handleUpdateMediaUrl = (id: string, url: string) => {
+    setMediaList((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, url: url.trim() } : m))
     );
   };
 
-  const handleInsertImageIntoBody = (tagKey: string) => {
+  const handleRemoveMedia = (id: string) => {
+    setMediaList((prev) => prev.filter((m) => m.id !== id));
+  };
+
+  const handleInsertTagIntoBody = (tagKey: string) => {
     const tag = `[${tagKey}]`;
     setBody((prev) => (prev ? `${prev}\n${tag}\n` : `${tag}\n`));
     setCopiedTag(tagKey);
@@ -360,19 +369,16 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
       .filter((s) => !selectedStudentIds.has(s.id))
       .map((s) => s.id);
 
-    // Constrói mapa de gifLinks
+    // Constrói mapas de gifLinks e imageLinks a partir da lista unificada de mídias
     const gifLinks: Record<string, string> = {};
-    for (const g of gifList) {
-      if (g.url.trim()) {
-        gifLinks[g.tagKey] = g.url.trim();
-      }
-    }
-
-    // Constrói mapa de imageLinks ([img1], [img2], etc.)
     const imageLinks: Record<string, string> = {};
-    for (const img of imageList) {
-      if (img.url.trim()) {
-        imageLinks[img.tagKey] = img.url.trim();
+    for (const m of indexedMediaList) {
+      if (m.url.trim()) {
+        if (m.type === "gif") {
+          gifLinks[m.tagKey] = m.url.trim();
+        } else {
+          imageLinks[m.tagKey] = m.url.trim();
+        }
       }
     }
 
@@ -386,6 +392,7 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
       body: body.trim(),
       gifLinks: Object.keys(gifLinks).length > 0 ? gifLinks : undefined,
       imageLinks: Object.keys(imageLinks).length > 0 ? imageLinks : undefined,
+      mentionedGameId: selectedMentionGame || undefined,
       reward: hasReward
         ? {
             type: rewardType,
@@ -418,8 +425,8 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
     // Limpa campos do compositor e seleção
     setTitle("");
     setBody("");
-    setGifList([]);
-    setImageList([]);
+    setMediaList([]);
+    setSelectedMentionGame("");
     setHasReward(false);
     setIsSecretReward(false);
     setSelectedStudentIds(new Set());
@@ -732,168 +739,189 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
               />
             </div>
 
-            {/* GERENCIADOR DE MÍDIAS (GIFS E IMAGENS ESTÁTICAS) */}
-            <div className="space-y-4 rounded-2xl border bg-secondary/30 p-3.5">
+            {/* MENÇÕES DINÂMICAS: [nick] e [game] */}
+            <div className="rounded-2xl border bg-secondary/20 p-3.5 space-y-2.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-amber-500" />
+                  <Gamepad2 className="h-4 w-4 text-primary" />
                   <span className="font-display text-xs font-bold text-foreground">
-                    Anexar Mídias (GIFs Animados & Imagens Estáticas)
+                    Menções Dinâmicas no Texto: Tag [nick] & Tag [game]
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={handleAddGifTag}
-                    className="h-7 rounded-xl text-[11px] font-bold gap-1 cursor-pointer"
+                    onClick={() => {
+                      setBody((prev) => (prev ? `${prev} [nick] ` : "[nick] "));
+                    }}
+                    className="h-7 rounded-xl text-[11px] font-bold cursor-pointer"
+                    title="Insere a tag [nick], que menciona dinamicamente o nick do próprio aluno"
                   >
-                    <Plus className="h-3 w-3" /> GIF ([gif])
+                    + Inserir [nick]
                   </Button>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={handleAddImageTag}
-                    className="h-7 rounded-xl text-[11px] font-bold gap-1 cursor-pointer border-blue-500/40 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10"
+                    onClick={() => {
+                      setBody((prev) => (prev ? `${prev} [game] ` : "[game] "));
+                    }}
+                    className="h-7 rounded-xl text-[11px] font-bold cursor-pointer border-primary/40 text-primary hover:bg-primary/10"
+                    title="Insere a tag [game], que escreve o nome do jogo selecionado"
                   >
-                    <ImageIcon className="h-3 w-3" /> Imagem ([img])
+                    + Inserir [game]
                   </Button>
                 </div>
               </div>
 
-              {/* LISTA DE GIFS */}
-              {gifList.length > 0 && (
-                <div className="space-y-2 border-t border-border/50 pt-2">
-                  <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                    <Sparkles className="h-3 w-3" /> GIFs Animados:
-                  </span>
-                  {gifList.map((gif, idx) => (
-                    <div
-                      key={gif.tagKey}
-                      className="flex flex-col sm:flex-row items-start sm:items-center gap-2 rounded-xl border bg-background p-2.5"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => handleInsertGifIntoBody(gif.tagKey)}
-                        title="Clique para inserir a tag no texto"
-                        className="inline-flex items-center gap-1 rounded-lg bg-amber-500/15 border border-amber-500/30 px-2 py-1 text-xs font-mono font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-500 hover:text-zinc-950 transition-colors cursor-pointer shrink-0"
-                      >
-                        {copiedTag === gif.tagKey ? (
-                          <>
-                            <Check className="h-3 w-3" /> Inserido!
-                          </>
-                        ) : (
-                          <>
-                            [{gif.tagKey}] <Copy className="h-3 w-3 opacity-70" />
-                          </>
-                        )}
-                      </button>
-
-                      <Input
-                        value={gif.url}
-                        onChange={(e) => handleUpdateGifUrl(idx, e.target.value)}
-                        placeholder="Cole o link direto do GIF (ex: https://media.tenor.com/.../anim.gif)"
-                        className="h-8 rounded-lg text-xs flex-1"
-                      />
-
-                      {gif.url && (
-                        <div className="h-8 w-8 rounded-lg border bg-muted/50 overflow-hidden shrink-0 flex items-center justify-center">
-                          <img
-                            src={gif.url}
-                            alt="preview"
-                            className="h-full w-full object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLElement).style.display = "none";
-                            }}
-                          />
-                        </div>
-                      )}
-
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRemoveGifTag(idx)}
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive rounded-lg cursor-pointer shrink-0"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                <Label htmlFor="mention-game-select" className="text-[11px] font-bold text-muted-foreground whitespace-nowrap">
+                  Jogo selecionado para a tag <code className="bg-muted px-1.5 py-0.5 rounded text-primary font-mono">[game]</code>:
+                </Label>
+                <select
+                  id="mention-game-select"
+                  value={selectedMentionGame}
+                  onChange={(e) => setSelectedMentionGame(e.target.value)}
+                  className="h-8 rounded-xl border bg-background px-3 text-xs font-bold flex-1"
+                >
+                  <option value="">(Nenhum jogo selecionado — tag [game] inativa)</option>
+                  {ALL_GAME_IDS.map((gId) => (
+                    <option key={gId} value={gId}>
+                      🎯 {GAME_NAMES[gId]}
+                    </option>
                   ))}
-                </div>
-              )}
+                </select>
+              </div>
 
-              {/* LISTA DE IMAGENS ESTÁTICAS */}
-              {imageList.length > 0 && (
-                <div className="space-y-2 border-t border-border/50 pt-2">
-                  <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                    <ImageIcon className="h-3 w-3" /> Imagens Estáticas (PNG, JPG, WebP):
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                💡 <b>[nick]</b> menciona automaticamente o apelido do aluno que abrir a mensagem (ex: <i>&quot;Parabéns, [nick]!&quot;</i>).<br />
+                💡 <b>[game]</b> escreve o nome do jogo selecionado acima como menção em texto puro (não linka e não redireciona o jogo).
+              </p>
+            </div>
+
+            {/* GERENCIADOR DE MÍDIAS (GIFS E IMAGENS) */}
+            <div className="space-y-3.5 rounded-2xl border bg-secondary/30 p-3.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-amber-500" />
+                  <span className="font-display text-xs font-bold text-foreground">
+                    Anexar Mídia (GIFs Animados & Imagens)
                   </span>
-                  {imageList.map((img, idx) => (
-                    <div
-                      key={img.tagKey}
-                      className="flex flex-col sm:flex-row items-start sm:items-center gap-2 rounded-xl border bg-background p-2.5"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => handleInsertImageIntoBody(img.tagKey)}
-                        title="Clique para inserir a tag no texto"
-                        className="inline-flex items-center gap-1 rounded-lg bg-blue-500/15 border border-blue-500/30 px-2 py-1 text-xs font-mono font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-500 hover:text-white transition-colors cursor-pointer shrink-0"
-                      >
-                        {copiedTag === img.tagKey ? (
-                          <>
-                            <Check className="h-3 w-3" /> Inserido!
-                          </>
-                        ) : (
-                          <>
-                            [{img.tagKey}] <Copy className="h-3 w-3 opacity-70" />
-                          </>
-                        )}
-                      </button>
-
-                      <Input
-                        value={img.url}
-                        onChange={(e) => handleUpdateImageUrl(idx, e.target.value)}
-                        placeholder="Cole o link direto da imagem (ex: https://.../aviso.png)"
-                        className="h-8 rounded-lg text-xs flex-1"
-                      />
-
-                      {img.url && (
-                        <div className="h-8 w-8 rounded-lg border bg-muted/50 overflow-hidden shrink-0 flex items-center justify-center">
-                          <img
-                            src={img.url}
-                            alt="preview"
-                            className="h-full w-full object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLElement).style.display = "none";
-                            }}
-                          />
-                        </div>
-                      )}
-
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRemoveImageTag(idx)}
-                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive rounded-lg cursor-pointer shrink-0"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  ))}
                 </div>
-              )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleAddMedia("img")}
+                  className="h-8 rounded-xl text-xs font-bold gap-1.5 cursor-pointer bg-primary/10 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Adicionar Mídia
+                </Button>
+              </div>
 
-              {gifList.length === 0 && imageList.length === 0 ? (
+              {indexedMediaList.length === 0 ? (
                 <p className="text-[11px] text-muted-foreground">
-                  Nenhuma mídia anexada. Use os botões acima para adicionar tags como <code>[gif1]</code> para animações ou <code>[img1]</code> para imagens estáticas (PNG, JPG, etc.) e cole as URLs correspondentes.
+                  Nenhuma mídia anexada. Clique em <b>&quot;+ Adicionar Mídia&quot;</b> para incluir uma imagem (<code>[img1]</code>) ou GIF animado (<code>[gif1]</code>) e colar a URL correspondente.
                 </p>
               ) : (
-                <div className="text-[10px] text-muted-foreground pt-1 border-t">
-                  💡 <b>Dica:</b> Clique no botão da tag (ex: <code>[gif1]</code> ou <code>[img1]</code>) para inseri-la automaticamente no corpo do texto.
+                <div className="space-y-2.5 border-t border-border/50 pt-2.5">
+                  {indexedMediaList.map((m) => (
+                    <div
+                      key={m.id}
+                      className="flex flex-col sm:flex-row items-start sm:items-center gap-2 rounded-xl border bg-background p-2.5"
+                    >
+                      {/* Alternador de Tipo: Imagem ou GIF */}
+                      <div className="flex items-center rounded-lg bg-secondary p-0.5 shrink-0 border">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleMediaType(m.id, "img")}
+                          className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-bold transition-all cursor-pointer ${
+                            m.type === "img"
+                              ? "bg-card text-blue-600 dark:text-blue-400 shadow-xs"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          <ImageIcon className="h-3 w-3" /> Img
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleMediaType(m.id, "gif")}
+                          className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-bold transition-all cursor-pointer ${
+                            m.type === "gif"
+                              ? "bg-card text-amber-600 dark:text-amber-400 shadow-xs"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          <Sparkles className="h-3 w-3" /> GIF
+                        </button>
+                      </div>
+
+                      {/* Botão de Inserir Tag */}
+                      <button
+                        type="button"
+                        onClick={() => handleInsertTagIntoBody(m.tagKey)}
+                        title="Clique para inserir a tag no texto da mensagem"
+                        className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-mono font-bold transition-colors cursor-pointer shrink-0 ${
+                          m.type === "gif"
+                            ? "bg-amber-500/15 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500 hover:text-zinc-950"
+                            : "bg-blue-500/15 border-blue-500/30 text-blue-600 dark:text-blue-400 hover:bg-blue-500 hover:text-white"
+                        }`}
+                      >
+                        {copiedTag === m.tagKey ? (
+                          <>
+                            <Check className="h-3 w-3" /> Inserido!
+                          </>
+                        ) : (
+                          <>
+                            [{m.tagKey}] <Copy className="h-3 w-3 opacity-70" />
+                          </>
+                        )}
+                      </button>
+
+                      {/* Input da URL */}
+                      <Input
+                        value={m.url}
+                        onChange={(e) => handleUpdateMediaUrl(m.id, e.target.value)}
+                        placeholder={
+                          m.type === "gif"
+                            ? "Link direto do GIF (ex: https://.../anim.gif)"
+                            : "Link direto da imagem (ex: https://.../aviso.png)"
+                        }
+                        className="h-8 rounded-lg text-xs flex-1"
+                      />
+
+                      {/* Preview em miniatura */}
+                      {m.url && (
+                        <div className="h-8 w-8 rounded-lg border bg-muted/50 overflow-hidden shrink-0 flex items-center justify-center">
+                          <img
+                            src={m.url}
+                            alt="preview"
+                            className="h-full w-full object-cover"
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = "none";
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {/* Botão Remover */}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveMedia(m.id)}
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive rounded-lg cursor-pointer shrink-0"
+                        title="Remover anexo"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                  <div className="text-[10px] text-muted-foreground pt-1 border-t">
+                    💡 <b>Dica:</b> Escolha entre <b>Img</b> (tag <code>[img1]</code>) ou <b>GIF</b> (tag <code>[gif1]</code>) e clique no botão da tag para inseri-la no texto da mensagem.
+                  </div>
                 </div>
               )}
             </div>
@@ -1181,15 +1209,15 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
               </DialogTitle>
               <Button
                 type="button"
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 disabled={isSyncingReaders}
                 onClick={handleManualSyncReaders}
-                className="h-8 px-2.5 rounded-xl text-xs font-bold gap-1.5 text-primary hover:bg-primary/10 cursor-pointer"
-                title="Sincronizar leituras registradas na nuvem PlayFab"
+                className="h-8 px-3 rounded-xl text-xs font-bold gap-1.5 text-primary border-primary/30 hover:bg-primary/10 cursor-pointer"
+                title="Executa a retrobusca completa em todas as contas e sincroniza com a nuvem PlayFab"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${isSyncingReaders ? "animate-spin" : ""}`} />
-                <span>{isSyncingReaders ? "Sincronizando..." : "Sincronizar"}</span>
+                <span>{isSyncingReaders ? "Varrendo Leituras..." : "Retrobusca & Sincronizar"}</span>
               </Button>
             </div>
             <p className="text-xs text-muted-foreground truncate">

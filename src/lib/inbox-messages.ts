@@ -10,6 +10,7 @@ import type { PlayerProfile } from "./playfab.ts";
 import { awardCareerPoints } from "./career-points.ts";
 import { getAllAvailableMedals, type PlayerUnlockedMedal } from "./medals-catalog.ts";
 import { stageFromBirthdate } from "./player-profile.ts";
+import { GAME_NAMES, type GameId } from "./game-storage.ts";
 
 export type InboxRewardType = "points" | "medal" | "future_item";
 
@@ -50,6 +51,7 @@ export interface SystemInboxMessage {
   body: string;
   gifLinks?: Record<string, string>; // ex: { gif1: "https://...", gif2: "https://..." }
   imageLinks?: Record<string, string>; // ex: { img1: "https://...", img2: "https://..." }
+  mentionedGameId?: string; // ID do jogo referenciado na tag [game] (apenas menção de texto)
   reward?: InboxReward;
   metadata?: {
     deviceInfo?: string;
@@ -191,6 +193,7 @@ export function createInboxMessage(
     body: data.body,
     gifLinks: data.gifLinks ?? {},
     imageLinks: data.imageLinks ?? {},
+    mentionedGameId: data.mentionedGameId,
     reward: data.reward,
     metadata: data.metadata,
     read: false,
@@ -222,12 +225,38 @@ export interface AdminBroadcastDraft {
   body: string;
   gifLinks?: Record<string, string>;
   imageLinks?: Record<string, string>;
+  mentionedGameId?: string;
   reward?: {
     type: InboxRewardType;
     pointsAmount?: number;
     medalId?: string;
     isSecret: boolean;
   };
+}
+
+/**
+ * Resolve tags dinâmicas de texto como [nick] e [game]
+ */
+export function formatInboxMessageText(
+  text: string,
+  options?: {
+    playerNick?: string;
+    mentionedGameId?: string;
+    mentionedGameName?: string;
+  }
+): string {
+  if (!text) return "";
+  let res = text;
+  if (options?.playerNick !== undefined) {
+    res = res.replace(/\[nick\]/gi, options.playerNick || "Aluno");
+  }
+  const gameName =
+    options?.mentionedGameName ||
+    (options?.mentionedGameId ? GAME_NAMES[options.mentionedGameId as GameId] || options.mentionedGameId : "");
+  if (gameName) {
+    res = res.replace(/\[game\]/gi, gameName);
+  }
+  return res;
 }
 
 /**
@@ -263,6 +292,7 @@ export function sendAdminBroadcastMessage(draft: AdminBroadcastDraft): SystemInb
     body: draft.body.trim(),
     gifLinks: draft.gifLinks ?? {},
     imageLinks: draft.imageLinks ?? {},
+    mentionedGameId: draft.mentionedGameId || undefined,
     reward: rewardObj,
   });
 
@@ -523,6 +553,24 @@ export function getMessageReaders(
       }
     }
 
+    // Se o aluno resgatou a recompensa da mensagem, ele comprovadamente abriu e leu a mensagem
+    if (!readVal) {
+      const claims = loadStudentMap(STUDENT_CLAIMS_KEY, memoryStudentClaims);
+      readVal =
+        (claims[pId] && claims[pId][msg.id]) ||
+        (pNick && claims[pNick] && claims[pNick][msg.id]) ||
+        (pNickNorm && claims[pNickNorm] && claims[pNickNorm][msg.id]) ||
+        (pPlayfabId && claims[pPlayfabId] && claims[pPlayfabId][msg.id]);
+      if (!readVal) {
+        for (const [key, msgMap] of Object.entries(claims)) {
+          if (msgMap && msgMap[msg.id] && matchPlayerIdentifier(key, st)) {
+            readVal = msgMap[msg.id];
+            break;
+          }
+        }
+      }
+    }
+
     if (readVal) {
       const readAt = typeof readVal === "string" ? readVal : undefined;
       readStudents.push({ student: st, readAt });
@@ -537,6 +585,63 @@ export function getMessageReaders(
     readStudents,
     unreadStudents,
   };
+}
+
+/**
+ * Executa uma varredura retroativa ampla para reconciliar recibos de leitura
+ * a partir de claims de recompensa, contas registradas e registros locais/remotos.
+ */
+export function runRetroactiveInboxReadsScan(
+  allStudents: PlayerProfile[] = []
+): { recoveredCount: number } {
+  let recoveredCount = 0;
+  const reads = loadStudentMap(STUDENT_READS_KEY, memoryStudentReads);
+  const claims = loadStudentMap(STUDENT_CLAIMS_KEY, memoryStudentClaims);
+
+  // 1. Reconciliação a partir de Recompensas Resgatadas (Claims):
+  // Se um aluno resgatou a recompensa de uma mensagem, ele comprovadamente abriu a mensagem.
+  for (const [studentKey, msgClaims] of Object.entries(claims)) {
+    if (!msgClaims || typeof msgClaims !== "object") continue;
+    if (!reads[studentKey]) reads[studentKey] = {};
+    for (const [msgId, claimedAt] of Object.entries(msgClaims)) {
+      if (claimedAt && !reads[studentKey][msgId]) {
+        reads[studentKey][msgId] = typeof claimedAt === "string" ? claimedAt : new Date().toISOString();
+        recoveredCount++;
+      }
+    }
+  }
+
+  // 2. Propagação de leitura entre os múltiplos identificadores do mesmo aluno
+  for (const st of allStudents) {
+    if (!st) continue;
+    const pId = (st.id || "").toLowerCase().trim();
+    const pNick = (st.nick || "").toLowerCase().trim();
+    const pNickNorm = (st.nickNormalized || "").toLowerCase().trim();
+    const pPlayfab = (st.playfabId || "").toLowerCase().trim();
+
+    const knownReads: Record<string, string> = {
+      ...(reads[pId] || {}),
+      ...(pNick ? reads[pNick] || {} : {}),
+      ...(pNickNorm ? reads[pNickNorm] || {} : {}),
+      ...(pPlayfab ? reads[pPlayfab] || {} : {}),
+    };
+
+    if (Object.keys(knownReads).length > 0) {
+      for (const alias of [pId, pNick, pNickNorm, pPlayfab]) {
+        if (!alias) continue;
+        if (!reads[alias]) reads[alias] = {};
+        for (const [mId, ts] of Object.entries(knownReads)) {
+          if (!reads[alias][mId]) {
+            reads[alias][mId] = ts;
+            recoveredCount++;
+          }
+        }
+      }
+    }
+  }
+
+  saveStudentMap(STUDENT_READS_KEY, reads, (d) => (memoryStudentReads = d));
+  return { recoveredCount };
 }
 
 /**

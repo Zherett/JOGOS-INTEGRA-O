@@ -32,6 +32,7 @@ import {
   Play,
   Eye,
   EyeOff,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -188,6 +189,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   // Special Events states (with 3 simultaneous lines of bonus)
   const [specialEvents, setSpecialEvents] = useState<SpecialEvent[]>([]);
   const [isCreatingEvent, setIsCreatingEvent] = useState(false);
+  const [editingSpecialEventId, setEditingSpecialEventId] = useState<string | null>(null);
   const [evTitle, setEvTitle] = useState("");
   const [evDesc, setEvDesc] = useState("");
   const [evScope, setEvScope] = useState<EventScope>("todos");
@@ -225,6 +227,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
   const [eventosSubTab, setEventosSubTab] = useState<"criacao" | "recorrentes">("criacao");
   const [recurringEvents, setRecurringEvents] = useState<RecurringEvent[]>([]);
   const [isCreatingRecurring, setIsCreatingRecurring] = useState(false);
+  const [editingRecurringEventId, setEditingRecurringEventId] = useState<string | null>(null);
   const [recTitle, setRecTitle] = useState("");
   const [recDesc, setRecDesc] = useState("");
   const [recScope, setRecScope] = useState<EventScope>("todos");
@@ -635,6 +638,32 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     return parts.join(" • ");
   }
 
+  function handleStartEditSpecialEvent(ev: SpecialEvent) {
+    setEditingSpecialEventId(ev.id);
+    setEvTitle(ev.title);
+    setEvDesc(ev.description || "");
+    setEvScope(ev.scope);
+    const durationHours =
+      Math.max(
+        1,
+        Math.round((new Date(ev.endsAt).getTime() - new Date(ev.startsAt).getTime()) / (3600 * 1000))
+      ) || 24;
+    setEvDurationHours(durationHours);
+    setEvHasMultiplier(Boolean(ev.xpMultiplier && ev.xpMultiplier > 1));
+    setEvMultiplier(ev.xpMultiplier || 2);
+    setEvHasMatchCap(Boolean(ev.matchXpCap && ev.matchXpCap > 20));
+    setEvMatchXpCap(ev.matchXpCap || 30);
+    setEvHasDailyCap(Boolean(ev.dailyXpCap && ev.dailyXpCap > 1000));
+    setEvDailyExtraXp(ev.dailyXpCap ? Math.max(100, ev.dailyXpCap - 1000) : 500);
+    setEvHasRankedMultiplier(Boolean(ev.rankedMultiplier && ev.rankedMultiplier > 1));
+    setEvRankedMultiplier(ev.rankedMultiplier || 2);
+    setEvHasPointsMultiplier(Boolean(ev.pointsMultiplier && ev.pointsMultiplier > 1));
+    setEvPointsMultiplier(ev.pointsMultiplier || 2);
+    setEvObjective(ev.objectiveDescription || "");
+    setEvLinkedMedalId(ev.linkedMedalId || "");
+    setIsCreatingEvent(true);
+  }
+
   async function handleCreateEvent(e: React.FormEvent) {
     e.preventDefault();
     if (!evTitle.trim()) {
@@ -654,6 +683,51 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
         newCustoms.push(m);
       }
       linkedIds.push(m.id);
+    }
+
+    if (editingSpecialEventId) {
+      const list = specialEvents.map((existing) => {
+        if (existing.id !== editingSpecialEventId) return existing;
+        const startsAtTime = new Date(existing.startsAt).getTime();
+        const nextEndsAt = new Date(startsAtTime + Number(evDurationHours) * 3600 * 1000).toISOString();
+        return {
+          ...existing,
+          title: evTitle.trim(),
+          description: evDesc.trim(),
+          scope: evScope,
+          bonusType: (evHasDailyCap
+            ? "aumentar_limite_diario"
+            : evHasMultiplier
+              ? evMultiplier === 2
+                ? "dobro_xp"
+                : "xp_1_5x"
+              : "personalizado") as EventBonusType,
+          bonusValue: evHasDailyCap ? 1000 + Number(evDailyExtraXp) : undefined,
+          xpMultiplier: evHasMultiplier ? Number(evMultiplier) : undefined,
+          rankedMultiplier: evHasRankedMultiplier ? Number(evRankedMultiplier) : undefined,
+          pointsMultiplier: evHasPointsMultiplier ? Number(evPointsMultiplier) : undefined,
+          matchXpCap: evHasMatchCap ? Number(evMatchXpCap) : undefined,
+          dailyXpCap: evHasDailyCap ? 1000 + Number(evDailyExtraXp) : undefined,
+          endsAt: nextEndsAt,
+          linkedMedalId: linkedIds[0] ?? (evLinkedMedalId || existing.linkedMedalId || null),
+          linkedMedalIds: linkedIds.length > 0 ? linkedIds : existing.linkedMedalIds,
+          objectiveDescription: evObjective?.trim() || null,
+        };
+      });
+      setSpecialEvents(list);
+      saveSpecialEvents(list);
+      setIsCreatingEvent(false);
+      setEditingSpecialEventId(null);
+      setEvTitle("");
+      setEvDesc("");
+      setEvObjective("");
+      setEvAttachedMedals([]);
+      const nextCfg = { ...draft, specialEvents: list, customMedals: newCustoms };
+      setDraft(nextCfg);
+      await auth.updateAdminConfig(nextCfg);
+      flashSaved("✅ Evento especial atualizado com sucesso!");
+      onConfigSaved?.();
+      return;
     }
 
     createSpecialEvent({
@@ -681,6 +755,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     const updated = loadSpecialEvents();
     setSpecialEvents(updated);
     setIsCreatingEvent(false);
+    setEditingSpecialEventId(null);
     setEvTitle("");
     setEvDesc("");
     setEvObjective("");
@@ -743,6 +818,28 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     onConfigSaved?.();
   }
 
+  function handleStartEditRecurringEvent(ev: RecurringEvent) {
+    setEditingRecurringEventId(ev.id);
+    setRecTitle(ev.title);
+    setRecDesc(ev.description || "");
+    setRecScope(ev.scope);
+    setRecDaysOfWeek(ev.daysOfWeek || []);
+    setRecSpecificDates(ev.specificDates || []);
+    setRecHasMultiplier(Boolean(ev.xpMultiplier && ev.xpMultiplier > 1));
+    setRecMultiplier(ev.xpMultiplier || 1.5);
+    setRecHasMatchCap(Boolean(ev.matchXpCap && ev.matchXpCap > 20));
+    setRecMatchCap(ev.matchXpCap || 30);
+    setRecHasDailyCap(Boolean(ev.dailyXpCap && ev.dailyXpCap > 1000));
+    setRecDailyExtraXp(ev.dailyXpCap ? Math.max(100, ev.dailyXpCap - 1000) : 500);
+    setRecHasRankedMultiplier(Boolean(ev.rankedMultiplier && ev.rankedMultiplier > 1));
+    setRecRankedMultiplier(ev.rankedMultiplier || 2);
+    setRecHasPointsMultiplier(Boolean(ev.pointsMultiplier && ev.pointsMultiplier > 1));
+    setRecPointsMultiplier(ev.pointsMultiplier || 2);
+    setRecObjective(ev.objectiveDescription || "");
+    setRecLinkedMedal(ev.linkedMedalId || "");
+    setIsCreatingRecurring(true);
+  }
+
   async function handleCreateRecurringEvent(e: React.FormEvent) {
     e.preventDefault();
     if (!recTitle.trim()) {
@@ -766,6 +863,44 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
         newCustoms.push(m);
       }
       linkedIds.push(m.id);
+    }
+
+    if (editingRecurringEventId) {
+      const list = recurringEvents.map((existing) => {
+        if (existing.id !== editingRecurringEventId) return existing;
+        return {
+          ...existing,
+          title: recTitle.trim(),
+          description: recDesc.trim(),
+          scope: recScope,
+          daysOfWeek: recDaysOfWeek,
+          specificDates: recSpecificDates,
+          xpMultiplier: recHasMultiplier ? Number(recMultiplier) : undefined,
+          rankedMultiplier: recHasRankedMultiplier ? Number(recRankedMultiplier) : undefined,
+          pointsMultiplier: recHasPointsMultiplier ? Number(recPointsMultiplier) : undefined,
+          matchXpCap: recHasMatchCap ? Number(recMatchCap) : undefined,
+          dailyXpCap: recHasDailyCap ? 1000 + Number(recDailyExtraXp) : undefined,
+          linkedMedalId: linkedIds[0] ?? (recLinkedMedal || existing.linkedMedalId || null),
+          linkedMedalIds: linkedIds.length > 0 ? linkedIds : existing.linkedMedalIds,
+          objectiveDescription: recObjective?.trim() || null,
+        };
+      });
+      setRecurringEvents(list);
+      saveRecurringEvents(list);
+      setIsCreatingRecurring(false);
+      setEditingRecurringEventId(null);
+      setRecTitle("");
+      setRecDesc("");
+      setRecObjective("");
+      setRecSpecificDates([]);
+      setRecDaysOfWeek([6, 0]);
+      setRecAttachedMedals([]);
+      const nextCfg = { ...draft, recurringEvents: list, customMedals: newCustoms };
+      setDraft(nextCfg);
+      await auth.updateAdminConfig(nextCfg);
+      flashSaved("✅ Evento recorrente atualizado com sucesso!");
+      onConfigSaved?.();
+      return;
     }
 
     createRecurringEvent({
@@ -1993,16 +2128,30 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                     <div className="flex justify-end">
                       <Button
                         type="button"
-                        onClick={() => setIsCreatingEvent(!isCreatingEvent)}
+                        onClick={() => {
+                          if (isCreatingEvent) {
+                            setIsCreatingEvent(false);
+                            setEditingSpecialEventId(null);
+                          } else {
+                            setEditingSpecialEventId(null);
+                            setEvTitle("");
+                            setEvDesc("");
+                            setEvObjective("");
+                            setEvAttachedMedals([]);
+                            setIsCreatingEvent(true);
+                          }
+                        }}
                         className="rounded-xl font-bold h-9 text-xs"
                       >
-                        {isCreatingEvent ? "Fechar Formulário" : "+ Criar Novo Evento Pontual"}
+                        {isCreatingEvent ? (editingSpecialEventId ? "Cancelar Edição" : "Fechar Formulário") : "+ Criar Novo Evento Pontual"}
                       </Button>
                     </div>
 
                     {isCreatingEvent && (
                       <form onSubmit={handleCreateEvent} className="rounded-3xl border-2 border-primary/40 bg-card p-4 space-y-3 animate-in fade-in-50">
-                        <h4 className="font-display text-sm font-black text-primary">Novo Evento Especial Turbinado</h4>
+                        <h4 className="font-display text-sm font-black text-primary">
+                          {editingSpecialEventId ? `Editar Evento Pontual: ${evTitle || "Sem título"}` : "Novo Evento Especial Turbinado"}
+                        </h4>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div className="space-y-1">
@@ -2572,13 +2721,16 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                             type="button"
                             variant="outline"
                             size="sm"
-                            onClick={() => setIsCreatingEvent(false)}
+                            onClick={() => {
+                              setIsCreatingEvent(false);
+                              setEditingSpecialEventId(null);
+                            }}
                             className="rounded-xl text-xs"
                           >
                             Cancelar
                           </Button>
                           <Button type="submit" size="sm" className="rounded-xl font-bold text-xs bg-primary">
-                            <Sparkles className="mr-1.5 h-3.5 w-3.5" /> Criar e Ativar Evento
+                            <Sparkles className="mr-1.5 h-3.5 w-3.5" /> {editingSpecialEventId ? "Salvar Alterações" : "Criar e Ativar Evento"}
                           </Button>
                         </div>
                       </form>
@@ -2665,6 +2817,16 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                 <div className="flex items-center gap-2 shrink-0">
                                   <Button
                                     type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleStartEditSpecialEvent(ev)}
+                                    className="rounded-xl text-xs h-8 text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
+                                    title="Editar evento"
+                                  >
+                                    <Pencil className="h-3.5 w-3.5 mr-1" /> Editar
+                                  </Button>
+                                  <Button
+                                    type="button"
                                     variant={ev.active ? "secondary" : "outline"}
                                     size="sm"
                                     onClick={() => handleToggleEventActive(ev.id)}
@@ -2698,17 +2860,31 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                     <div className="flex justify-end">
                       <Button
                         type="button"
-                        onClick={() => setIsCreatingRecurring(!isCreatingRecurring)}
+                        onClick={() => {
+                          if (isCreatingRecurring) {
+                            setIsCreatingRecurring(false);
+                            setEditingRecurringEventId(null);
+                          } else {
+                            setEditingRecurringEventId(null);
+                            setRecTitle("");
+                            setRecDesc("");
+                            setRecObjective("");
+                            setRecSpecificDates([]);
+                            setRecDaysOfWeek([6, 0]);
+                            setRecAttachedMedals([]);
+                            setIsCreatingRecurring(true);
+                          }
+                        }}
                         className="rounded-xl font-bold h-9 text-xs"
                       >
-                        {isCreatingRecurring ? "Fechar Formulário" : "+ Criar Evento Recorrente"}
+                        {isCreatingRecurring ? (editingRecurringEventId ? "Cancelar Edição" : "Fechar Formulário") : "+ Criar Evento Recorrente"}
                       </Button>
                     </div>
 
                     {isCreatingRecurring && (
                       <form onSubmit={handleCreateRecurringEvent} className="rounded-3xl border-2 border-primary/40 bg-card p-4 space-y-3 animate-in fade-in-50">
                         <h4 className="font-display text-sm font-black text-primary flex items-center gap-1.5">
-                          <Calendar className="h-4 w-4" /> Novo Evento Recorrente (Dias da Semana / Datas)
+                          <Calendar className="h-4 w-4" /> {editingRecurringEventId ? `Editar Evento Recorrente: ${recTitle || "Sem título"}` : "Novo Evento Recorrente (Dias da Semana / Datas)"}
                         </h4>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3348,13 +3524,16 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                             type="button"
                             variant="outline"
                             size="sm"
-                            onClick={() => setIsCreatingRecurring(false)}
+                            onClick={() => {
+                              setIsCreatingRecurring(false);
+                              setEditingRecurringEventId(null);
+                            }}
                             className="rounded-xl text-xs"
                           >
                             Cancelar
                           </Button>
                           <Button type="submit" size="sm" className="rounded-xl font-bold text-xs bg-primary">
-                            <Sparkles className="mr-1.5 h-3.5 w-3.5" /> Salvar Evento Recorrente
+                            <Sparkles className="mr-1.5 h-3.5 w-3.5" /> {editingRecurringEventId ? "Salvar Alterações" : "Salvar Evento Recorrente"}
                           </Button>
                         </div>
                       </form>
@@ -3442,6 +3621,16 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                 </div>
 
                                 <div className="flex items-center gap-2 shrink-0">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleStartEditRecurringEvent(ev)}
+                                    className="rounded-xl text-xs h-8 text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10"
+                                    title="Editar evento recorrente"
+                                  >
+                                    <Pencil className="h-3.5 w-3.5 mr-1" /> Editar
+                                  </Button>
                                   <Button
                                     type="button"
                                     variant={ev.active ? "secondary" : "outline"}

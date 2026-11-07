@@ -394,7 +394,14 @@ export function Menu({
         hideAllDefaultNotices={hideAllDefaultNotices}
         pauseNoticeBoard={pauseNoticeBoard}
         weeklyGameName={weeklyGameName}
-        onSelectGame={onSelect}
+        onSelectGame={(gameId) => {
+          const g = GAME_REGISTRY.find((item) => item.id === gameId);
+          if (g) {
+            setSelectedGameForDetail(g);
+          } else {
+            onSelect(gameId);
+          }
+        }}
         onOpenWeeklyTournament={handleTournamentClick}
         onOpenX1Arena={handleX1Click}
       />

@@ -3014,8 +3014,8 @@ export async function pushInboxReadToPlayFab(
 ): Promise<void> {
   if (!isPlayFabConfigured() || !messageId || !player) return;
   try {
-    const ticket = sessionTicket ?? loadStoredSession()?.sessionTicket ?? (await getAdminPlayFabTicket());
-    if (!ticket) return;
+    const adminTicket = (await getAdminPlayFabTicket()) ?? sessionTicket ?? loadStoredSession()?.sessionTicket;
+    if (!adminTicket) return;
 
     const receipt: InboxReadReceipt = {
       messageId,
@@ -3029,6 +3029,13 @@ export async function pushInboxReadToPlayFab(
     const cleanMsg = messageId.replace(/[^a-z0-9_]/gi, "_");
     const key = `inbox_read_${cleanNick}_${cleanMsg}`.substring(0, 100);
 
+    // Garante que o SharedGroup exista antes de tentar salvar
+    await callPlayFabClient(
+      "CreateSharedGroup",
+      { SharedGroupId: ADMIN_NOTIFICATIONS_SHARED_GROUP_ID },
+      adminTicket
+    );
+
     await callPlayFabClient(
       "UpdateSharedGroupData",
       {
@@ -3038,8 +3045,23 @@ export async function pushInboxReadToPlayFab(
         },
         Permission: "Public",
       },
-      ticket
+      adminTicket
     );
+
+    // Também espelha nos dados pessoais do aluno caso tenha sessão ativa
+    const studentTicket = sessionTicket ?? loadStoredSession()?.sessionTicket;
+    if (studentTicket) {
+      void callPlayFabClient(
+        "UpdateUserData",
+        {
+          Data: {
+            [`read_${cleanMsg}`]: receipt.readAt,
+          },
+          Permission: "Public",
+        },
+        studentTicket
+      );
+    }
   } catch (err) {
     console.warn("Falha ao registrar leitura no PlayFab:", err);
   }
@@ -3054,7 +3076,7 @@ export async function syncInboxReadsFromPlayFab(
 ): Promise<InboxReadReceipt[]> {
   if (!isPlayFabConfigured()) return [];
   try {
-    const ticket = sessionTicket ?? (await getAdminPlayFabTicket()) ?? loadStoredSession()?.sessionTicket;
+    const ticket = (await getAdminPlayFabTicket()) ?? sessionTicket ?? loadStoredSession()?.sessionTicket;
     if (!ticket) return [];
 
     const res = await callPlayFabClient<{ Data?: Record<string, { Value: string }> }>(

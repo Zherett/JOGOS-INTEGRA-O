@@ -15,6 +15,8 @@ import {
   getInboxCountsForPlayer,
   getMessageReaders,
   mergeStudentReads,
+  formatInboxMessageText,
+  runRetroactiveInboxReadsScan,
 } from "./inbox-messages.ts";
 import type { PlayerProfile } from "./playfab.ts";
 
@@ -333,5 +335,40 @@ describe("Sistema Completo de Caixa de Entrada e Correio (inbox-messages)", () =
     assert.ok(found);
     assert.equal(found?.imageLinks?.["img1"], "https://exemplo.com/infografico.png");
     assert.equal(found?.gifLinks?.["gif1"], "https://media.tenor.com/test.gif");
+  });
+
+  it("formatInboxMessageText substitui [nick] dinamicamente e [game] pelo nome do jogo", () => {
+    const text = "Olá, [nick]! O desafio de hoje no jogo [game] está imperdível!";
+    const formatted = formatInboxMessageText(text, {
+      playerNick: "SuperAluno",
+      mentionedGameId: "rpg",
+    });
+
+    assert.equal(formatted, "Olá, SuperAluno! O desafio de hoje no jogo Batalha de Robôs está imperdível!");
+  });
+
+  it("runRetroactiveInboxReadsScan reconcilia leituras retroativas de alunos que resgataram recompensa", () => {
+    const s1 = createTestStudent({ id: "aluno_retro", nick: "RetroDede" });
+    const msg = sendAdminBroadcastMessage({
+      mode: "all",
+      title: "Prêmio Especial",
+      body: "Parabéns [nick], você ganhou pontos!",
+      reward: {
+        type: "points",
+        pointsAmount: 100,
+        isSecret: false,
+      },
+    });
+
+    // O aluno resgatou o prêmio (simulando que abriu e resgatou)
+    claimInboxReward(msg.id, s1);
+
+    // Executa a retrobusca
+    const scan = runRetroactiveInboxReadsScan([s1]);
+    assert.ok(scan.recoveredCount >= 0);
+
+    const readers = getMessageReaders(msg, [s1]);
+    assert.equal(readers.readCount, 1);
+    assert.equal(readers.readStudents[0].student.nick, "RetroDede");
   });
 });

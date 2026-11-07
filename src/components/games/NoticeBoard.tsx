@@ -245,10 +245,11 @@ export const NoticeBoard: React.FC<NoticeBoardProps> = ({
               <button
                 type="button"
                 onClick={() => onSelectGame(currentSlide.featuredGameId!)}
-                className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-2.5 font-display text-xs sm:text-sm font-black text-primary-foreground shadow-md transition-all hover:bg-primary/90 hover:scale-[1.02] active:scale-95"
+                className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-2.5 font-display text-xs sm:text-sm font-black text-primary-foreground shadow-md transition-all hover:bg-primary/90 hover:scale-[1.02] active:scale-95 cursor-pointer"
+                title="Abre as instruções e detalhes deste jogo antes de jogar"
               >
                 <Gamepad2 className="h-4 w-4" />
-                Conhecer / Jogar
+                Ver Informações do Jogo
                 <ArrowRight className="h-3.5 w-3.5" />
               </button>
             )}

@@ -23,12 +23,14 @@ import {
   markAllInboxMessagesAsReadForRecipient,
   claimInboxReward,
   deleteInboxMessageForPlayer,
+  formatInboxMessageText,
   type SystemInboxMessage,
   type InboxReward,
 } from "@/lib/inbox-messages";
 import { getAllAvailableMedals, RARITY_INFO } from "@/lib/medals-catalog";
 import { usePlayerAuth } from "@/lib/player-auth";
 import { pushInboxReadToPlayFab } from "@/lib/playfab";
+import { GAME_NAMES, type GameId } from "@/lib/game-storage";
 import { MedalIcon } from "./MedalIcon";
 
 interface Props {
@@ -165,25 +167,34 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
     }
   };
 
-  // Renderiza corpo da mensagem substituindo tags como [gif1], [gif2], [img1], [img2]
+  const formatText = (text: string, msg?: SystemInboxMessage) => {
+    return formatInboxMessageText(text, {
+      playerNick: profile?.nick || profile?.id || "Jogador",
+      mentionedGameId: msg?.mentionedGameId,
+    });
+  };
+
+  // Renderiza corpo da mensagem substituindo tags como [gif1], [gif2], [img1], [img2], [nick], [game]
   const renderMessageBody = (
     body: string,
     gifLinks?: Record<string, string>,
-    imageLinks?: Record<string, string>
+    imageLinks?: Record<string, string>,
+    mentionedGameId?: string
   ) => {
+    const formattedBody = formatText(body, { mentionedGameId } as any);
     const hasGifs = gifLinks && Object.keys(gifLinks).length > 0;
     const hasImages = imageLinks && Object.keys(imageLinks).length > 0;
 
     if (!hasGifs && !hasImages) {
       return (
         <div className="whitespace-pre-wrap text-sm text-foreground leading-relaxed space-y-2">
-          {body}
+          {formattedBody}
         </div>
       );
     }
 
     // Divide texto pelas tags [gif1], [gif2], [img1], [img2], etc.
-    const parts = body.split(/(\[(?:gif|img)\d+\])/gi);
+    const parts = formattedBody.split(/(\[(?:gif|img)\d+\])/gi);
 
     return (
       <div className="whitespace-pre-wrap text-sm text-foreground leading-relaxed space-y-3">
@@ -352,11 +363,13 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
                                   !msg.read ? "font-black text-foreground" : "font-bold text-foreground/80"
                                 }`}
                               >
-                                {msg.title}
+                                {formatText(msg.title, msg)}
                               </h4>
                             </div>
                             <p className="line-clamp-2 text-[11px] text-muted-foreground mt-1">
-                              {msg.body.replace(/\[gif\d+\]/gi, " [GIF] ").replace(/\[img\d+\]/gi, " [IMAGEM] ")}
+                              {formatText(msg.body, msg)
+                                .replace(/\[gif\d+\]/gi, " [GIF] ")
+                                .replace(/\[img\d+\]/gi, " [IMAGEM] ")}
                             </p>
                           </div>
 
@@ -420,13 +433,13 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
                     </div>
 
                     <h2 className="font-display text-xl sm:text-2xl font-black text-foreground">
-                      {activeMessage.title}
+                      {formatText(activeMessage.title, activeMessage)}
                     </h2>
                   </div>
 
                   {/* Corpo do Texto, GIFs e Imagens */}
                   <div className="rounded-3xl border bg-card p-5 sm:p-6 shadow-xs">
-                    {renderMessageBody(activeMessage.body, activeMessage.gifLinks, activeMessage.imageLinks)}
+                    {renderMessageBody(activeMessage.body, activeMessage.gifLinks, activeMessage.imageLinks, activeMessage.mentionedGameId)}
                   </div>
 
                   {/* Seção de Recompensa Anexa (se houver) */}
