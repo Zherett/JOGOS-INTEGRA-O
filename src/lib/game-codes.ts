@@ -100,6 +100,14 @@ export interface PlatformAdminConfig {
   seasonId: number;
   /** Human-readable name for the active ranking cycle/season. */
   seasonName: string;
+  /** ISO timestamp de início da temporada vigente. */
+  seasonStartAt?: string;
+  /** ISO timestamp de encerramento da temporada vigente (alinha e retrocompatível com scheduledResetAt). */
+  seasonEndAt?: string | null;
+  /** Duração em dias configurada para a temporada (padrão: 14 dias; opções: 7, 14, 30 ou número customizado). */
+  seasonDurationDays?: number;
+  /** Se ativado (padrão: true), encerra a temporada no término e cria automaticamente a Temporada N+1. */
+  autoRenewSeason?: boolean;
   /** ISO timestamp of the last ranking reset. */
   lastResetAt: string;
   /** Optional ISO timestamp scheduled by the ADM for the next automatic reset. */
@@ -193,6 +201,10 @@ export const DEFAULT_ADMIN_CONFIG: PlatformAdminConfig = {
   showCodeGateCardOnHome: false,
   seasonId: 1,
   seasonName: "Temporada 1 • SEMED Coari",
+  seasonStartAt: "2026-01-01T00:00:00.000Z",
+  seasonEndAt: null,
+  seasonDurationDays: 14,
+  autoRenewSeason: true,
   lastResetAt: "2026-01-01T00:00:00.000Z",
   scheduledResetAt: null,
   scheduledResetClearXp: false,

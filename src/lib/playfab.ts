@@ -18,6 +18,7 @@ import {
   type PlatformAdminConfig,
   type ResetHistoryEntry,
 } from "./game-codes.ts";
+import { computeSeasonDates } from "./season-cycle.ts";
 import {
   adjustXpForGameMode,
   advanceLevelStageOnMatch,
@@ -602,14 +603,16 @@ async function callPlayFabClient<T>(
  *  and executes it automatically if due. */
 export function checkAndApplyScheduledReset(): PlatformAdminConfig {
   const cfg = loadAdminConfig();
-  if (!cfg.scheduledResetAt) return cfg;
-  const dueTime = new Date(cfg.scheduledResetAt).getTime();
+  const targetEnd = cfg.seasonEndAt || cfg.scheduledResetAt;
+  if (!targetEnd) return cfg;
+  const dueTime = new Date(targetEnd).getTime();
   if (Number.isNaN(dueTime) || Date.now() < dueTime) return cfg;
 
+  const durationLabel = cfg.seasonDurationDays ? `${cfg.seasonDurationDays} dias` : "período regular";
   return executeRankingReset({
     clearXp: cfg.scheduledResetClearXp,
     newSeasonName: `Temporada ${cfg.seasonId + 1} • SEMED Coari`,
-    reason: `Reset automático agendado para ${new Date(cfg.scheduledResetAt).toLocaleString("pt-BR")}`,
+    reason: `Encerramento automático da Temporada ${cfg.seasonId} (${durationLabel}) agendado para ${new Date(targetEnd).toLocaleString("pt-BR")}`,
   });
 }
 
@@ -630,12 +633,29 @@ export function executeRankingReset(options: {
     reason: options.reason || "Reset manual pelo Administrador",
   };
 
+  // Se autoRenewSeason estiver ativo (padrão true), calcula automaticamente o novo ciclo
+  const autoRenew = cfg.autoRenewSeason !== false;
+  const durationDays = cfg.seasonDurationDays && cfg.seasonDurationDays > 0 ? cfg.seasonDurationDays : 14;
+
+  let nextStartIso = nowIso;
+  let nextEndIso: string | null = null;
+
+  if (autoRenew) {
+    const { start: nStart, end: nEnd } = computeSeasonDates(new Date(nowIso), durationDays);
+    nextStartIso = nStart.toISOString();
+    nextEndIso = nEnd.toISOString();
+  }
+
   const nextConfig = saveAdminConfig({
     ...cfg,
     seasonId: nextSeasonId,
     seasonName: options.newSeasonName?.trim() || `Temporada ${nextSeasonId} • SEMED Coari`,
+    seasonStartAt: nextStartIso,
+    seasonEndAt: nextEndIso,
+    seasonDurationDays: durationDays,
+    autoRenewSeason: autoRenew,
     lastResetAt: nowIso,
-    scheduledResetAt: null,
+    scheduledResetAt: nextEndIso,
     resetHistory: [entry, ...cfg.resetHistory].slice(0, 25),
   });
 

@@ -103,7 +103,12 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
     refreshCounter,
   ]);
 
-  const scheduledDate = cfg.scheduledResetAt ? new Date(cfg.scheduledResetAt) : null;
+  const scheduledDate = cfg.seasonEndAt
+    ? new Date(cfg.seasonEndAt)
+    : cfg.scheduledResetAt
+      ? new Date(cfg.scheduledResetAt)
+      : null;
+  const durationLabel = cfg.seasonDurationDays ? `Ciclo de ${cfg.seasonDurationDays} dias • ` : "";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -118,7 +123,7 @@ export function LeaderboardDialog({ open, onOpenChange }: Props) {
           <div className="flex items-center gap-2 rounded-2xl border border-accent/40 bg-accent/10 px-3.5 py-2 text-xs font-semibold text-foreground">
             <CalendarClock className="h-4 w-4 shrink-0 text-accent" />
             <span>
-              Próximo reset de temporada agendado para{" "}
+              {durationLabel}Encerramento da temporada agendado para{" "}
               <b>
                 {scheduledDate.toLocaleDateString("pt-BR")} às{" "}
                 {scheduledDate.toLocaleTimeString("pt-BR", {
