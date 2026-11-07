@@ -942,7 +942,10 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setTab("correio")}
+                  onClick={() => {
+                    setTab("correio");
+                    refreshRoster();
+                  }}
                   className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition-colors ${
                     tab === "correio" ? "bg-card text-primary shadow-sm" : "text-muted-foreground"
                   }`}

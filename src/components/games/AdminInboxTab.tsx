@@ -35,23 +35,29 @@ import {
   type AdminBroadcastDraft,
 } from "@/lib/inbox-messages";
 import { getAllAvailableMedals, RARITY_INFO } from "@/lib/medals-catalog";
-import { SCHOOLS, stageFromBirthdate } from "@/lib/player-profile";
-import type { PlayerProfile } from "@/lib/playfab";
+import {
+  SCHOOLS,
+  AGE_STAGES,
+  stageFromBirthdate,
+  levelProgress,
+} from "@/lib/player-profile";
+import { getAllRegisteredPlayers, type PlayerProfile } from "@/lib/playfab";
 import { MedalIcon } from "./MedalIcon";
 
 interface Props {
-  registeredStudents: PlayerProfile[];
+  registeredStudents?: PlayerProfile[];
   onBroadcastSent?: (msg: string) => void;
 }
 
-const STAGES = [
-  "Anos Iniciais (1º ao 3º ano)",
-  "Anos Iniciais (4º e 5º ano)",
-  "Anos Finais (6º e 7º ano)",
-  "Anos Finais (8º e 9º ano)",
-];
+export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Props) {
+  // Lista de alunos garantida (usa prop ou fallback direto para a base local)
+  const studentsList = useMemo(() => {
+    if (Array.isArray(registeredStudents) && registeredStudents.length > 0) {
+      return registeredStudents;
+    }
+    return getAllRegisteredPlayers();
+  }, [registeredStudents]);
 
-export function AdminInboxTab({ registeredStudents, onBroadcastSent }: Props) {
   // Modo de destinatários
   const [recipientMode, setRecipientMode] = useState<"all" | "school" | "stage" | "students">("all");
   const [selectedSchool, setSelectedSchool] = useState<string>("TODAS");
@@ -59,7 +65,6 @@ export function AdminInboxTab({ registeredStudents, onBroadcastSent }: Props) {
   const [studentSearch, setStudentSearch] = useState("");
 
   // Conjunto de IDs de alunos explicitamente selecionados
-  // No modo "all", "school", "stage", este conjunto armazena os alunos ativos
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
 
   // Dados da mensagem
@@ -79,11 +84,14 @@ export function AdminInboxTab({ registeredStudents, onBroadcastSent }: Props) {
 
   // Histórico de mensagens enviadas
   const [sentHistory, setSentHistory] = useState<SystemInboxMessage[]>([]);
-  const [selectedHistoryMsg, setSelectedHistoryMsg] = useState<SystemInboxMessage | null>(null);
 
-  // Carrega lista de medalhas disponíveis
+  // Carrega lista de medalhas disponíveis de forma segura
   const availableMedals = useMemo(() => {
-    return getAllAvailableMedals();
+    try {
+      return getAllAvailableMedals() || [];
+    } catch {
+      return [];
+    }
   }, []);
 
   // Define medalha padrão caso vazio
@@ -95,10 +103,14 @@ export function AdminInboxTab({ registeredStudents, onBroadcastSent }: Props) {
 
   // Carrega histórico de mensagens enviadas
   const refreshHistory = () => {
-    const all = loadAllInboxMessages();
-    // Filtra comunicados gerados pelo ADM
-    const admMsgs = all.filter((m) => m.sender === "adm");
-    setSentHistory(admMsgs.reverse());
+    try {
+      const all = loadAllInboxMessages();
+      const admMsgs = all.filter((m) => m && m.sender === "adm");
+      setSentHistory(admMsgs.slice().reverse());
+    } catch (err) {
+      console.error("Erro ao carregar histórico de mensagens:", err);
+      setSentHistory([]);
+    }
   };
 
   useEffect(() => {
@@ -107,33 +119,42 @@ export function AdminInboxTab({ registeredStudents, onBroadcastSent }: Props) {
 
   // Alunos elegíveis de acordo com os filtros de escola e etapa
   const eligibleStudents = useMemo(() => {
-    return registeredStudents.filter((student) => {
-      // Ignora contas administrativas internas se necessário ou mantém todos
+    return studentsList.filter((student) => {
+      if (!student || !student.id) return false;
+
+      // Filtro de Escola
       if (recipientMode === "school" && selectedSchool !== "TODAS") {
-        if (!student.school || student.school.toLowerCase().trim() !== selectedSchool.toLowerCase().trim()) {
+        const studentSchool = (student.school || "").trim().toLowerCase();
+        if (studentSchool !== selectedSchool.trim().toLowerCase()) {
           return false;
         }
       }
+
+      // Filtro de Etapa
       if (recipientMode === "stage" && selectedStage !== "TODAS") {
-        const studentStage = stageFromBirthdate(student.birthdate);
-        if (studentStage !== selectedStage) {
+        try {
+          const stInfo = stageFromBirthdate(student.birthdate, new Date(), student.school);
+          if (stInfo.id !== selectedStage && stInfo.shortLabel !== selectedStage) {
+            return false;
+          }
+        } catch {
           return false;
         }
       }
+
       return true;
     });
-  }, [registeredStudents, recipientMode, selectedSchool, selectedStage]);
+  }, [studentsList, recipientMode, selectedSchool, selectedStage]);
 
   // Alunos elegíveis filtrados pelo termo de pesquisa na UI
   const displayStudents = useMemo(() => {
     if (!studentSearch.trim()) return eligibleStudents;
     const q = studentSearch.toLowerCase().trim();
     return eligibleStudents.filter((s) => {
-      return (
-        s.nick.toLowerCase().includes(q) ||
-        (s.fullName && s.fullName.toLowerCase().includes(q)) ||
-        (s.school && s.school.toLowerCase().includes(q))
-      );
+      const nick = (s.nick || "").toLowerCase();
+      const fullName = (s.full_name || "").toLowerCase();
+      const school = (s.school || "").toLowerCase();
+      return nick.includes(q) || fullName.includes(q) || school.includes(q);
     });
   }, [eligibleStudents, studentSearch]);
 
@@ -141,7 +162,7 @@ export function AdminInboxTab({ registeredStudents, onBroadcastSent }: Props) {
   useEffect(() => {
     const allIds = new Set(eligibleStudents.map((s) => s.id));
     setSelectedStudentIds(allIds);
-  }, [recipientMode, selectedSchool, selectedStage, eligibleStudents.length]);
+  }, [recipientMode, selectedSchool, selectedStage, eligibleStudents]);
 
   const handleToggleStudent = (id: string) => {
     setSelectedStudentIds((prev) => {
@@ -271,7 +292,7 @@ export function AdminInboxTab({ registeredStudents, onBroadcastSent }: Props) {
 
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-secondary px-3 py-1 text-xs font-bold text-foreground border">
-              Total na Plataforma: <b>{registeredStudents.length}</b> alunos
+              Total na Plataforma: <b>{studentsList.length}</b> alunos
             </span>
           </div>
         </div>
@@ -300,7 +321,7 @@ export function AdminInboxTab({ registeredStudents, onBroadcastSent }: Props) {
                 <button
                   type="button"
                   onClick={() => setRecipientMode("all")}
-                  className={`rounded-xl py-2 text-xs font-bold transition-all ${
+                  className={`rounded-xl py-2 text-xs font-bold transition-all cursor-pointer ${
                     recipientMode === "all"
                       ? "bg-primary text-primary-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
@@ -311,7 +332,7 @@ export function AdminInboxTab({ registeredStudents, onBroadcastSent }: Props) {
                 <button
                   type="button"
                   onClick={() => setRecipientMode("school")}
-                  className={`rounded-xl py-2 text-xs font-bold transition-all ${
+                  className={`rounded-xl py-2 text-xs font-bold transition-all cursor-pointer ${
                     recipientMode === "school"
                       ? "bg-primary text-primary-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
@@ -322,7 +343,7 @@ export function AdminInboxTab({ registeredStudents, onBroadcastSent }: Props) {
                 <button
                   type="button"
                   onClick={() => setRecipientMode("stage")}
-                  className={`rounded-xl py-2 text-xs font-bold transition-all ${
+                  className={`rounded-xl py-2 text-xs font-bold transition-all cursor-pointer ${
                     recipientMode === "stage"
                       ? "bg-primary text-primary-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
@@ -333,7 +354,7 @@ export function AdminInboxTab({ registeredStudents, onBroadcastSent }: Props) {
                 <button
                   type="button"
                   onClick={() => setRecipientMode("students")}
-                  className={`rounded-xl py-2 text-xs font-bold transition-all ${
+                  className={`rounded-xl py-2 text-xs font-bold transition-all cursor-pointer ${
                     recipientMode === "students"
                       ? "bg-primary text-primary-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
@@ -372,9 +393,9 @@ export function AdminInboxTab({ registeredStudents, onBroadcastSent }: Props) {
                   className="h-10 w-full rounded-xl border bg-background px-3 text-xs font-bold"
                 >
                   <option value="TODAS">Todas as Etapas</option>
-                  {STAGES.map((st) => (
-                    <option key={st} value={st}>
-                      {st}
+                  {AGE_STAGES.map((st) => (
+                    <option key={st.id} value={st.id}>
+                      {st.label}
                     </option>
                   ))}
                 </select>
@@ -420,7 +441,16 @@ export function AdminInboxTab({ registeredStudents, onBroadcastSent }: Props) {
               ) : (
                 displayStudents.map((student) => {
                   const isChecked = selectedStudentIds.has(student.id);
-                  const stStage = stageFromBirthdate(student.birthdate);
+                  let stageText = "Geral";
+                  try {
+                    const stInfo = stageFromBirthdate(student.birthdate, new Date(), student.school);
+                    stageText = stInfo.shortLabel || "Geral";
+                  } catch {
+                    stageText = "Geral";
+                  }
+
+                  const studentLvl = student.level || levelProgress(student.xp || 0).level || 1;
+
                   return (
                     <div
                       key={student.id}
@@ -444,13 +474,13 @@ export function AdminInboxTab({ registeredStudents, onBroadcastSent }: Props) {
                             {student.nick}
                           </div>
                           <div className="text-[10px] text-muted-foreground truncate">
-                            {student.school || "Sem escola"} • {stStage ? stStage.replace("Anos ", "") : "Geral"}
+                            {student.school || "Sem escola"} • {stageText}
                           </div>
                         </div>
                       </div>
 
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-secondary shrink-0">
-                        Nv. {student.level || 1}
+                        Nv. {studentLvl}
                       </span>
                     </div>
                   );
@@ -780,46 +810,54 @@ export function AdminInboxTab({ registeredStudents, onBroadcastSent }: Props) {
               </div>
             ) : (
               <div className="max-h-60 overflow-y-auto space-y-2">
-                {sentHistory.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 rounded-xl border bg-secondary/30 p-3 text-xs"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-display font-bold text-foreground truncate">
-                          {msg.title}
-                        </span>
-                        {msg.reward && (
-                          <span className="rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 text-[10px] font-bold px-1.5 py-0.2 shrink-0">
-                            🎁 Recompensa
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[10px] text-muted-foreground truncate mt-0.5">
-                        {new Date(msg.createdAt).toLocaleDateString("pt-BR", {
-                          day: "2-digit",
-                          month: "2-digit",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}{" "}
-                        • Destinatários:{" "}
-                        {msg.recipientId === "ALL"
-                          ? msg.recipientFilter?.school
-                            ? `Escola: ${msg.recipientFilter.school}`
-                            : msg.recipientFilter?.stage
-                              ? `Etapa: ${msg.recipientFilter.stage}`
-                              : "Todos os Alunos"
-                          : `Aluno: ${msg.recipientId}`}
-                      </div>
-                    </div>
+                {sentHistory.map((msg) => {
+                  let formattedDate = "Recente";
+                  try {
+                    formattedDate = new Date(msg.createdAt).toLocaleDateString("pt-BR", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    });
+                  } catch {
+                    formattedDate = "Recente";
+                  }
 
-                    <span className="text-[10px] font-mono text-muted-foreground shrink-0">
-                      ID: {msg.id.substring(0, 10)}...
-                    </span>
-                  </div>
-                ))}
+                  return (
+                    <div
+                      key={msg.id}
+                      className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 rounded-xl border bg-secondary/30 p-3 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-display font-bold text-foreground truncate">
+                            {msg.title}
+                          </span>
+                          {msg.reward && (
+                            <span className="rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 text-[10px] font-bold px-1.5 py-0.2 shrink-0">
+                              🎁 Recompensa
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground truncate mt-0.5">
+                          {formattedDate} • Destinatários:{" "}
+                          {msg.recipientId === "ALL"
+                            ? msg.recipientFilter?.school
+                              ? `Escola: ${msg.recipientFilter.school}`
+                              : msg.recipientFilter?.stage
+                                ? `Etapa: ${msg.recipientFilter.stage}`
+                                : "Todos os Alunos"
+                            : `Aluno: ${msg.recipientId}`}
+                        </div>
+                      </div>
+
+                      <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+                        ID: {msg.id.substring(0, 10)}...
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
