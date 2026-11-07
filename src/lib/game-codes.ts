@@ -10,6 +10,11 @@ import {
   saveSpecialEvents,
   saveRecurringEvents,
 } from "./custom-events.ts";
+import {
+  type ScheduledInboxRule,
+  loadScheduledInboxRules,
+  saveScheduledInboxRules,
+} from "./scheduled-inbox.ts";
 
 const UNLOCK_KEY = "desafios-logica-unlocked-v1";
 const ADMIN_CONFIG_KEY = "desafios-logica-admin-config-v1";
@@ -139,6 +144,8 @@ export interface PlatformAdminConfig {
   pauseNoticeBoard?: boolean;
   /** Mensagens transmitidas do Correio / Caixa de Entrada */
   inboxMessages?: any[];
+  /** Regras de mensagens programadas e recorrentes */
+  scheduledInboxRules?: ScheduledInboxRule[];
   /** Optional PlayFab Title ID configured via Admin UI. */
   playfabTitleId?: string;
   updatedAt: string;
@@ -269,6 +276,9 @@ export function loadAdminConfig(): PlatformAdminConfig {
       pauseNoticeBoard:
         typeof parsed.pauseNoticeBoard === "boolean" ? parsed.pauseNoticeBoard : false,
       inboxMessages: Array.isArray(parsed.inboxMessages) ? parsed.inboxMessages : [],
+      scheduledInboxRules: Array.isArray(parsed.scheduledInboxRules)
+        ? parsed.scheduledInboxRules
+        : loadScheduledInboxRules(),
       dailyXpCap:
         typeof parsed.dailyXpCap === "number" && parsed.dailyXpCap >= 100
           ? Math.floor(parsed.dailyXpCap)
@@ -301,6 +311,9 @@ export function saveAdminConfig(config: PlatformAdminConfig): PlatformAdminConfi
     pauseNoticeBoard:
       typeof config.pauseNoticeBoard === "boolean" ? config.pauseNoticeBoard : false,
     inboxMessages: Array.isArray(config.inboxMessages) ? config.inboxMessages : [],
+    scheduledInboxRules: Array.isArray(config.scheduledInboxRules)
+      ? config.scheduledInboxRules
+      : loadScheduledInboxRules(),
     updatedAt: new Date().toISOString(),
   };
   if (typeof window !== "undefined") {
@@ -311,6 +324,9 @@ export function saveAdminConfig(config: PlatformAdminConfig): PlatformAdminConfi
       }
       if (Array.isArray(config.recurringEvents)) {
         saveRecurringEvents(config.recurringEvents);
+      }
+      if (Array.isArray(config.scheduledInboxRules)) {
+        saveScheduledInboxRules(config.scheduledInboxRules);
       }
       window.dispatchEvent(
         new CustomEvent("desafios:admin-config-updated", { detail: normalized }),

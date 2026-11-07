@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   Mail,
   Send,
@@ -28,6 +28,13 @@ import {
   RefreshCw,
   Image as ImageIcon,
   Gamepad2,
+  Calendar,
+  CalendarClock,
+  Play,
+  Pause,
+  Pencil,
+  Zap,
+  ArrowUpDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,11 +46,25 @@ import {
   loadAllInboxMessages,
   getMessageReaders,
   runRetroactiveInboxReadsScan,
+  subscribeToInboxSync,
   type SystemInboxMessage,
   type AdminBroadcastDraft,
 } from "@/lib/inbox-messages";
+import {
+  loadScheduledInboxRules,
+  upsertScheduledInboxRule,
+  deleteScheduledInboxRule,
+  toggleScheduledInboxRuleActive,
+  evaluateAndTriggerScheduledMessages,
+  computeNextRunDate,
+  formatRecurrenceLabel,
+  DAY_NAMES_SHORT,
+  type ScheduledInboxRule,
+  type ScheduleRecurrenceType,
+} from "@/lib/scheduled-inbox";
 import { getAllAvailableMedals, RARITY_INFO } from "@/lib/medals-catalog";
 import { ALL_GAME_IDS, GAME_NAMES, type GameId } from "@/lib/game-storage";
+import { loadSpecialEvents, loadRecurringEvents } from "@/lib/custom-events";
 import {
   SCHOOLS,
   AGE_STAGES,
@@ -66,13 +87,25 @@ interface Props {
 export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Props) {
   const auth = usePlayerAuth();
 
+  // Chave estável de dependência para evitar recriação desnecessária da lista em cada render
+  const registeredStudentsKey = useMemo(() => {
+    return Array.isArray(registeredStudents)
+      ? registeredStudents.map((s) => s.id).join(",")
+      : "";
+  }, [registeredStudents]);
+
   // Lista de alunos garantida (usa prop ou fallback direto para a base local)
   const studentsList = useMemo(() => {
     if (Array.isArray(registeredStudents) && registeredStudents.length > 0) {
       return registeredStudents;
     }
     return getAllRegisteredPlayers();
-  }, [registeredStudents]);
+  }, [registeredStudents, registeredStudentsKey]);
+
+  const studentsListRef = useRef(studentsList);
+  useEffect(() => {
+    studentsListRef.current = studentsList;
+  }, [studentsList]);
 
   // Modo de destinatários
   const [recipientMode, setRecipientMode] = useState<"all" | "school" | "stage" | "students">("all");
@@ -88,12 +121,69 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
 
+  // Refs para os textareas permitindo inserção cirúrgica de tags no ponto exato do cursor
+  const bodyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const schedBodyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Função utilitária para inserir tags exatamente na posição atual do cursor no textarea
+  const insertTagIntoTextarea = (
+    textarea: HTMLTextAreaElement | null,
+    currentValue: string,
+    setValue: React.Dispatch<React.SetStateAction<string>>,
+    tag: string,
+  ) => {
+    if (!textarea) {
+      setValue((prev) => (prev ? `${prev} ${tag} ` : `${tag} `));
+      return;
+    }
+
+    const start = textarea.selectionStart ?? currentValue.length;
+    const end = textarea.selectionEnd ?? currentValue.length;
+
+    const before = currentValue.slice(0, start);
+    const after = currentValue.slice(end);
+
+    // Formata o espaçamento ao redor da tag para não grudar em palavras adjacentes
+    const needsSpaceBefore = before.length > 0 && !before.endsWith(" ") && !before.endsWith("\n");
+    const needsSpaceAfter = after.length > 0 && !after.startsWith(" ") && !after.startsWith("\n");
+
+    const formattedTag = `${needsSpaceBefore ? " " : ""}${tag}${needsSpaceAfter ? " " : ""}`;
+    const nextValue = `${before}${formattedTag}${after}`;
+
+    setValue(nextValue);
+
+    // Restaura o foco no textarea e posiciona o cursor logo após a tag inserida
+    requestAnimationFrame(() => {
+      textarea.focus();
+      const newCursor = start + formattedTag.length;
+      textarea.setSelectionRange(newCursor, newCursor);
+    });
+  };
+
   // Tags de Mídia unificadas (GIFs e Imagens Estáticas): [{ id: "...", type: "img" | "gif", url: "" }]
   const [mediaList, setMediaList] = useState<{ id: string; type: "gif" | "img"; url: string }[]>([]);
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
 
   // Menção a Jogo na Tag [game]
   const [selectedMentionGame, setSelectedMentionGame] = useState<string>("");
+
+  // Menção a Evento na Tag [event]
+  const [selectedMentionEventId, setSelectedMentionEventId] = useState<string>("");
+  const [linkEventDetails, setLinkEventDetails] = useState<boolean>(true);
+
+  // Lista de todos os eventos configurados (pontuais e recorrentes) para menção na tag [event]
+  const allConfiguredEvents = useMemo(() => {
+    try {
+      const s = loadSpecialEvents();
+      const r = loadRecurringEvents();
+      return [
+        ...s.map((e) => ({ id: e.id, title: e.title, type: "Pontual" as const })),
+        ...r.map((e) => ({ id: e.id, title: e.title, type: "Recorrente" as const })),
+      ];
+    } catch {
+      return [];
+    }
+  }, []);
 
   // Configurações de Recompensa
   const [hasReward, setHasReward] = useState(false);
@@ -102,10 +192,48 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
   const [selectedMedalId, setSelectedMedalId] = useState<string>("");
   const [isSecretReward, setIsSecretReward] = useState<boolean>(false);
 
+  // ABA DO COMPOSITOR: Envio Imediato ("immediate") ou Mensagens Programadas ("scheduled")
+  const [inboxTab, setInboxTab] = useState<"immediate" | "scheduled">("immediate");
+
+  // Regras de Mensagens Programadas e Recorrentes
+  const [scheduledRules, setScheduledRules] = useState<ScheduledInboxRule[]>([]);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+
+  // Estados do formulário da Mensagem Programada
+  const [schedTitle, setSchedTitle] = useState("");
+  const [schedBody, setSchedBody] = useState("");
+  const [schedRecurrence, setSchedRecurrence] = useState<ScheduleRecurrenceType>("weekly");
+  const [schedDaysOfWeek, setSchedDaysOfWeek] = useState<number[]>([6]); // Sábado por padrão
+  const [schedDayOfMonth, setSchedDayOfMonth] = useState<number>(1);
+  const [schedSpecificDate, setSchedSpecificDate] = useState<string>("");
+  const [schedTimeOfDay, setSchedTimeOfDay] = useState<string>("08:00");
+  const [schedValidFrom, setSchedValidFrom] = useState<string>("");
+  const [schedValidUntil, setSchedValidUntil] = useState<string>("");
+  const [schedMediaList, setSchedMediaList] = useState<{ id: string; type: "gif" | "img"; url: string }[]>([]);
+  const [schedMentionGame, setSchedMentionGame] = useState<string>("");
+  const [schedMentionEventId, setSchedMentionEventId] = useState<string>("");
+  const [schedLinkEventDetails, setSchedLinkEventDetails] = useState<boolean>(true);
+  const [schedHasReward, setSchedHasReward] = useState<boolean>(false);
+  const [schedRewardType, setSchedRewardType] = useState<"points" | "medal" | "future_item">("points");
+  const [schedRewardPoints, setSchedRewardPoints] = useState<number>(100);
+  const [schedSelectedMedalId, setSchedSelectedMedalId] = useState<string>("");
+  const [schedIsSecretReward, setSchedIsSecretReward] = useState<boolean>(false);
+
   // Histórico de mensagens enviadas e visualizador de leituras
   const [sentHistory, setSentHistory] = useState<SystemInboxMessage[]>([]);
+  // Ordem de exibição do histórico: "desc" (mais recentes no topo - padrão) ou "asc" (mais antigas no topo)
+  const [historySortOrder, setHistorySortOrder] = useState<"desc" | "asc">("desc");
   const [readersModalMsg, setReadersModalMsg] = useState<SystemInboxMessage | null>(null);
   const [readersTab, setReadersTab] = useState<"read" | "unread">("read");
+
+  // Histórico ordenado conforme a preferência selecionada
+  const sortedSentHistory = useMemo(() => {
+    return [...sentHistory].sort((a, b) => {
+      const timeA = new Date(a.createdAt).getTime();
+      const timeB = new Date(b.createdAt).getTime();
+      return historySortOrder === "desc" ? timeB - timeA : timeA - timeB;
+    });
+  }, [sentHistory, historySortOrder]);
 
   // Carrega lista de medalhas disponíveis de forma segura
   const availableMedals = useMemo(() => {
@@ -125,6 +253,8 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
 
   const [readersRefreshCount, setReadersRefreshCount] = useState(0);
   const [isSyncingReaders, setIsSyncingReaders] = useState(false);
+  const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
+  const isAnySyncing = isSyncingReaders || isBackgroundSyncing;
 
   // Carrega histórico de mensagens enviadas
   const refreshHistory = () => {
@@ -146,43 +276,78 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
     refreshHistory();
   }, []);
 
-  // Sincroniza ativamente da nuvem PlayFab e executa retrobusca sempre que o modal de detalhes de leitura for aberto
+  // Escuta instantânea via BroadcastChannel / localStorage sync:
+  // Notificação imediata (0ms) no painel ADM quando um aluno lê mensagem ou resgata recompensa
   useEffect(() => {
-    if (readersModalMsg) {
-      let isSubscribed = true;
-      setIsSyncingReaders(true);
-
-      // 1. Executa retrobusca imediata no registro local de alunos e claims
-      runRetroactiveInboxReadsScan(studentsList);
-      setReadersRefreshCount((c) => c + 1);
-
-      // 2. Consulta a nuvem PlayFab
-      syncInboxReadsFromPlayFab()
-        .then(() => {
-          if (isSubscribed) {
-            runRetroactiveInboxReadsScan(studentsList);
+    const unsubscribe = subscribeToInboxSync((payload) => {
+      if (payload.type === "message_read" || payload.type === "rewards_claimed") {
+        runRetroactiveInboxReadsScan(studentsListRef.current);
+        setReadersRefreshCount((c) => c + 1);
+        void syncInboxReadsFromPlayFab()
+          .then(() => {
+            runRetroactiveInboxReadsScan(studentsListRef.current);
             setReadersRefreshCount((c) => c + 1);
-          }
-        })
-        .catch(console.warn)
-        .finally(() => {
-          if (isSubscribed) {
-            setIsSyncingReaders(false);
-          }
-        });
+          })
+          .catch(console.warn);
+      } else if (payload.type === "new_message") {
+        refreshHistory();
+      }
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
-      return () => {
-        isSubscribed = false;
-      };
-    }
-  }, [readersModalMsg, studentsList]);
+  // Sincroniza ativamente da nuvem PlayFab e executa retrobusca sempre que o modal de detalhes de leitura for aberto
+  // e mantém polling em tempo real a cada 5 segundos de forma silenciosa e estável (sem nenhum layout shift)
+  useEffect(() => {
+    if (!readersModalMsg) return;
+    let isSubscribed = true;
+
+    // 1. Executa retrobusca imediata no registro local de alunos e claims
+    runRetroactiveInboxReadsScan(studentsListRef.current);
+    setReadersRefreshCount((c) => c + 1);
+
+    // 2. Consulta a nuvem PlayFab silenciosamente (apenas gira o ícone sem alterar dimensões do layout)
+    const pollReaders = async (isInitial = false) => {
+      if (isInitial) {
+        setIsSyncingReaders(true);
+      } else {
+        setIsBackgroundSyncing(true);
+      }
+      try {
+        await syncInboxReadsFromPlayFab();
+        if (isSubscribed) {
+          runRetroactiveInboxReadsScan(studentsListRef.current);
+          setReadersRefreshCount((c) => c + 1);
+        }
+      } catch (err) {
+        console.warn("Falha no polling silencioso de leituras:", err);
+      } finally {
+        if (isSubscribed) {
+          if (isInitial) setIsSyncingReaders(false);
+          setIsBackgroundSyncing(false);
+        }
+      }
+    };
+
+    void pollReaders(true);
+    const pollId = setInterval(() => {
+      void pollReaders(false);
+    }, 5000);
+
+    return () => {
+      isSubscribed = false;
+      clearInterval(pollId);
+    };
+  }, [readersModalMsg?.id]);
 
   const handleManualSyncReaders = async () => {
     setIsSyncingReaders(true);
     try {
-      runRetroactiveInboxReadsScan(studentsList);
+      runRetroactiveInboxReadsScan(studentsListRef.current);
       await syncInboxReadsFromPlayFab();
-      runRetroactiveInboxReadsScan(studentsList);
+      runRetroactiveInboxReadsScan(studentsListRef.current);
       setReadersRefreshCount((c) => c + 1);
     } catch (err) {
       console.warn("Falha na sincronização manual de leituras:", err);
@@ -331,7 +496,7 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
 
   const handleInsertTagIntoBody = (tagKey: string) => {
     const tag = `[${tagKey}]`;
-    setBody((prev) => (prev ? `${prev}\n${tag}\n` : `${tag}\n`));
+    insertTagIntoTextarea(bodyTextareaRef.current, body, setBody, tag);
     setCopiedTag(tagKey);
     setTimeout(() => setCopiedTag(null), 2000);
   };
@@ -382,6 +547,8 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
       }
     }
 
+    const foundMentionEvent = allConfiguredEvents.find((e) => e.id === selectedMentionEventId);
+
     const draft: AdminBroadcastDraft = {
       mode: recipientMode,
       targetSchool: recipientMode === "school" ? selectedSchool : undefined,
@@ -393,6 +560,9 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
       gifLinks: Object.keys(gifLinks).length > 0 ? gifLinks : undefined,
       imageLinks: Object.keys(imageLinks).length > 0 ? imageLinks : undefined,
       mentionedGameId: selectedMentionGame || undefined,
+      mentionedEventId: selectedMentionEventId || undefined,
+      mentionedEventTitle: foundMentionEvent?.title || undefined,
+      linkEventDetails: linkEventDetails,
       reward: hasReward
         ? {
             type: rewardType,
@@ -427,9 +597,307 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
     setBody("");
     setMediaList([]);
     setSelectedMentionGame("");
+    setSelectedMentionEventId("");
+    setLinkEventDetails(true);
     setHasReward(false);
     setIsSecretReward(false);
     setSelectedStudentIds(new Set());
+  };
+
+  // Mídias indexadas para o formulário de Mensagem Programada
+  const indexedSchedMediaList = useMemo(() => {
+    let gifCount = 0;
+    let imgCount = 0;
+    return schedMediaList.map((item) => {
+      if (item.type === "gif") {
+        gifCount++;
+        return { ...item, tagKey: `gif${gifCount}` };
+      } else {
+        imgCount++;
+        return { ...item, tagKey: `img${imgCount}` };
+      }
+    });
+  }, [schedMediaList]);
+
+  const handleAddSchedMedia = (type: "gif" | "img" = "img") => {
+    const id = `media_sched_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    setSchedMediaList((prev) => [...prev, { id, type, url: "" }]);
+  };
+
+  const handleToggleSchedMediaType = (id: string, newType: "gif" | "img") => {
+    setSchedMediaList((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, type: newType } : m))
+    );
+  };
+
+  const handleUpdateSchedMediaUrl = (id: string, url: string) => {
+    setSchedMediaList((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, url: url.trim() } : m))
+    );
+  };
+
+  const handleRemoveSchedMedia = (id: string) => {
+    setSchedMediaList((prev) => prev.filter((m) => m.id !== id));
+  };
+
+  const handleInsertSchedTagIntoBody = (tagKey: string) => {
+    const tag = `[${tagKey}]`;
+    insertTagIntoTextarea(schedBodyTextareaRef.current, schedBody, setSchedBody, tag);
+    setCopiedTag(tagKey);
+    setTimeout(() => setCopiedTag(null), 2000);
+  };
+
+  const refreshScheduledRules = () => {
+    try {
+      const list = loadScheduledInboxRules();
+      setScheduledRules(list);
+    } catch {
+      setScheduledRules([]);
+    }
+  };
+
+  // Motor periódico de verificação e disparo das mensagens programadas
+  useEffect(() => {
+    refreshScheduledRules();
+
+    const runAutoDispatch = () => {
+      const res = evaluateAndTriggerScheduledMessages(undefined, new Date());
+      if (res.triggeredCount > 0) {
+        refreshScheduledRules();
+        refreshHistory();
+        try {
+          auth.updateAdminConfig({
+            ...auth.adminConfig,
+            inboxMessages: loadAllInboxMessages().slice(0, 50),
+            scheduledInboxRules: loadScheduledInboxRules(),
+          }).catch(console.warn);
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+
+    runAutoDispatch();
+    const interval = setInterval(() => {
+      runAutoDispatch();
+      void syncInboxReadsFromPlayFab().catch(console.warn);
+    }, 20000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleCancelEditScheduledRule = () => {
+    setEditingRuleId(null);
+    setSchedTitle("");
+    setSchedBody("");
+    setSchedRecurrence("weekly");
+    setSchedDaysOfWeek([6]);
+    setSchedDayOfMonth(1);
+    setSchedSpecificDate("");
+    setSchedTimeOfDay("08:00");
+    setSchedValidFrom("");
+    setSchedValidUntil("");
+    setSchedMediaList([]);
+    setSchedMentionGame("");
+    setSchedMentionEventId("");
+    setSchedLinkEventDetails(true);
+    setSchedHasReward(false);
+    setSchedIsSecretReward(false);
+  };
+
+  const handleSaveScheduledRule = async () => {
+    if (!schedTitle.trim()) {
+      alert("Por favor, digite o título da mensagem programada.");
+      return;
+    }
+    if (!schedBody.trim()) {
+      alert("Por favor, digite o texto da mensagem programada.");
+      return;
+    }
+    if (selectedStudentIds.size === 0) {
+      alert(
+        "Nenhum aluno está selecionado para receber esta mensagem programada. Marque pelo menos um aluno na coluna da esquerda ou use o botão 'Marcar Todos'."
+      );
+      return;
+    }
+
+    const selectedStudents = studentsList.filter((s) => selectedStudentIds.has(s.id));
+    const targetIdentifiers: string[] = [];
+    for (const s of selectedStudents) {
+      if (s.id) targetIdentifiers.push(s.id);
+      if (s.nick) targetIdentifiers.push(s.nick);
+      if (s.nickNormalized) targetIdentifiers.push(s.nickNormalized);
+      if (s.playfabId) targetIdentifiers.push(s.playfabId);
+    }
+
+    const excludedStudentIds = eligibleStudents
+      .filter((s) => !selectedStudentIds.has(s.id))
+      .map((s) => s.id);
+
+    const gifLinks: Record<string, string> = {};
+    const imageLinks: Record<string, string> = {};
+    for (const m of indexedSchedMediaList) {
+      if (m.url.trim()) {
+        if (m.type === "gif") {
+          gifLinks[m.tagKey] = m.url.trim();
+        } else {
+          imageLinks[m.tagKey] = m.url.trim();
+        }
+      }
+    }
+
+    const foundEvent = allConfiguredEvents.find((e) => e.id === schedMentionEventId);
+    const existingRule = editingRuleId
+      ? scheduledRules.find((r) => r.id === editingRuleId)
+      : null;
+
+    const rule: ScheduledInboxRule = {
+      id: editingRuleId || `sched_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      title: schedTitle.trim(),
+      body: schedBody.trim(),
+      active: existingRule ? existingRule.active : true,
+      recurrence: schedRecurrence,
+      daysOfWeek: schedRecurrence === "weekly" ? (schedDaysOfWeek.length > 0 ? schedDaysOfWeek : [6]) : undefined,
+      dayOfMonth: schedRecurrence === "monthly" ? Number(schedDayOfMonth) || 1 : undefined,
+      specificDate: schedRecurrence === "once" ? schedSpecificDate : undefined,
+      timeOfDay: schedTimeOfDay || "08:00",
+      validFrom: schedValidFrom || undefined,
+      validUntil: schedValidUntil || undefined,
+      recipientMode: recipientMode,
+      targetSchool: recipientMode === "school" ? selectedSchool : undefined,
+      targetStage: recipientMode === "stage" ? selectedStage : undefined,
+      targetStudentIds: targetIdentifiers,
+      excludedStudentIds: excludedStudentIds,
+      gifLinks: Object.keys(gifLinks).length > 0 ? gifLinks : undefined,
+      imageLinks: Object.keys(imageLinks).length > 0 ? imageLinks : undefined,
+      mentionedGameId: schedMentionGame || undefined,
+      mentionedEventId: schedMentionEventId || undefined,
+      mentionedEventTitle: foundEvent?.title || undefined,
+      linkEventDetails: schedLinkEventDetails,
+      reward: schedHasReward
+        ? {
+            type: schedRewardType,
+            pointsAmount: schedRewardType === "points" ? Number(schedRewardPoints) || 50 : undefined,
+            medalId: schedRewardType === "medal" ? schedSelectedMedalId : undefined,
+            isSecret: schedIsSecretReward,
+          }
+        : undefined,
+      lastTriggeredAt: existingRule?.lastTriggeredAt,
+      lastTriggeredCycleKey: existingRule?.lastTriggeredCycleKey,
+      lastTriggeredMessageId: existingRule?.lastTriggeredMessageId,
+      createdAt: existingRule?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const updatedList = upsertScheduledInboxRule(rule);
+    setScheduledRules(updatedList);
+
+    try {
+      await auth.updateAdminConfig({
+        ...auth.adminConfig,
+        scheduledInboxRules: updatedList,
+      });
+    } catch (err) {
+      console.warn("Aviso ao salvar configuração remota:", err);
+    }
+
+    const actionText = editingRuleId ? "atualizada" : "agendada";
+    onBroadcastSent?.(`⏰ Mensagem "${rule.title}" ${actionText} com sucesso!`);
+
+    handleCancelEditScheduledRule();
+  };
+
+  const handleEditRule = (rule: ScheduledInboxRule) => {
+    setEditingRuleId(rule.id);
+    setSchedTitle(rule.title);
+    setSchedBody(rule.body);
+    setSchedRecurrence(rule.recurrence);
+    setSchedDaysOfWeek(rule.daysOfWeek || [6]);
+    setSchedDayOfMonth(rule.dayOfMonth || 1);
+    setSchedSpecificDate(rule.specificDate || "");
+    setSchedTimeOfDay(rule.timeOfDay || "08:00");
+    setSchedValidFrom(rule.validFrom || "");
+    setSchedValidUntil(rule.validUntil || "");
+    setSchedMentionGame(rule.mentionedGameId || "");
+    setSchedMentionEventId(rule.mentionedEventId || "");
+    setSchedLinkEventDetails(rule.linkEventDetails !== false);
+
+    const media: { id: string; type: "gif" | "img"; url: string }[] = [];
+    if (rule.imageLinks) {
+      for (const [k, url] of Object.entries(rule.imageLinks)) {
+        media.push({ id: `edit_${k}_${Math.random()}`, type: "img", url });
+      }
+    }
+    if (rule.gifLinks) {
+      for (const [k, url] of Object.entries(rule.gifLinks)) {
+        media.push({ id: `edit_${k}_${Math.random()}`, type: "gif", url });
+      }
+    }
+    setSchedMediaList(media);
+
+    if (rule.reward) {
+      setSchedHasReward(true);
+      setSchedRewardType(rule.reward.type);
+      if (rule.reward.pointsAmount) setSchedRewardPoints(rule.reward.pointsAmount);
+      if (rule.reward.medalId) setSchedSelectedMedalId(rule.reward.medalId);
+      setSchedIsSecretReward(Boolean(rule.reward.isSecret));
+    } else {
+      setSchedHasReward(false);
+    }
+
+    setRecipientMode(rule.recipientMode);
+    if (rule.targetSchool) setSelectedSchool(rule.targetSchool);
+    if (rule.targetStage) setSelectedStage(rule.targetStage);
+    if (Array.isArray(rule.targetStudentIds) && rule.targetStudentIds.length > 0) {
+      setSelectedStudentIds(new Set(rule.targetStudentIds));
+    }
+  };
+
+  const handleToggleRuleActive = async (ruleId: string, currentActive: boolean) => {
+    const updated = toggleScheduledInboxRuleActive(ruleId, !currentActive);
+    setScheduledRules(updated);
+    try {
+      await auth.updateAdminConfig({
+        ...auth.adminConfig,
+        scheduledInboxRules: updated,
+      });
+    } catch (err) {
+      console.warn("Aviso ao atualizar status remoto da regra:", err);
+    }
+  };
+
+  const handleDeleteRule = async (ruleId: string) => {
+    if (!confirm("Deseja realmente excluir esta mensagem programada?")) return;
+    const updated = deleteScheduledInboxRule(ruleId);
+    setScheduledRules(updated);
+    if (editingRuleId === ruleId) {
+      handleCancelEditScheduledRule();
+    }
+    try {
+      await auth.updateAdminConfig({
+        ...auth.adminConfig,
+        scheduledInboxRules: updated,
+      });
+    } catch (err) {
+      console.warn("Aviso ao excluir regra remota:", err);
+    }
+  };
+
+  const handleTriggerRuleNow = async (ruleId: string) => {
+    const res = evaluateAndTriggerScheduledMessages(undefined, new Date(), ruleId);
+    if (res.triggeredCount > 0) {
+      refreshScheduledRules();
+      refreshHistory();
+      try {
+        await auth.updateAdminConfig({
+          ...auth.adminConfig,
+          inboxMessages: loadAllInboxMessages().slice(0, 50),
+          scheduledInboxRules: loadScheduledInboxRules(),
+        });
+      } catch (err) {
+        console.warn("Aviso ao salvar PlayFab:", err);
+      }
+      onBroadcastSent?.(`⚡ Mensagem programada disparada com sucesso para o ciclo atual!`);
+    }
   };
 
   // Estatísticas de leitura para o modal de inspeção
@@ -692,14 +1160,49 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
 
         {/* COLUNA DIREITA: COMPOSITOR DA MENSAGEM, GIFS E RECOMPENSAS (7 colunas) */}
         <div className="lg:col-span-7 space-y-5">
-          <div className="rounded-3xl border bg-card p-5 space-y-4 shadow-xs">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div className="flex items-center gap-2">
-                <MessageSquare className="h-4 w-4 text-primary" />
-                <h3 className="font-display text-sm font-bold text-foreground">
-                  Compositor do Comunicado
-                </h3>
-              </div>
+          {/* SELETOR DE ABAS DO COMPOSITOR */}
+          <div className="flex items-center gap-2 rounded-2xl bg-secondary/50 p-1.5 border">
+            <button
+              type="button"
+              onClick={() => setInboxTab("immediate")}
+              className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-black transition-all cursor-pointer ${
+                inboxTab === "immediate"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-secondary/70"
+              }`}
+            >
+              <Send className="h-3.5 w-3.5" />
+              <span>Envio Imediato</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setInboxTab("scheduled")}
+              className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-black transition-all cursor-pointer ${
+                inboxTab === "scheduled"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-secondary/70"
+              }`}
+            >
+              <CalendarClock className="h-3.5 w-3.5" />
+              <span>Mensagens Programadas</span>
+              {scheduledRules.filter((r) => r.active).length > 0 && (
+                <span className="rounded-full bg-amber-500 text-zinc-950 px-2 py-0.5 text-[10px] font-black">
+                  {scheduledRules.filter((r) => r.active).length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {inboxTab === "immediate" ? (
+            <>
+              <div className="rounded-3xl border bg-card p-5 space-y-4 shadow-xs">
+                <div className="flex items-center justify-between border-b pb-3">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4 text-primary" />
+                    <h3 className="font-display text-sm font-bold text-foreground">
+                      Compositor do Comunicado Imediato
+                    </h3>
+                  </div>
               <span className="text-xs text-muted-foreground">
                 Suporta quebras de linha e tags de mídia
               </span>
@@ -731,6 +1234,7 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
               </div>
               <textarea
                 id="msg-body"
+                ref={bodyTextareaRef}
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 placeholder="Escreva a mensagem completa para os alunos. Para exibir um GIF animado em um ponto específico do texto, use a tag [gif1] ou [gif2]..."
@@ -739,25 +1243,26 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
               />
             </div>
 
-            {/* MENÇÕES DINÂMICAS: [nick] e [game] */}
-            <div className="rounded-2xl border bg-secondary/20 p-3.5 space-y-2.5">
+            {/* MENÇÕES DINÂMICAS: [nick], [game] e [event] */}
+            <div className="rounded-2xl border bg-secondary/20 p-3.5 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Gamepad2 className="h-4 w-4 text-primary" />
                   <span className="font-display text-xs font-bold text-foreground">
-                    Menções Dinâmicas no Texto: Tag [nick] & Tag [game]
+                    Menções Dinâmicas no Texto: Tags [nick], [game] & [event]
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={() => {
-                      setBody((prev) => (prev ? `${prev} [nick] ` : "[nick] "));
+                      insertTagIntoTextarea(bodyTextareaRef.current, body, setBody, "[nick]");
                     }}
                     className="h-7 rounded-xl text-[11px] font-bold cursor-pointer"
-                    title="Insere a tag [nick], que menciona dinamicamente o nick do próprio aluno"
+                    title="Insere a tag [nick] exatamente na posição do cursor, que menciona dinamicamente o nick do aluno em negrito destacado"
                   >
                     + Inserir [nick]
                   </Button>
@@ -765,20 +1270,36 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
                     type="button"
                     variant="outline"
                     size="sm"
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={() => {
-                      setBody((prev) => (prev ? `${prev} [game] ` : "[game] "));
+                      insertTagIntoTextarea(bodyTextareaRef.current, body, setBody, "[game]");
                     }}
                     className="h-7 rounded-xl text-[11px] font-bold cursor-pointer border-primary/40 text-primary hover:bg-primary/10"
-                    title="Insere a tag [game], que escreve o nome do jogo selecionado"
+                    title="Insere a tag [game] exatamente na posição do cursor, que escreve o nome do jogo selecionado em negrito"
                   >
                     + Inserir [game]
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      insertTagIntoTextarea(bodyTextareaRef.current, body, setBody, "[event]");
+                    }}
+                    className="h-7 rounded-xl text-[11px] font-bold cursor-pointer border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                    title="Insere a tag [event] exatamente na posição do cursor, que exibe o nome do evento vinculado"
+                  >
+                    <Sparkles className="h-3 w-3 mr-1" />
+                    + Inserir [event]
                   </Button>
                 </div>
               </div>
 
+              {/* Seletor de Jogo para [game] */}
               <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                 <Label htmlFor="mention-game-select" className="text-[11px] font-bold text-muted-foreground whitespace-nowrap">
-                  Jogo selecionado para a tag <code className="bg-muted px-1.5 py-0.5 rounded text-primary font-mono">[game]</code>:
+                  Jogo para a tag <code className="bg-muted px-1.5 py-0.5 rounded text-primary font-mono">[game]</code>:
                 </Label>
                 <select
                   id="mention-game-select"
@@ -795,9 +1316,52 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
                 </select>
               </div>
 
+              {/* Seletor e Opção de Linkar para [event] */}
+              <div className="space-y-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <Label htmlFor="mention-event-select" className="text-[11px] font-bold text-amber-700 dark:text-amber-300 whitespace-nowrap flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5" />
+                    Evento para a tag <code className="bg-amber-500/20 px-1.5 py-0.5 rounded text-amber-700 dark:text-amber-300 font-mono">[event]</code>:
+                  </Label>
+                  <select
+                    id="mention-event-select"
+                    value={selectedMentionEventId}
+                    onChange={(e) => setSelectedMentionEventId(e.target.value)}
+                    className="h-8 rounded-xl border bg-background px-3 text-xs font-bold flex-1"
+                  >
+                    <option value="">(Nenhum evento selecionado — exibe título padrão)</option>
+                    {allConfiguredEvents.map((ev) => (
+                      <option key={ev.id} value={ev.id}>
+                        ✨ [{ev.type}] {ev.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 pt-2 border-t border-amber-500/20">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                      <span>Linkar detalhes completos do evento</span>
+                      <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/20 px-1.5 py-0.2 rounded">
+                        Padrão: Ativado
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      Se <b>marcado</b>, o nome do evento é exibido em cor de destaque e se torna clicável para abrir um modal sobreposto com as informações do evento. Se <b>desmarcado</b>, o nome do evento é exibido apenas em <b>negrito</b>.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={linkEventDetails}
+                    onCheckedChange={setLinkEventDetails}
+                    aria-label="Linkar detalhes do evento"
+                  />
+                </div>
+              </div>
+
               <p className="text-[10px] text-muted-foreground leading-relaxed">
-                💡 <b>[nick]</b> menciona automaticamente o apelido do aluno que abrir a mensagem (ex: <i>&quot;Parabéns, [nick]!&quot;</i>).<br />
-                💡 <b>[game]</b> escreve o nome do jogo selecionado acima como menção em texto puro (não linka e não redireciona o jogo).
+                💡 <b>[nick]</b> menciona dinamicamente o apelido do aluno em <b>negrito destacado</b>.<br />
+                💡 <b>[game]</b> escreve o nome do jogo selecionado como menção em <b>negrito</b>.<br />
+                💡 <b>[event]</b> exibe o nome do evento vinculado como link clicável (abre modal com multiplicadores e regras) ou em <b>negrito</b> conforme o botão acima.
               </p>
             </div>
 
@@ -861,8 +1425,9 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
                       {/* Botão de Inserir Tag */}
                       <button
                         type="button"
+                        onMouseDown={(e) => e.preventDefault()}
                         onClick={() => handleInsertTagIntoBody(m.tagKey)}
-                        title="Clique para inserir a tag no texto da mensagem"
+                        title="Clique para inserir a tag no texto da mensagem exatamente onde o cursor estiver"
                         className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-mono font-bold transition-colors cursor-pointer shrink-0 ${
                           m.type === "gif"
                             ? "bg-amber-500/15 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500 hover:text-zinc-950"
@@ -1088,30 +1653,47 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
 
           {/* HISTÓRICO DE MENSAGENS TRANSMITIDAS COM CONTADOR DE LEITURAS */}
           <div className="rounded-3xl border bg-card p-5 space-y-3 shadow-xs">
-            <div className="flex items-center justify-between border-b pb-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2.5">
               <div className="flex items-center gap-2">
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 <h3 className="font-display text-xs font-bold text-foreground uppercase tracking-wider">
                   Histórico de Mensagens Transmitidas ({sentHistory.length})
                 </h3>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={refreshHistory}
-                className="h-7 text-xs font-bold cursor-pointer"
-              >
-                Atualizar
-              </Button>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setHistorySortOrder((prev) => (prev === "desc" ? "asc" : "desc"))}
+                  className="h-7 rounded-xl text-[11px] font-bold gap-1.5 cursor-pointer bg-secondary/50 hover:bg-secondary border-border/80"
+                  title={
+                    historySortOrder === "desc"
+                      ? "Ordem atual: Mais recentes no topo. Clique para exibir mais antigas no topo."
+                      : "Ordem atual: Mais antigas no topo. Clique para exibir mais recentes no topo."
+                  }
+                >
+                  <ArrowUpDown className="h-3 w-3 text-primary" />
+                  <span>{historySortOrder === "desc" ? "Mais Recentes ⬇️" : "Mais Antigas ⬆️"}</span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={refreshHistory}
+                  className="h-7 text-xs font-bold cursor-pointer"
+                >
+                  Atualizar
+                </Button>
+              </div>
             </div>
 
-            {sentHistory.length === 0 ? (
+            {sortedSentHistory.length === 0 ? (
               <div className="py-6 text-center text-xs text-muted-foreground">
                 Nenhum comunicado foi transmitido recentemente.
               </div>
             ) : (
               <div className="max-h-72 overflow-y-auto space-y-2.5">
-                {sentHistory.map((msg) => {
+                {sortedSentHistory.map((msg) => {
                   let formattedDate = "Recente";
                   try {
                     formattedDate = new Date(msg.createdAt).toLocaleDateString("pt-BR", {
@@ -1195,32 +1777,811 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
               </div>
             )}
           </div>
-        </div>
+        </>
+      ) : (
+        <>
+          {/* COMPOSITOR DE MENSAGEM PROGRAMADA */}
+          <div className="rounded-3xl border bg-card p-5 space-y-4 shadow-xs">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center gap-2">
+                <CalendarClock className="h-4 w-4 text-primary" />
+                <h3 className="font-display text-sm font-bold text-foreground">
+                  {editingRuleId ? "✏️ Editando Mensagem Programada" : "⏰ Compositor de Mensagem Programada"}
+                </h3>
+              </div>
+              {editingRuleId ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleCancelEditScheduledRule}
+                  className="h-7 text-xs font-bold text-destructive hover:bg-destructive/10 cursor-pointer"
+                >
+                  Cancelar Edição
+                </Button>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  Configure envios automáticos por dia da semana ou data
+                </span>
+              )}
+            </div>
+
+            {/* TÍTULO DA MENSAGEM PROGRAMADA */}
+            <div className="space-y-1.5">
+              <Label htmlFor="sched-title" className="text-xs font-bold text-foreground">
+                Título da Mensagem Programada
+              </Label>
+              <Input
+                id="sched-title"
+                value={schedTitle}
+                onChange={(e) => setSchedTitle(e.target.value)}
+                placeholder="Ex: ⚡ Bônus 3X de XP de Fim de Semana Ativo!"
+                className="h-11 rounded-2xl font-bold text-sm"
+              />
+            </div>
+
+            {/* CORPO DA MENSAGEM PROGRAMADA */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="sched-body" className="text-xs font-bold text-foreground">
+                  Texto da Mensagem
+                </Label>
+                <span className="text-[11px] text-muted-foreground">
+                  {schedBody.length} caracteres
+                </span>
+              </div>
+              <textarea
+                id="sched-body"
+                ref={schedBodyTextareaRef}
+                value={schedBody}
+                onChange={(e) => setSchedBody(e.target.value)}
+                placeholder="Escreva a mensagem programada. Use [nick] para o aluno, [game] para o jogo e [event] para o evento..."
+                rows={5}
+                className="w-full rounded-2xl border bg-background p-3.5 text-xs font-medium leading-relaxed resize-y focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+
+            {/* MENÇÕES DINÂMICAS: [nick], [game] e [event] */}
+            <div className="rounded-2xl border bg-secondary/20 p-3.5 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Gamepad2 className="h-4 w-4 text-primary" />
+                  <span className="font-display text-xs font-bold text-foreground">
+                    Menções Dinâmicas no Texto: Tags [nick], [game] & [event]
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      insertTagIntoTextarea(schedBodyTextareaRef.current, schedBody, setSchedBody, "[nick]");
+                    }}
+                    className="h-7 rounded-xl text-[11px] font-bold cursor-pointer"
+                    title="Insere a tag [nick] exatamente na posição do cursor"
+                  >
+                    + Inserir [nick]
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      insertTagIntoTextarea(schedBodyTextareaRef.current, schedBody, setSchedBody, "[game]");
+                    }}
+                    className="h-7 rounded-xl text-[11px] font-bold cursor-pointer border-primary/40 text-primary hover:bg-primary/10"
+                    title="Insere a tag [game] exatamente na posição do cursor"
+                  >
+                    + Inserir [game]
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      insertTagIntoTextarea(schedBodyTextareaRef.current, schedBody, setSchedBody, "[event]");
+                    }}
+                    className="h-7 rounded-xl text-[11px] font-bold cursor-pointer border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                    title="Insere a tag [event] exatamente na posição do cursor"
+                  >
+                    <Sparkles className="h-3 w-3 mr-1" />
+                    + Inserir [event]
+                  </Button>
+                </div>
+              </div>
+
+              {/* Seletor de Jogo para [game] */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                <Label htmlFor="sched-mention-game-select" className="text-[11px] font-bold text-muted-foreground whitespace-nowrap">
+                  Jogo para a tag <code className="bg-muted px-1.5 py-0.5 rounded text-primary font-mono">[game]</code>:
+                </Label>
+                <select
+                  id="sched-mention-game-select"
+                  value={schedMentionGame}
+                  onChange={(e) => setSchedMentionGame(e.target.value)}
+                  className="h-8 rounded-xl border bg-background px-3 text-xs font-bold flex-1"
+                >
+                  <option value="">(Nenhum jogo selecionado — tag [game] inativa)</option>
+                  {ALL_GAME_IDS.map((gId) => (
+                    <option key={gId} value={gId}>
+                      🎯 {GAME_NAMES[gId]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Seletor de Evento para [event] */}
+              <div className="space-y-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <Label htmlFor="sched-mention-event-select" className="text-[11px] font-bold text-amber-700 dark:text-amber-300 whitespace-nowrap flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5" />
+                    Evento para a tag <code className="bg-amber-500/20 px-1.5 py-0.5 rounded text-amber-700 dark:text-amber-300 font-mono">[event]</code>:
+                  </Label>
+                  <select
+                    id="sched-mention-event-select"
+                    value={schedMentionEventId}
+                    onChange={(e) => setSchedMentionEventId(e.target.value)}
+                    className="h-8 rounded-xl border bg-background px-3 text-xs font-bold flex-1"
+                  >
+                    <option value="">(Nenhum evento selecionado — exibe título padrão)</option>
+                    {allConfiguredEvents.map((ev) => (
+                      <option key={ev.id} value={ev.id}>
+                        ✨ [{ev.type}] {ev.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 pt-2 border-t border-amber-500/20">
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-bold text-foreground">
+                      Linkar detalhes completos do evento
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      Se ativado, torna o nome do evento clicável para abrir o modal de detalhes.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={schedLinkEventDetails}
+                    onCheckedChange={setSchedLinkEventDetails}
+                    aria-label="Linkar detalhes do evento"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* GERENCIADOR DE MÍDIAS DA MENSAGEM PROGRAMADA */}
+            <div className="space-y-3 rounded-2xl border bg-secondary/30 p-3.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-amber-500" />
+                  <span className="font-display text-xs font-bold text-foreground">
+                    Anexar Mídia (GIFs & Imagens)
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleAddSchedMedia("img")}
+                  className="h-7 rounded-xl text-xs font-bold gap-1 cursor-pointer bg-primary/10 border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Adicionar Mídia
+                </Button>
+              </div>
+
+              {indexedSchedMediaList.length > 0 && (
+                <div className="space-y-2 border-t border-border/50 pt-2">
+                  {indexedSchedMediaList.map((m) => (
+                    <div
+                      key={m.id}
+                      className="flex flex-col sm:flex-row items-start sm:items-center gap-2 rounded-xl border bg-background p-2 text-xs"
+                    >
+                      <div className="flex items-center rounded-lg bg-secondary p-0.5 shrink-0 border">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleSchedMediaType(m.id, "img")}
+                          className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-bold ${
+                            m.type === "img" ? "bg-card text-blue-600 dark:text-blue-400" : "text-muted-foreground"
+                          }`}
+                        >
+                          Img
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleSchedMediaType(m.id, "gif")}
+                          className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-bold ${
+                            m.type === "gif" ? "bg-card text-amber-600 dark:text-amber-400" : "text-muted-foreground"
+                          }`}
+                        >
+                          GIF
+                        </button>
+                      </div>
+
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => handleInsertSchedTagIntoBody(m.tagKey)}
+                        className="h-7 rounded-lg text-xs font-mono font-bold"
+                        title="Clique para inserir a tag no texto da mensagem exatamente onde o cursor estiver"
+                      >
+                        [{m.tagKey}]
+                      </Button>
+
+                      <Input
+                        value={m.url}
+                        onChange={(e) => handleUpdateSchedMediaUrl(m.id, e.target.value)}
+                        placeholder="URL da mídia..."
+                        className="h-7 text-xs flex-1"
+                      />
+
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveSchedMedia(m.id)}
+                        className="h-7 w-7 p-0 text-destructive"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* RECOMPENSAS DA MENSAGEM PROGRAMADA */}
+            <div className="space-y-3.5 rounded-2xl border bg-secondary/30 p-3.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Gift className="h-4 w-4 text-amber-500" />
+                  <span className="font-display text-xs font-bold text-foreground">
+                    Anexar Recompensa na Mensagem Programada
+                  </span>
+                </div>
+                <Switch
+                  checked={schedHasReward}
+                  onCheckedChange={setSchedHasReward}
+                  aria-label="Ativar recompensa na mensagem programada"
+                />
+              </div>
+
+              {schedHasReward && (
+                <div className="space-y-3.5 border-t border-border/50 pt-3">
+                  <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-secondary/50 p-1">
+                    <button
+                      type="button"
+                      onClick={() => setSchedRewardType("points")}
+                      className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition-all cursor-pointer ${
+                        schedRewardType === "points"
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Coins className="h-3.5 w-3.5" /> Pontos / Moedas
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSchedRewardType("medal")}
+                      className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition-all cursor-pointer ${
+                        schedRewardType === "medal"
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Award className="h-3.5 w-3.5" /> Medalha
+                    </button>
+                  </div>
+
+                  {schedRewardType === "points" && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold text-foreground">
+                        Quantidade de Pontos de Carreira
+                      </Label>
+                      <Input
+                        type="number"
+                        min={10}
+                        max={10000}
+                        step={10}
+                        value={schedRewardPoints}
+                        onChange={(e) => setSchedRewardPoints(Math.max(1, Number(e.target.value) || 0))}
+                        className="h-10 rounded-xl font-mono font-bold text-sm"
+                      />
+                    </div>
+                  )}
+
+                  {schedRewardType === "medal" && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold text-foreground">
+                        Selecione a Medalha a Conceder
+                      </Label>
+                      <select
+                        value={schedSelectedMedalId}
+                        onChange={(e) => setSchedSelectedMedalId(e.target.value)}
+                        className="w-full h-10 rounded-xl border bg-background px-3 text-xs font-bold"
+                      >
+                        {availableMedals.map((m) => {
+                          const rarity = RARITY_INFO[m.rarity] || RARITY_INFO.ouro;
+                          return (
+                            <option key={m.id} value={m.id}>
+                              🏅 {m.title} — [{rarity.label.toUpperCase()}]
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between rounded-xl bg-background/50 p-2.5 border">
+                    <div className="space-y-0.5">
+                      <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                        <Sparkles className="h-3.5 w-3.5 text-amber-500" /> Recompensa Secreta
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">
+                        O aluno só descobrirá o prêmio ao clicar no presente misterioso.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={schedIsSecretReward}
+                      onCheckedChange={setSchedIsSecretReward}
+                      aria-label="Ativar recompensa secreta"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* BLOCO DE CRONOGRAMA / PROGRAMAÇÃO DO HORÁRIO */}
+            <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-4 space-y-4">
+              <div className="flex items-center gap-2 border-b border-primary/20 pb-2">
+                <CalendarClock className="h-4 w-4 text-primary" />
+                <h4 className="font-display text-xs font-black text-foreground uppercase tracking-wider">
+                  Cronograma de Disparo Automático
+                </h4>
+              </div>
+
+              {/* TIPO DE RECORRÊNCIA */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-bold text-foreground">Frequência do Envio</Label>
+                <div className="grid grid-cols-3 gap-2 rounded-2xl bg-secondary/50 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setSchedRecurrence("weekly")}
+                    className={`rounded-xl py-2 text-xs font-black transition-all cursor-pointer ${
+                      schedRecurrence === "weekly"
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    📅 Semanal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSchedRecurrence("monthly")}
+                    className={`rounded-xl py-2 text-xs font-black transition-all cursor-pointer ${
+                      schedRecurrence === "monthly"
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    🗓️ Mensal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSchedRecurrence("once")}
+                    className={`rounded-xl py-2 text-xs font-black transition-all cursor-pointer ${
+                      schedRecurrence === "once"
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    🎯 Data Única
+                  </button>
+                </div>
+              </div>
+
+              {/* CONFIGURAÇÃO ESPECÍFICA POR FREQUÊNCIA */}
+              {schedRecurrence === "weekly" && (
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold text-foreground">
+                    Dias da Semana de Envio:
+                  </Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {DAY_NAMES_SHORT.map((dayName, dayIdx) => {
+                      const isSelected = schedDaysOfWeek.includes(dayIdx);
+                      return (
+                        <button
+                          key={dayIdx}
+                          type="button"
+                          onClick={() => {
+                            setSchedDaysOfWeek((prev) => {
+                              if (prev.includes(dayIdx)) {
+                                if (prev.length === 1) return prev;
+                                return prev.filter((d) => d !== dayIdx);
+                              }
+                              return [...prev, dayIdx].sort((a, b) => a - b);
+                            });
+                          }}
+                          className={`rounded-xl px-3 py-1.5 text-xs font-black transition-all cursor-pointer border ${
+                            isSelected
+                              ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                              : "bg-background text-muted-foreground border-border/70 hover:text-foreground"
+                          }`}
+                        >
+                          {dayName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Exemplo: marque <b>Sáb</b> para o comunicado de fim de semana, ou <b>Seg</b> para abertura da rodada.
+                  </p>
+                </div>
+              )}
+
+              {schedRecurrence === "monthly" && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="sched-month-day" className="text-xs font-bold text-foreground">
+                    Dia do Mês para Envio
+                  </Label>
+                  <select
+                    id="sched-month-day"
+                    value={schedDayOfMonth}
+                    onChange={(e) => setSchedDayOfMonth(Number(e.target.value) || 1)}
+                    className="h-9 w-full rounded-xl border bg-background px-3 text-xs font-bold"
+                  >
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                      <option key={d} value={d}>
+                        Todo dia {d} de cada mês
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {schedRecurrence === "once" && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="sched-specific-date" className="text-xs font-bold text-foreground">
+                    Data Exata do Disparo
+                  </Label>
+                  <Input
+                    id="sched-specific-date"
+                    type="date"
+                    value={schedSpecificDate}
+                    onChange={(e) => setSchedSpecificDate(e.target.value)}
+                    className="h-9 rounded-xl text-xs font-bold"
+                  />
+                </div>
+              )}
+
+              {/* HORÁRIO DO DISPARO */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-primary/20">
+                <div className="space-y-1.5">
+                  <Label htmlFor="sched-time" className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-primary" />
+                    Horário de Envio (24h)
+                  </Label>
+                  <Input
+                    id="sched-time"
+                    type="time"
+                    value={schedTimeOfDay}
+                    onChange={(e) => setSchedTimeOfDay(e.target.value)}
+                    className="h-9 rounded-xl font-mono text-xs font-bold"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-foreground">
+                    Validade da Programação (Opcional)
+                  </Label>
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      type="date"
+                      value={schedValidFrom}
+                      onChange={(e) => setSchedValidFrom(e.target.value)}
+                      placeholder="De"
+                      className="h-9 rounded-xl text-[11px]"
+                      title="Data de Início da Validade"
+                    />
+                    <span className="text-xs text-muted-foreground">até</span>
+                    <Input
+                      type="date"
+                      value={schedValidUntil}
+                      onChange={(e) => setSchedValidUntil(e.target.value)}
+                      placeholder="Até"
+                      className="h-9 rounded-xl text-[11px]"
+                      title="Data de Fim da Validade"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* BOTÃO SALVAR MENSAGEM PROGRAMADA */}
+            <div className="flex items-center gap-2 pt-1">
+              <Button
+                type="button"
+                size="lg"
+                onClick={() => void handleSaveScheduledRule()}
+                className="h-12 flex-1 rounded-2xl font-display text-sm font-extrabold gap-2 shadow-lg cursor-pointer bg-primary hover:bg-primary/90 text-primary-foreground"
+              >
+                <CalendarClock className="h-4 w-4" />
+                {editingRuleId ? "💾 Atualizar Programação" : `⏰ Salvar e Ativar Programação para ${selectedStudentIds.size} Aluno(s)`}
+              </Button>
+            </div>
+          </div>
+
+          {/* PAINEL INFERIOR: ACOMPANHAMENTO DAS MENSAGENS PROGRAMADAS SALVAS */}
+          <div className="rounded-3xl border bg-card p-5 space-y-4 shadow-xs">
+            <div className="flex items-center justify-between border-b pb-2.5">
+              <div className="flex items-center gap-2">
+                <CalendarClock className="h-4 w-4 text-primary" />
+                <h3 className="font-display text-xs font-bold text-foreground uppercase tracking-wider">
+                  Mensagens Programadas Salvas ({scheduledRules.length})
+                </h3>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  const res = evaluateAndTriggerScheduledMessages(undefined, new Date());
+                  refreshScheduledRules();
+                  refreshHistory();
+                  if (res.triggeredCount > 0) {
+                    onBroadcastSent?.(`⚡ ${res.triggeredCount} mensagem(ns) programada(s) disparada(s)!`);
+                  } else {
+                    onBroadcastSent?.("Nenhum disparo pendente no momento exato.");
+                  }
+                }}
+                className="h-7 text-xs font-bold cursor-pointer"
+              >
+                Verificar Disparos Agora
+              </Button>
+            </div>
+
+            {scheduledRules.length === 0 ? (
+              <div className="py-8 text-center text-xs text-muted-foreground space-y-1">
+                <CalendarClock className="h-8 w-8 mx-auto text-muted-foreground/40" />
+                <p>Nenhuma mensagem programada cadastrada no momento.</p>
+                <p className="text-[11px]">Use o formulário acima para programar avisos semanais, mensais ou pontuais.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {scheduledRules.map((rule) => {
+                  const nextRun = computeNextRunDate(rule);
+                  let nextRunFormatted = "Nenhum disparo futuro";
+                  if (nextRun) {
+                    nextRunFormatted = nextRun.toLocaleDateString("pt-BR", {
+                      weekday: "short",
+                      day: "2-digit",
+                      month: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    });
+                  }
+
+                  let lastTriggeredFormatted = "Ainda não disparada";
+                  if (rule.lastTriggeredAt) {
+                    try {
+                      lastTriggeredFormatted = new Date(rule.lastTriggeredAt).toLocaleDateString("pt-BR", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      });
+                    } catch {
+                      lastTriggeredFormatted = "Recente";
+                    }
+                  }
+
+                  // Busca a mensagem do ciclo atual mais recente para calcular leituras deste ciclo
+                  const allMsgs = loadAllInboxMessages();
+                  const currentCycleMsg = rule.lastTriggeredMessageId
+                    ? allMsgs.find((m) => m.id === rule.lastTriggeredMessageId)
+                    : null;
+
+                  const cycleStats = currentCycleMsg
+                    ? getMessageReaders(currentCycleMsg, studentsList)
+                    : null;
+                  const cycleReadPercent =
+                    cycleStats && cycleStats.totalTargeted > 0
+                      ? Math.round((cycleStats.readCount / cycleStats.totalTargeted) * 100)
+                      : 0;
+
+                  return (
+                    <div
+                      key={rule.id}
+                      className={`rounded-2xl border p-4 space-y-3 transition-colors ${
+                        rule.active ? "bg-secondary/20 border-primary/20" : "bg-card/40 opacity-70 border-border"
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-display font-black text-sm text-foreground truncate">
+                              {rule.title}
+                            </span>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
+                                rule.active
+                                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30"
+                                  : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              {rule.active ? "🟢 ATIVA" : "⚪ PAUSADA"}
+                            </span>
+                            <span className="rounded-full bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 text-[10px] font-bold">
+                              {formatRecurrenceLabel(rule)}
+                            </span>
+                          </div>
+
+                          <div className="text-[11px] text-muted-foreground mt-1">
+                            <b>Público:</b>{" "}
+                            {rule.recipientMode === "all"
+                              ? "Todos os Alunos"
+                              : rule.recipientMode === "school"
+                                ? `Escola: ${rule.targetSchool || "Todas"}`
+                                : rule.recipientMode === "stage"
+                                  ? `Etapa: ${rule.targetStage || "Todas"}`
+                                  : `${rule.targetStudentIds?.length || 0} alunos selecionados`}
+                          </div>
+                        </div>
+
+                        {/* AÇÕES DA REGRA */}
+                        <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-center">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void handleTriggerRuleNow(rule.id)}
+                            className="h-7 rounded-xl text-[11px] font-bold gap-1 cursor-pointer border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                            title="Disparar uma nova rodada desta mensagem agora para teste"
+                          >
+                            <Zap className="h-3 w-3" /> Disparar Agora
+                          </Button>
+
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void handleToggleRuleActive(rule.id, rule.active)}
+                            className="h-7 rounded-xl text-[11px] font-bold gap-1 cursor-pointer"
+                            title={rule.active ? "Pausar regra" : "Ativar regra"}
+                          >
+                            {rule.active ? <Pause className="h-3 w-3 text-amber-500" /> : <Play className="h-3 w-3 text-emerald-500" />}
+                            {rule.active ? "Pausar" : "Ativar"}
+                          </Button>
+
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEditRule(rule)}
+                            className="h-7 rounded-xl text-[11px] font-bold gap-1 cursor-pointer"
+                            title="Editar texto e horários desta regra"
+                          >
+                            <Pencil className="h-3 w-3" /> Editar
+                          </Button>
+
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => void handleDeleteRule(rule.id)}
+                            className="h-7 w-7 p-0 text-destructive hover:bg-destructive/10 cursor-pointer"
+                            title="Excluir regra programada"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* TIMELINE DE DISPAROS */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] bg-background/60 p-2.5 rounded-xl border border-border/50">
+                        <div>
+                          <span className="text-muted-foreground">Último disparo realizado: </span>
+                          <b className="text-foreground">{lastTriggeredFormatted}</b>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Próximo envio previsto: </span>
+                          <b className="text-primary">{nextRunFormatted}</b>
+                        </div>
+                      </div>
+
+                      {/* STATUS DE LEITURA DO CICLO ATUAL (RESETADO A CADA NOVA SEMANA/ENVIO) */}
+                      <div className="rounded-xl border bg-secondary/30 p-2.5 space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <div className="flex items-center gap-1.5 font-bold text-foreground">
+                            <Eye className="h-3.5 w-3.5 text-primary" />
+                            <span>Acompanhamento do Ciclo Atual:</span>
+                          </div>
+                          {currentCycleMsg && (
+                            <span className="text-[10px] text-muted-foreground font-mono">
+                              ID: {currentCycleMsg.id.substring(0, 10)}
+                            </span>
+                          )}
+                        </div>
+
+                        {cycleStats ? (
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 border-t border-border/40">
+                            <div className="space-y-1 flex-1">
+                              <div className="flex items-center justify-between text-[11px] font-bold">
+                                <span className="text-emerald-600 dark:text-emerald-400">
+                                  🟢 {cycleStats.readCount} de {cycleStats.totalTargeted} alunos abriram ({cycleReadPercent}%)
+                                </span>
+                                <span className="text-muted-foreground">
+                                  ⚪ {cycleStats.unreadStudents.length} pendentes
+                                </span>
+                              </div>
+                              <div className="w-full bg-secondary rounded-full h-1.5 overflow-hidden">
+                                <div
+                                  className="bg-primary h-1.5 rounded-full transition-all duration-500"
+                                  style={{ width: `${cycleReadPercent}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setReadersModalMsg(currentCycleMsg);
+                                setReadersTab("read");
+                              }}
+                              className="h-7 rounded-xl text-[11px] font-bold gap-1 cursor-pointer shrink-0"
+                            >
+                              <Users className="h-3 w-3" /> Ver Leituras do Ciclo
+                            </Button>
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-muted-foreground italic">
+                            Nenhum ciclo foi disparado ainda. As leituras aparecerão aqui assim que o primeiro envio for realizado.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
       </div>
 
       {/* MODAL DE DETALHES DE LEITURA (QUEM ABRIU / QUEM NÃO ABRIU) */}
       <Dialog open={Boolean(readersModalMsg)} onOpenChange={() => setReadersModalMsg(null)}>
         <DialogContent className="w-[95vw] max-w-lg rounded-3xl p-6">
-          <DialogHeader>
-            <div className="flex items-center justify-between gap-2 pr-6">
-              <DialogTitle className="font-display text-lg font-black text-foreground flex items-center gap-2">
-                <Eye className="h-5 w-5 text-primary" />
-                Controle de Leitura do Comunicado
-              </DialogTitle>
+          <DialogHeader className="space-y-1 pb-2 border-b">
+            <div className="flex items-center justify-between gap-3 pr-6 min-h-[36px]">
+              <div className="flex items-center gap-2 min-w-0">
+                <Eye className="h-5 w-5 text-primary shrink-0" />
+                <DialogTitle className="font-display text-base sm:text-lg font-black text-foreground truncate">
+                  Controle de Leitura do Comunicado
+                </DialogTitle>
+              </div>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 disabled={isSyncingReaders}
                 onClick={handleManualSyncReaders}
-                className="h-8 px-3 rounded-xl text-xs font-bold gap-1.5 text-primary border-primary/30 hover:bg-primary/10 cursor-pointer"
-                title="Executa a retrobusca completa em todas as contas e sincroniza com a nuvem PlayFab"
+                className="h-8 px-3 rounded-xl text-xs font-bold gap-1.5 text-primary border-primary/30 hover:bg-primary/10 cursor-pointer shrink-0 min-w-[125px] justify-center transition-colors select-none"
+                title={isAnySyncing ? "Sincronizando leituras em tempo real com o servidor..." : "Executa a retrobusca completa e sincroniza com a nuvem PlayFab"}
               >
-                <RefreshCw className={`h-3.5 w-3.5 ${isSyncingReaders ? "animate-spin" : ""}`} />
-                <span>{isSyncingReaders ? "Varrendo Leituras..." : "Retrobusca & Sincronizar"}</span>
+                <RefreshCw className={`h-3.5 w-3.5 shrink-0 ${isAnySyncing ? "animate-spin text-primary" : ""}`} />
+                <span>Sincronizar</span>
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground truncate">
+            <p className="text-xs text-muted-foreground truncate font-medium">
               {readersModalMsg?.title}
             </p>
           </DialogHeader>

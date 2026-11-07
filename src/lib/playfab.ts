@@ -3029,24 +3029,32 @@ export async function pushInboxReadToPlayFab(
     const cleanMsg = messageId.replace(/[^a-z0-9_]/gi, "_");
     const key = `inbox_read_${cleanNick}_${cleanMsg}`.substring(0, 100);
 
-    // Garante que o SharedGroup exista antes de tentar salvar
-    await callPlayFabClient(
-      "CreateSharedGroup",
-      { SharedGroupId: ADMIN_NOTIFICATIONS_SHARED_GROUP_ID },
-      adminTicket
-    );
+    // Tenta garantir que o SharedGroup exista (ignora se já existir)
+    try {
+      await callPlayFabClient(
+        "CreateSharedGroup",
+        { SharedGroupId: ADMIN_NOTIFICATIONS_SHARED_GROUP_ID },
+        adminTicket
+      );
+    } catch {
+      /* SharedGroup já existe, prossegue normalmente */
+    }
 
-    await callPlayFabClient(
-      "UpdateSharedGroupData",
-      {
-        SharedGroupId: ADMIN_NOTIFICATIONS_SHARED_GROUP_ID,
-        Data: {
-          [key]: JSON.stringify(receipt),
+    try {
+      await callPlayFabClient(
+        "UpdateSharedGroupData",
+        {
+          SharedGroupId: ADMIN_NOTIFICATIONS_SHARED_GROUP_ID,
+          Data: {
+            [key]: JSON.stringify(receipt),
+          },
+          Permission: "Public",
         },
-        Permission: "Public",
-      },
-      adminTicket
-    );
+        adminTicket
+      );
+    } catch (updateErr) {
+      console.warn("Aviso ao salvar leitura no SharedGroup:", updateErr);
+    }
 
     // Também espelha nos dados pessoais do aluno caso tenha sessão ativa
     const studentTicket = sessionTicket ?? loadStoredSession()?.sessionTicket;

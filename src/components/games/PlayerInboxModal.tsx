@@ -31,7 +31,9 @@ import { getAllAvailableMedals, RARITY_INFO } from "@/lib/medals-catalog";
 import { usePlayerAuth } from "@/lib/player-auth";
 import { pushInboxReadToPlayFab } from "@/lib/playfab";
 import { GAME_NAMES, type GameId } from "@/lib/game-storage";
+import { findEventById, type SpecialEvent, type RecurringEvent } from "@/lib/custom-events";
 import { MedalIcon } from "./MedalIcon";
+import { EventDetailModal } from "./EventDetailModal";
 
 interface Props {
   open: boolean;
@@ -50,6 +52,10 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
   const [isRevealing, setIsRevealing] = useState(false);
   const [revealProgress, setRevealProgress] = useState(0);
   const [revealedRewardModal, setRevealedRewardModal] = useState<InboxReward | null>(null);
+  const [selectedEventModal, setSelectedEventModal] = useState<{
+    event: (SpecialEvent | RecurringEvent) | null;
+    fallbackTitle?: string;
+  } | null>(null);
 
   // Mensagem selecionada ativa
   const activeMessage = useMemo(() => {
@@ -167,34 +173,99 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
     }
   };
 
-  const formatText = (text: string, msg?: SystemInboxMessage) => {
+  const formatText = (text: string, msg?: SystemInboxMessage | null) => {
     return formatInboxMessageText(text, {
       playerNick: profile?.nick || profile?.id || "Jogador",
       mentionedGameId: msg?.mentionedGameId,
+      mentionedEventTitle: msg?.mentionedEventTitle,
     });
   };
 
-  // Renderiza corpo da mensagem substituindo tags como [gif1], [gif2], [img1], [img2], [nick], [game]
+  const handleOpenEventDetails = (eventId?: string, fallbackTitle?: string) => {
+    if (eventId) {
+      const found = findEventById(eventId);
+      if (found) {
+        setSelectedEventModal({ event: found.event, fallbackTitle: found.event.title });
+        return;
+      }
+    }
+    setSelectedEventModal({
+      event: null,
+      fallbackTitle: fallbackTitle || "Evento Especial",
+    });
+  };
+
+  // Renderiza tags inline substituindo [nick] (negrito destacado), [game] (negrito) e [event] (clicável ou negrito)
+  const renderInlineTags = (
+    text: string,
+    msg?: SystemInboxMessage | null
+  ) => {
+    const userNick = profile?.nick || profile?.id || "Jogador";
+    const gameName = msg?.mentionedGameId
+      ? GAME_NAMES[msg.mentionedGameId as GameId] || msg.mentionedGameId
+      : "Jogo de Lógica";
+    const eventTitle = msg?.mentionedEventTitle || "Evento Especial";
+    const canLinkEvent = msg?.linkEventDetails !== false && Boolean(msg?.mentionedEventId || msg?.mentionedEventTitle);
+
+    // Divide pelas tags [nick], [game], [event]
+    const subParts = text.split(/(\[(?:nick|game|event)\])/gi);
+
+    return subParts.map((sub, sIdx) => {
+      const lower = sub.toLowerCase();
+      if (lower === "[nick]") {
+        return (
+          <strong
+            key={sIdx}
+            className="font-black text-primary bg-primary/10 px-1 py-0.5 rounded tracking-wide shadow-2xs inline-block"
+          >
+            {userNick}
+          </strong>
+        );
+      }
+      if (lower === "[game]") {
+        return (
+          <strong
+            key={sIdx}
+            className="font-black text-amber-600 dark:text-amber-400 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded-lg tracking-wide shadow-2xs inline-block mx-0.5"
+          >
+            🎮 {gameName}
+          </strong>
+        );
+      }
+      if (lower === "[event]") {
+        if (canLinkEvent) {
+          return (
+            <button
+              key={sIdx}
+              type="button"
+              onClick={() => handleOpenEventDetails(msg?.mentionedEventId, msg?.mentionedEventTitle)}
+              className="inline-flex items-center gap-1 rounded-xl border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-xs font-black text-amber-600 dark:text-amber-400 hover:bg-amber-500 hover:text-zinc-950 transition-all cursor-pointer shadow-2xs underline underline-offset-2 my-0.5 align-middle"
+              title="Clique para ver os detalhes completos deste evento"
+            >
+              <Sparkles className="h-3 w-3 shrink-0" />
+              <span>{eventTitle}</span>
+            </button>
+          );
+        }
+        return (
+          <strong key={sIdx} className="font-extrabold text-foreground">
+            {eventTitle}
+          </strong>
+        );
+      }
+      return <span key={sIdx}>{sub}</span>;
+    });
+  };
+
+  // Renderiza corpo da mensagem substituindo tags como [gif1], [gif2], [img1], [img2], [nick], [game], [event]
   const renderMessageBody = (
     body: string,
     gifLinks?: Record<string, string>,
     imageLinks?: Record<string, string>,
-    mentionedGameId?: string
+    msg?: SystemInboxMessage | null
   ) => {
-    const formattedBody = formatText(body, { mentionedGameId } as any);
-    const hasGifs = gifLinks && Object.keys(gifLinks).length > 0;
-    const hasImages = imageLinks && Object.keys(imageLinks).length > 0;
-
-    if (!hasGifs && !hasImages) {
-      return (
-        <div className="whitespace-pre-wrap text-sm text-foreground leading-relaxed space-y-2">
-          {formattedBody}
-        </div>
-      );
-    }
-
     // Divide texto pelas tags [gif1], [gif2], [img1], [img2], etc.
-    const parts = formattedBody.split(/(\[(?:gif|img)\d+\])/gi);
+    const parts = body.split(/(\[(?:gif|img)\d+\])/gi);
 
     return (
       <div className="whitespace-pre-wrap text-sm text-foreground leading-relaxed space-y-3">
@@ -228,7 +299,7 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
               );
             }
           }
-          return <span key={index}>{part}</span>;
+          return <span key={index}>{renderInlineTags(part, msg)}</span>;
         })}
       </div>
     );
@@ -439,7 +510,7 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
 
                   {/* Corpo do Texto, GIFs e Imagens */}
                   <div className="rounded-3xl border bg-card p-5 sm:p-6 shadow-xs">
-                    {renderMessageBody(activeMessage.body, activeMessage.gifLinks, activeMessage.imageLinks, activeMessage.mentionedGameId)}
+                    {renderMessageBody(activeMessage.body, activeMessage.gifLinks, activeMessage.imageLinks, activeMessage)}
                   </div>
 
                   {/* Seção de Recompensa Anexa (se houver) */}
@@ -672,6 +743,14 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Modal Sobreposto com Detalhes Completos do Evento ao Clicar na Tag [event] */}
+      <EventDetailModal
+        open={Boolean(selectedEventModal)}
+        onOpenChange={(open) => !open && setSelectedEventModal(null)}
+        event={selectedEventModal?.event ?? null}
+        fallbackTitle={selectedEventModal?.fallbackTitle}
+      />
     </>
   );
 }

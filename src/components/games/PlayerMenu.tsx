@@ -37,7 +37,11 @@ import {
   getDistinctGamesPlayed,
   getEffectivePlayerProgression,
 } from "@/lib/medals-catalog";
-import { getInboxCountsForPlayer, isMessageEligibleForPlayer } from "@/lib/inbox-messages";
+import {
+  getInboxCountsForPlayer,
+  isMessageEligibleForPlayer,
+  subscribeToInboxSync,
+} from "@/lib/inbox-messages";
 import { PresenceDot } from "./PresenceDot";
 import { usePlayerAuth } from "@/lib/player-auth";
 import {
@@ -68,6 +72,7 @@ import {
   playfabCompleteInitialSchoolSetup,
   playfabSetInitialTurma,
   playfabRequestTurmaChange,
+  syncAdminConfigFromPlayFab,
 } from "@/lib/playfab";
 
 interface Props {
@@ -206,6 +211,8 @@ export function PlayerMenu({ onConfigChanged }: Props) {
       return;
     }
 
+    let previousUnread = 0;
+
     const updateCounts = () => {
       const counts = getInboxCountsForPlayer(profile);
       setInboxCounts(counts);
@@ -213,6 +220,7 @@ export function PlayerMenu({ onConfigChanged }: Props) {
     };
 
     const currentCounts = updateCounts();
+    previousUnread = currentCounts.unreadCount;
 
     // Se o jogador acabou de logar (ou carregou a sessão) e possui mensagens não lidas:
     // Abre automaticamente o modal no centro da tela e toca som de notificação
@@ -229,21 +237,63 @@ export function PlayerMenu({ onConfigChanged }: Props) {
       }
     }
 
-    // Escuta novas mensagens transmitidas enquanto o jogador estiver online
+    // Função de sincronização com o PlayFab Cloud a cada 20 segundos
+    const syncInboxCloud = async () => {
+      try {
+        await syncAdminConfigFromPlayFab();
+        const counts = updateCounts();
+        if (counts.unreadCount > previousUnread) {
+          playNotificationChime();
+          setInboxOpen(true);
+        }
+        previousUnread = counts.unreadCount;
+      } catch {
+        /* ignore */
+      }
+    };
+
+    // 1. Sincronização periódica da nuvem a cada 20 segundos
+    const pollTimer = setInterval(syncInboxCloud, 20000);
+
+    // 2. Sincronização imediata ao focar na janela/aba
+    const handleFocus = () => {
+      void syncInboxCloud();
+    };
+    window.addEventListener("focus", handleFocus);
+
+    // 3. Sincronização instantânea (0ms) via BroadcastChannel (entre abas)
+    const unsubscribeSync = subscribeToInboxSync((payload) => {
+      if (payload.type === "new_message") {
+        const counts = updateCounts();
+        if (counts.unreadCount > 0 && (!payload.message || isMessageEligibleForPlayer(payload.message, profile))) {
+          playNotificationChime();
+          setInboxOpen(true);
+        }
+        previousUnread = counts.unreadCount;
+      } else if (payload.type === "message_read" || payload.type === "rewards_claimed") {
+        updateCounts();
+      }
+    });
+
+    // 4. Escuta evento CustomEvent dentro da mesma janela
     const handleNewMessageOnline = (evt: Event) => {
       const counts = updateCounts();
       const customEvt = evt as CustomEvent;
       const msg = customEvt.detail;
 
-      // Se a mensagem for elegível para este aluno e não lida, toca som de sino e abre o modal centralizado
       if (counts.unreadCount > 0 && (!msg || isMessageEligibleForPlayer(msg, profile))) {
         playNotificationChime();
         setInboxOpen(true);
       }
+      previousUnread = counts.unreadCount;
     };
 
     window.addEventListener("desafios:inbox-message-received", handleNewMessageOnline);
+
     return () => {
+      clearInterval(pollTimer);
+      unsubscribeSync();
+      window.removeEventListener("focus", handleFocus);
       window.removeEventListener("desafios:inbox-message-received", handleNewMessageOnline);
     };
   }, [profile, inboxOpen]);

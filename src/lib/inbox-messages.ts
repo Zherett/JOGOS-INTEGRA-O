@@ -52,6 +52,9 @@ export interface SystemInboxMessage {
   gifLinks?: Record<string, string>; // ex: { gif1: "https://...", gif2: "https://..." }
   imageLinks?: Record<string, string>; // ex: { img1: "https://...", img2: "https://..." }
   mentionedGameId?: string; // ID do jogo referenciado na tag [game] (apenas menção de texto)
+  mentionedEventId?: string; // ID do evento referenciado na tag [event]
+  mentionedEventTitle?: string; // Nome do evento para cache e fallback
+  linkEventDetails?: boolean; // Se true (padrão), o nome do evento é clicável e abre modal com detalhes
   reward?: InboxReward;
   metadata?: {
     deviceInfo?: string;
@@ -82,6 +85,82 @@ const ADMIN_CONFIG_REMOTE_KEY = "desafios-remote-admin-config-v1";
 
 export const BROADCAST_SHARED_GROUP_ID = "SEMED_INBOX_BROADCAST_V1";
 export const ADMIN_NOTIFICATIONS_SHARED_GROUP_ID = "SEMED_ADMIN_NOTIFICATIONS_V1";
+
+// REGRA DO USUÁRIO: Mensagens lidas com recompensas resgatadas são auto-expiradas em 24h
+export const INBOX_MESSAGE_AUTO_PURGE_MS = 24 * 60 * 60 * 1000; // 24 horas
+
+const INBOX_CHANNEL_NAME = "semed_inbox_realtime_sync_v1";
+
+export interface InboxSyncPayload {
+  type: "new_message" | "message_read" | "rewards_claimed";
+  messageId?: string;
+  studentId?: string;
+  studentNick?: string;
+  message?: SystemInboxMessage;
+  timestamp: number;
+}
+
+let inboxBroadcastChannel: BroadcastChannel | null = null;
+if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
+  try {
+    inboxBroadcastChannel = new BroadcastChannel(INBOX_CHANNEL_NAME);
+  } catch {
+    inboxBroadcastChannel = null;
+  }
+}
+
+export function broadcastInboxEvent(payload: Omit<InboxSyncPayload, "timestamp">): void {
+  const fullPayload: InboxSyncPayload = { ...payload, timestamp: Date.now() };
+  if (inboxBroadcastChannel) {
+    try {
+      inboxBroadcastChannel.postMessage(fullPayload);
+    } catch {
+      /* ignore */
+    }
+  }
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem("desafios_inbox_sync_pulse", JSON.stringify(fullPayload));
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+export function subscribeToInboxSync(
+  callback: (payload: InboxSyncPayload) => void
+): () => void {
+  if (typeof window === "undefined") return () => {};
+
+  const handleChannelMsg = (evt: MessageEvent) => {
+    if (evt.data && typeof evt.data === "object") {
+      callback(evt.data as InboxSyncPayload);
+    }
+  };
+
+  const handleStorage = (evt: StorageEvent) => {
+    if (evt.key === "desafios_inbox_sync_pulse" && evt.newValue) {
+      try {
+        const parsed = JSON.parse(evt.newValue);
+        callback(parsed);
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
+  if (inboxBroadcastChannel) {
+    inboxBroadcastChannel.addEventListener("message", handleChannelMsg);
+  }
+  window.addEventListener("storage", handleStorage);
+
+  return () => {
+    if (inboxBroadcastChannel) {
+      inboxBroadcastChannel.removeEventListener("message", handleChannelMsg);
+    }
+    window.removeEventListener("storage", handleStorage);
+  };
+}
 
 let memoryInboxMessages: SystemInboxMessage[] = [];
 let memoryStudentClaims: Record<string, Record<string, string>> = {}; // playerId -> { messageId: claimedAt }
@@ -194,6 +273,9 @@ export function createInboxMessage(
     gifLinks: data.gifLinks ?? {},
     imageLinks: data.imageLinks ?? {},
     mentionedGameId: data.mentionedGameId,
+    mentionedEventId: data.mentionedEventId,
+    mentionedEventTitle: data.mentionedEventTitle,
+    linkEventDetails: data.linkEventDetails,
     reward: data.reward,
     metadata: data.metadata,
     read: false,
@@ -210,6 +292,11 @@ export function createInboxMessage(
         detail: msg,
       })
     );
+    broadcastInboxEvent({
+      type: "new_message",
+      messageId: msg.id,
+      message: msg,
+    });
   }
 
   return msg;
@@ -226,6 +313,9 @@ export interface AdminBroadcastDraft {
   gifLinks?: Record<string, string>;
   imageLinks?: Record<string, string>;
   mentionedGameId?: string;
+  mentionedEventId?: string;
+  mentionedEventTitle?: string;
+  linkEventDetails?: boolean;
   reward?: {
     type: InboxRewardType;
     pointsAmount?: number;
@@ -235,7 +325,7 @@ export interface AdminBroadcastDraft {
 }
 
 /**
- * Resolve tags dinâmicas de texto como [nick] e [game]
+ * Resolve tags dinâmicas de texto como [nick], [game] e [event]
  */
 export function formatInboxMessageText(
   text: string,
@@ -243,6 +333,7 @@ export function formatInboxMessageText(
     playerNick?: string;
     mentionedGameId?: string;
     mentionedGameName?: string;
+    mentionedEventTitle?: string;
   }
 ): string {
   if (!text) return "";
@@ -255,6 +346,9 @@ export function formatInboxMessageText(
     (options?.mentionedGameId ? GAME_NAMES[options.mentionedGameId as GameId] || options.mentionedGameId : "");
   if (gameName) {
     res = res.replace(/\[game\]/gi, gameName);
+  }
+  if (options?.mentionedEventTitle !== undefined) {
+    res = res.replace(/\[event\]/gi, options.mentionedEventTitle || "Evento Especial");
   }
   return res;
 }
@@ -293,6 +387,9 @@ export function sendAdminBroadcastMessage(draft: AdminBroadcastDraft): SystemInb
     gifLinks: draft.gifLinks ?? {},
     imageLinks: draft.imageLinks ?? {},
     mentionedGameId: draft.mentionedGameId || undefined,
+    mentionedEventId: draft.mentionedEventId || undefined,
+    mentionedEventTitle: draft.mentionedEventTitle || undefined,
+    linkEventDetails: draft.linkEventDetails !== false,
     reward: rewardObj,
   });
 
@@ -387,10 +484,12 @@ export function isMessageEligibleForPlayer(
 }
 
 /**
- * Retorna todas as mensagens da caixa de entrada do aluno, com estados de leitura e resgate aplicados
+ * Retorna todas as mensagens da caixa de entrada do aluno, com estados de leitura e resgate aplicados.
+ * Aplica a regra de expiração de 24 horas: mensagens lidas e com recompensas resgatadas são auto-apagadas após 24h.
  */
 export function getInboxMessagesForPlayer(
-  player: PlayerProfile | { id: string; nick?: string; school?: string; birthdate?: string }
+  player: PlayerProfile | { id: string; nick?: string; school?: string; birthdate?: string },
+  nowTime: number = Date.now()
 ): SystemInboxMessage[] {
   const all = loadAllInboxMessages();
   const pId = (player.id || "").toLowerCase().trim();
@@ -413,15 +512,17 @@ export function getInboxMessagesForPlayer(
 
     if (isMessageEligibleForPlayer(raw, player)) {
       // Para mensagens de transmissão (ALL), o status de lida pertence exclusivamente a este aluno
+      const readVal = readsMap[raw.id];
       const isRead = raw.recipientId === "ALL"
-        ? Boolean(readsMap[raw.id])
-        : Boolean(readsMap[raw.id] ?? raw.read);
+        ? Boolean(readVal)
+        : Boolean(readVal ?? raw.read);
       const claimedAt = claimsMap[raw.id];
 
       // Clone com estados locais do aluno
       const cloned: SystemInboxMessage = {
         ...raw,
         read: Boolean(isRead),
+        readAt: typeof readVal === "string" ? readVal : raw.readAt,
         reward: raw.reward
           ? {
               ...raw.reward,
@@ -430,6 +531,43 @@ export function getInboxMessagesForPlayer(
             }
           : undefined,
       };
+
+      // REGRA DO USUÁRIO: AUTO-EXCLUSÃO EM 24 HORAS
+      // "As mensagens da caixa de entrada que forem lidas e que tiverem as recompensas resgatadas,
+      // e que não forem deletadas, serão apagadas em 24 horas. Se não forem apagadas manualmente,
+      // elas automaticamente vão se apagar se já tiverem sido lidas e se as recompensas, caso houver,
+      // tenham sido resgatadas. Se ainda houver recompensas para resgatar, essa contagem não é iniciada."
+      if (cloned.read) {
+        let isEligibleForAutoPurge = false;
+        let completionTimestamp = 0;
+
+        if (cloned.reward) {
+          // Se houver recompensa, SÓ inicia a contagem de 24h quando a recompensa estiver resgatada
+          if (cloned.reward.claimed) {
+            isEligibleForAutoPurge = true;
+            const readTs = cloned.readAt ? new Date(cloned.readAt).getTime() : 0;
+            const claimTs = cloned.reward.claimedAt ? new Date(cloned.reward.claimedAt).getTime() : 0;
+            completionTimestamp = Math.max(readTs, claimTs);
+          }
+        } else {
+          // Sem recompensa anexa: a contagem de 24h inicia com a leitura
+          isEligibleForAutoPurge = true;
+          completionTimestamp = cloned.readAt ? new Date(cloned.readAt).getTime() : 0;
+        }
+
+        // Fallback caso timestamps de leitura sejam zero
+        if (isEligibleForAutoPurge && (!completionTimestamp || isNaN(completionTimestamp))) {
+          completionTimestamp = cloned.createdAt ? new Date(cloned.createdAt).getTime() : 0;
+        }
+
+        if (isEligibleForAutoPurge && completionTimestamp > 0) {
+          if (nowTime - completionTimestamp >= INBOX_MESSAGE_AUTO_PURGE_MS) {
+            // Auto-apaga a mensagem para este aluno
+            deleteInboxMessageForPlayer(raw.id, player);
+            continue;
+          }
+        }
+      }
 
       playerMessages.push(cloned);
     }
@@ -472,6 +610,14 @@ export function markInboxMessageAsRead(
     markKey(nickNorm);
     markKey(playfabId);
     saveStudentMap(STUDENT_READS_KEY, reads, (d) => (memoryStudentReads = d));
+
+    // Notifica em tempo real (cross-tab / instantâneo) que a mensagem foi lida
+    broadcastInboxEvent({
+      type: "message_read",
+      messageId,
+      studentId: id,
+      studentNick: nick,
+    });
   }
 
   // Apenas altera m.read na mensagem mestra se for uma mensagem direta para 1 aluno específico
@@ -726,6 +872,12 @@ export function claimInboxReward(
 
   // Resgatar a recompensa garante que a mensagem também seja marcada como lida
   markInboxMessageAsRead(messageId, profile);
+  broadcastInboxEvent({
+    type: "rewards_claimed",
+    messageId,
+    studentId: profile.id,
+    studentNick: profile.nick,
+  });
 
   // Se a mensagem for direta (não ALL), atualiza o objeto global da mensagem
   if (msg.recipientId !== "ALL") {
@@ -776,6 +928,17 @@ export function deleteInboxMessageForPlayer(
   saveStudentMap(STUDENT_DELETES_KEY, deletes, (d) => (memoryStudentDeletes = d));
 
   return { success: true };
+}
+
+/**
+ * Remove completamente uma mensagem da lista global pelo ID (usado por exemplo na renovação de ciclo de mensagens programadas)
+ */
+export function removeInboxMessageById(messageId: string): void {
+  const all = loadAllInboxMessages();
+  const filtered = all.filter((m) => m.id !== messageId);
+  if (filtered.length !== all.length) {
+    saveAllInboxMessages(filtered);
+  }
 }
 
 /**

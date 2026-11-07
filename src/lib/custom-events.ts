@@ -784,3 +784,21 @@ export function getAllActiveEvents(
 
   return items;
 }
+
+/**
+ * Localiza um evento especial ou recorrente por ID
+ */
+export function findEventById(
+  id: string
+): { event: SpecialEvent | RecurringEvent; isRecurring: boolean } | null {
+  if (!id) return null;
+  const specials = loadSpecialEvents();
+  const s = specials.find((e) => e.id === id);
+  if (s) return { event: s, isRecurring: false };
+
+  const recurrings = loadRecurringEvents();
+  const r = recurrings.find((e) => e.id === id);
+  if (r) return { event: r, isRecurring: true };
+
+  return null;
+}

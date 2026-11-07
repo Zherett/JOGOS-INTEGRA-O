@@ -347,6 +347,53 @@ describe("Sistema Completo de Caixa de Entrada e Correio (inbox-messages)", () =
     assert.equal(formatted, "Olá, SuperAluno! O desafio de hoje no jogo Batalha de Robôs está imperdível!");
   });
 
+  it("formatInboxMessageText substitui [event] dinamicamente pelo título do evento", () => {
+    const text = "Atenção [nick], o evento [event] já começou!";
+    const formatted = formatInboxMessageText(text, {
+      playerNick: "Marcos",
+      mentionedEventTitle: "3X de XP do Fim de Semana",
+    });
+
+    assert.equal(formatted, "Atenção Marcos, o evento 3X de XP do Fim de Semana já começou!");
+  });
+
+  it("sendAdminBroadcastMessage persiste corretamente mentionedEventId e linkEventDetails (true e false)", () => {
+    const s1 = createTestStudent();
+    
+    // Mensagem com link ativo (padrão)
+    const msgWithLink = sendAdminBroadcastMessage({
+      mode: "all",
+      title: "Grande Evento",
+      body: "Participe do [event] agora!",
+      mentionedEventId: "ev_fds_xp",
+      mentionedEventTitle: "3X de XP do Fim de Semana",
+      linkEventDetails: true,
+    });
+
+    assert.equal(msgWithLink.mentionedEventId, "ev_fds_xp");
+    assert.equal(msgWithLink.mentionedEventTitle, "3X de XP do Fim de Semana");
+    assert.equal(msgWithLink.linkEventDetails, true);
+
+    // Mensagem sem link (apenas texto em negrito)
+    const msgWithoutLink = sendAdminBroadcastMessage({
+      mode: "all",
+      title: "Grande Evento Informativo",
+      body: "Lembre-se do [event] hoje!",
+      mentionedEventId: "ev_fds_xp",
+      mentionedEventTitle: "3X de XP do Fim de Semana",
+      linkEventDetails: false,
+    });
+
+    assert.equal(msgWithoutLink.mentionedEventId, "ev_fds_xp");
+    assert.equal(msgWithoutLink.linkEventDetails, false);
+
+    const msgs = getInboxMessagesForPlayer(s1);
+    const foundWith = msgs.find((m) => m.id === msgWithLink.id);
+    const foundWithout = msgs.find((m) => m.id === msgWithoutLink.id);
+    assert.equal(foundWith?.linkEventDetails, true);
+    assert.equal(foundWithout?.linkEventDetails, false);
+  });
+
   it("runRetroactiveInboxReadsScan reconcilia leituras retroativas de alunos que resgataram recompensa", () => {
     const s1 = createTestStudent({ id: "aluno_retro", nick: "RetroDede" });
     const msg = sendAdminBroadcastMessage({
@@ -370,5 +417,98 @@ describe("Sistema Completo de Caixa de Entrada e Correio (inbox-messages)", () =
     const readers = getMessageReaders(msg, [s1]);
     assert.equal(readers.readCount, 1);
     assert.equal(readers.readStudents[0].student.nick, "RetroDede");
+  });
+
+  describe("Regra de Auto-Purge de Mensagens após 24 horas", () => {
+    it("mantém mensagem não lida mesmo após 25 horas", () => {
+      const student = createTestStudent({ id: "aluno_purge_1" });
+      const msg = createInboxMessage({
+        recipientId: "aluno_purge_1",
+        sender: "adm",
+        category: "comunicado",
+        title: "Mensagem Não Lida Antiga",
+        body: "Aviso importante",
+      });
+
+      const futureTime = Date.now() + 25 * 60 * 60 * 1000;
+      const msgs = getInboxMessagesForPlayer(student, futureTime);
+      assert.equal(msgs.some((m) => m.id === msg.id), true);
+    });
+
+    it("mantém mensagem lida se houver recompensa ainda NÃO resgatada após 25 horas", () => {
+      const student = createTestStudent({ id: "aluno_purge_2" });
+      const msg = createInboxMessage({
+        recipientId: "aluno_purge_2",
+        sender: "adm",
+        category: "recompensa",
+        title: "Recompensa Pendente",
+        body: "Resgate seus pontos!",
+        reward: {
+          type: "points",
+          pointsAmount: 50,
+          isSecret: false,
+        },
+      });
+
+      // Aluno leu a mensagem
+      markInboxMessageAsRead(msg.id, "aluno_purge_2");
+
+      // 25 horas após a leitura, com prêmio NÃO resgatado
+      const futureTime = Date.now() + 25 * 60 * 60 * 1000;
+      const msgs = getInboxMessagesForPlayer(student, futureTime);
+      assert.equal(msgs.some((m) => m.id === msg.id), true);
+    });
+
+    it("apaga automaticamente mensagem lida SEM recompensa após 24 horas", () => {
+      const student = createTestStudent({ id: "aluno_purge_3" });
+      const msg = createInboxMessage({
+        recipientId: "aluno_purge_3",
+        sender: "adm",
+        category: "comunicado",
+        title: "Mensagem Lida sem Prêmio",
+        body: "Aviso normal",
+      });
+
+      // Aluno leu a mensagem
+      markInboxMessageAsRead(msg.id, "aluno_purge_3");
+
+      // 10 horas após a leitura: ainda deve existir
+      const tenHoursLater = Date.now() + 10 * 60 * 60 * 1000;
+      assert.equal(getInboxMessagesForPlayer(student, tenHoursLater).some((m) => m.id === msg.id), true);
+
+      // 25 horas após a leitura: deve ser automaticamente purgada
+      const twentyFiveHoursLater = Date.now() + 25 * 60 * 60 * 1000;
+      const msgs = getInboxMessagesForPlayer(student, twentyFiveHoursLater);
+      assert.equal(msgs.some((m) => m.id === msg.id), false);
+    });
+
+    it("apaga automaticamente mensagem lida COM recompensa resgatada após 24 horas do resgate", () => {
+      const student = createTestStudent({ id: "aluno_purge_4" });
+      const msg = createInboxMessage({
+        recipientId: "aluno_purge_4",
+        sender: "adm",
+        category: "recompensa",
+        title: "Mensagem com Prêmio Resgatado",
+        body: "Seus 100 pontos",
+        reward: {
+          type: "points",
+          pointsAmount: 100,
+          isSecret: false,
+        },
+      });
+
+      // Aluno leu e resgatou o prêmio
+      markInboxMessageAsRead(msg.id, "aluno_purge_4");
+      claimInboxReward(msg.id, student);
+
+      // 12 horas após o resgate: ainda existe
+      const twelveHoursLater = Date.now() + 12 * 60 * 60 * 1000;
+      assert.equal(getInboxMessagesForPlayer(student, twelveHoursLater).some((m) => m.id === msg.id), true);
+
+      // 25 horas após o resgate: deve ser expurgada
+      const twentyFiveHoursLater = Date.now() + 25 * 60 * 60 * 1000;
+      const msgs = getInboxMessagesForPlayer(student, twentyFiveHoursLater);
+      assert.equal(msgs.some((m) => m.id === msg.id), false);
+    });
   });
 });
