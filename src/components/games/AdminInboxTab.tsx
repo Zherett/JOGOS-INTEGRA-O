@@ -1989,8 +1989,11 @@ export function AdminInboxTab({ registeredStudents = [], onBroadcastSent }: Prop
                           </div>
                         </div>
 
-                        <span className="text-[10px] font-mono text-muted-foreground shrink-0 bg-background/80 px-2 py-0.5 rounded-md border">
-                          ID: {msg.id.substring(0, 8)}
+                        <span
+                          className="text-[10px] font-mono font-bold text-muted-foreground shrink-0 bg-background/80 px-2 py-0.5 rounded-md border"
+                          title={`ID completo no sistema: ${msg.id}`}
+                        >
+                          ID: #{msg.id.split("_").pop() || msg.id.slice(-6)}
                         </span>
                       </div>
 
