@@ -358,19 +358,19 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
           <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
             {/* Barra lateral de filtros e lista (oculta no mobile quando lendo mensagem) */}
             <div
-              className={`w-full md:w-88 border-r flex flex-col shrink-0 bg-slate-900/60 dark:bg-zinc-950/80 backdrop-blur-sm ${
+              className={`w-full md:w-88 border-r border-slate-200 dark:border-zinc-800 flex flex-col shrink-0 bg-slate-100/70 dark:bg-zinc-950/80 ${
                 activeMessage ? "hidden md:flex" : "flex"
               }`}
             >
               {/* Filtros em Abas */}
-              <div className="p-3 border-b grid grid-cols-3 gap-1.5 bg-slate-950/40 dark:bg-zinc-900/60">
+              <div className="p-3 border-b border-slate-200 dark:border-zinc-800 grid grid-cols-3 gap-1.5 bg-slate-200/50 dark:bg-zinc-900/60">
                 <button
                   type="button"
                   onClick={() => setFilterTab("all")}
                   className={`py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                     filterTab === "all"
                       ? "bg-primary text-primary-foreground shadow-xs"
-                      : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+                      : "text-slate-600 dark:text-muted-foreground hover:bg-white/80 dark:hover:bg-zinc-800/60 hover:text-slate-900 dark:hover:text-foreground"
                   }`}
                 >
                   Todas ({messages.length})
@@ -381,7 +381,7 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
                   className={`py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                     filterTab === "unread"
                       ? "bg-primary text-primary-foreground shadow-xs"
-                      : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+                      : "text-slate-600 dark:text-muted-foreground hover:bg-white/80 dark:hover:bg-zinc-800/60 hover:text-slate-900 dark:hover:text-foreground"
                   }`}
                 >
                   Novas ({unreadCount})
@@ -392,7 +392,7 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
                   className={`py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                     filterTab === "rewards"
                       ? "bg-amber-500 text-zinc-950 font-black shadow-xs"
-                      : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+                      : "text-slate-600 dark:text-muted-foreground hover:bg-white/80 dark:hover:bg-zinc-800/60 hover:text-slate-900 dark:hover:text-foreground"
                   }`}
                 >
                   Presentes ({unclaimedRewardsCount})
@@ -400,14 +400,14 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
               </div>
 
               {/* Lista com Rolagem — visualmente destacada do fundo da caixa */}
-              <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-slate-950/30 dark:bg-black/40">
+              <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-slate-100/90 dark:bg-zinc-950/60">
                 {filteredMessages.length === 0 ? (
                   <div className="py-16 text-center space-y-2 px-4">
-                    <Mail className="mx-auto h-10 w-10 text-muted-foreground/40" />
-                    <p className="font-display text-sm font-bold text-foreground">
+                    <Mail className="mx-auto h-10 w-10 text-slate-400 dark:text-muted-foreground/40" />
+                    <p className="font-display text-sm font-bold text-slate-800 dark:text-foreground">
                       Nenhuma mensagem por aqui
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-slate-500 dark:text-muted-foreground">
                       Quando a coordenação enviar comunicados ou prêmios, eles aparecerão aqui.
                     </p>
                   </div>
@@ -423,10 +423,10 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
                         onClick={() => handleSelectMessage(msg)}
                         className={`group relative rounded-2xl p-4 cursor-pointer transition-all duration-200 ${
                           isSelected
-                            ? "border-2 border-primary bg-primary/20 shadow-lg ring-2 ring-primary/40 -translate-y-0.5"
+                            ? "border-2 border-primary bg-sky-50 dark:bg-primary/20 shadow-md ring-2 ring-primary/30 -translate-y-0.5"
                             : isUnread
-                              ? "border-2 border-sky-500/70 dark:border-sky-400/60 bg-gradient-to-br from-slate-800 via-slate-800/95 to-slate-900 dark:from-zinc-800 dark:via-zinc-850 dark:to-zinc-900 shadow-md ring-1 ring-sky-500/30 hover:border-primary hover:shadow-xl hover:-translate-y-0.5"
-                              : "border border-border/50 bg-slate-950/50 dark:bg-zinc-950/70 opacity-75 hover:opacity-100 hover:bg-slate-900/60 hover:border-border"
+                              ? "border-2 border-sky-400 dark:border-sky-500 bg-white dark:bg-zinc-900 shadow-md shadow-sky-500/10 hover:border-primary hover:shadow-lg hover:-translate-y-0.5"
+                              : "border border-slate-200/90 dark:border-zinc-800 bg-slate-50/80 dark:bg-zinc-900/40 hover:bg-white dark:hover:bg-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 hover:shadow-sm"
                         }`}
                       >
                         <div className="flex items-start justify-between gap-2.5">
@@ -434,17 +434,21 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
                             <div className="flex items-center gap-2">
                               {isUnread ? (
                                 <span
-                                  className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-red-600 text-white font-mono text-[10px] font-black shadow-md ring-2 ring-red-400/50 animate-pulse shrink-0"
+                                  className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-red-600 text-white font-mono text-[10px] font-black shadow-sm ring-2 ring-red-400/40 animate-pulse shrink-0"
                                   title="Nova mensagem não lida"
                                 >
                                   1
                                 </span>
                               ) : (
-                                <span className="h-2 w-2 rounded-full bg-muted-foreground/40 shrink-0" />
+                                <span className="h-2 w-2 rounded-full bg-slate-300 dark:bg-zinc-600 shrink-0" />
                               )}
                               <h4
                                 className={`truncate font-display ${
-                                  isUnread ? "text-sm font-black text-white dark:text-zinc-50" : "text-xs font-bold text-foreground/75"
+                                  isSelected
+                                    ? "text-sm font-black text-primary"
+                                    : isUnread
+                                      ? "text-sm font-black text-slate-900 dark:text-zinc-50"
+                                      : "text-xs font-bold text-slate-700 dark:text-zinc-300"
                                 }`}
                               >
                                 {formatText(msg.title, msg)}
@@ -452,7 +456,9 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
                             </div>
                             <p
                               className={`line-clamp-2 text-xs leading-relaxed ${
-                                isUnread ? "text-slate-300 dark:text-zinc-300" : "text-muted-foreground/80"
+                                isUnread
+                                  ? "text-slate-600 dark:text-zinc-300 font-medium"
+                                  : "text-slate-500 dark:text-zinc-400"
                               }`}
                             >
                               {formatText(msg.body, msg)
@@ -471,11 +477,17 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
                           )}
                         </div>
 
-                        <div className="mt-3 flex items-center justify-between text-[10.5px] border-t border-border/40 pt-2 text-muted-foreground">
-                          <span className={isUnread ? "font-bold text-primary" : "font-medium"}>
+                        <div className="mt-3 flex items-center justify-between text-[11px] border-t border-slate-100 dark:border-zinc-800/80 pt-2">
+                          <span
+                            className={
+                              isUnread
+                                ? "font-bold text-sky-600 dark:text-sky-400"
+                                : "font-medium text-slate-500 dark:text-zinc-400"
+                            }
+                          >
                             {msg.senderName}
                           </span>
-                          <span className="font-mono">
+                          <span className="font-mono text-slate-400 dark:text-zinc-500 text-[10.5px]">
                             {new Date(msg.createdAt).toLocaleDateString("pt-BR", {
                               day: "2-digit",
                               month: "short",
@@ -490,11 +502,11 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
             </div>
 
             {/* Painel de Visualização da Mensagem Selecionada */}
-            <div className="flex-1 flex flex-col overflow-y-auto bg-background p-4 sm:p-6">
+            <div className="flex-1 flex flex-col overflow-y-auto bg-white dark:bg-background p-4 sm:p-6">
               {activeMessage ? (
                 <div className="space-y-4 max-w-2xl mx-auto w-full">
                   {/* Botão de Voltar no Mobile */}
-                  <div className="flex items-center justify-between md:hidden pb-2 border-b">
+                  <div className="flex items-center justify-between md:hidden pb-2 border-b border-slate-200 dark:border-border">
                     <button
                       type="button"
                       onClick={() => setSelectedMessageId(null)}
@@ -505,12 +517,12 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
                   </div>
 
                   {/* Cabeçalho da Mensagem */}
-                  <div className="rounded-3xl border bg-secondary/30 p-4 sm:p-5 space-y-2">
+                  <div className="rounded-3xl border border-slate-200 dark:border-border bg-slate-50 dark:bg-secondary/30 p-4 sm:p-5 space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 border border-primary/30 px-2.5 py-0.5 text-xs font-extrabold text-primary">
                         {activeMessage.senderName}
                       </span>
-                      <span className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                      <span className="text-xs text-slate-500 dark:text-muted-foreground font-medium flex items-center gap-1">
                         <Clock className="h-3.5 w-3.5" />
                         {new Date(activeMessage.createdAt).toLocaleDateString("pt-BR", {
                           day: "2-digit",
@@ -522,13 +534,13 @@ export function PlayerInboxModal({ open, onOpenChange }: Props) {
                       </span>
                     </div>
 
-                    <h2 className="font-display text-xl sm:text-2xl font-black text-foreground">
+                    <h2 className="font-display text-xl sm:text-2xl font-black text-slate-900 dark:text-foreground">
                       {formatText(activeMessage.title, activeMessage)}
                     </h2>
                   </div>
 
                   {/* Corpo do Texto, GIFs e Imagens */}
-                  <div className="rounded-3xl border bg-card p-5 sm:p-6 shadow-xs">
+                  <div className="rounded-3xl border border-slate-200 dark:border-border bg-white dark:bg-card p-5 sm:p-6 shadow-xs text-slate-800 dark:text-foreground">
                     {renderMessageBody(activeMessage.body, activeMessage.gifLinks, activeMessage.imageLinks, activeMessage)}
                   </div>
 

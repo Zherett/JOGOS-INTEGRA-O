@@ -22,6 +22,7 @@ import {
   Send,
   RotateCw,
   Mail,
+  Swords,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -679,6 +680,41 @@ export function PlayerMenu({ onConfigChanged }: Props) {
                                   Partidas ilimitadas (Nível 5+)
                                 </div>
                               </div>
+                            </div>
+
+                            {/* Histórico Pessoal na Arena X1 (Privado do Aluno) */}
+                            <div className="rounded-2xl border bg-background/90 p-3 space-y-2 mt-2">
+                              <div className="flex items-center justify-between text-xs font-bold">
+                                <span className="flex items-center gap-1.5 font-display text-accent uppercase tracking-wider">
+                                  <Swords className="h-3.5 w-3.5" /> Meu Histórico na Arena X1
+                                </span>
+                                <span className="text-[11px] text-muted-foreground font-semibold">
+                                  {(profile.x1Matches ?? (profile.x1Wins ?? 0))} partidas disputadas
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                                <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-2">
+                                  <div className="font-extrabold text-emerald-600 dark:text-emerald-400 text-base">
+                                    {profile.x1Wins ?? 0}
+                                  </div>
+                                  <div className="text-[10px] text-muted-foreground font-semibold">Vitórias</div>
+                                </div>
+                                <div className="rounded-xl bg-destructive/10 border border-destructive/30 p-2">
+                                  <div className="font-extrabold text-destructive text-base">
+                                    {profile.x1Losses ?? 0}
+                                  </div>
+                                  <div className="text-[10px] text-muted-foreground font-semibold">Derrotas</div>
+                                </div>
+                                <div className="rounded-xl bg-secondary/70 border p-2">
+                                  <div className="font-extrabold text-foreground text-base">
+                                    {profile.x1Draws ?? 0}
+                                  </div>
+                                  <div className="text-[10px] text-muted-foreground font-semibold">Empates</div>
+                                </div>
+                              </div>
+                              <p className="text-[10px] text-muted-foreground text-center italic">
+                                🔒 Seu histórico de vitórias/derrotas é privado e visível apenas para você.
+                              </p>
                             </div>
                           </div>
 

@@ -9,19 +9,30 @@ import {
   X,
   LogOut,
   Flame,
+  Bomb,
+  Gift,
+  HelpCircle,
+  Clock,
+  RotateCcw,
+  Heart,
+  Shield,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { GAME_NAMES, loadLastMatch, saveLastMatch, updateBest } from "@/lib/game-storage";
+import { GAME_NAMES, saveLastMatch, updateBest } from "@/lib/game-storage";
 import { usePlayerAuth } from "@/lib/player-auth";
 import { generateClashQuestion, type ClashQuestion } from "@/lib/rpg-content";
 import { playCorrect, playTone, playWrong } from "@/lib/sound";
 import {
+  answerX1MinadoQuestion,
   closeX1Room,
   finishX1RoomByTimeout,
   getX1Room,
-  subscribeX1Updates,
+  openX1MinadoCard,
   submitX1RobotClashAnswer,
+  subscribeX1Updates,
   syncX1WithPlayFabCloud,
+  timeoutX1MinadoQuestion,
   updateX1PlayerProgress,
   type X1Room,
 } from "@/lib/x1-challenge";
@@ -40,15 +51,17 @@ export function X1MatchOverlay({ initialRoom, onExitX1 }: Props) {
   const [question, setQuestion] = useState<ClashQuestion>(() => generateClashQuestion(2));
   const [stunned, setStunned] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  const [minadoFeedback, setMinadoFeedback] = useState<string | null>(null);
   const rewardSavedRef = useRef(false);
   const recentTextsRef = useRef<string[]>([]);
   const recentAnsRef = useRef<boolean[]>([]);
+  const [myQuestionIdx, setMyQuestionIdx] = useState(0);
 
   const isHost = room.host.playerId === myId;
   const me = isHost ? room.host : (room.guest ?? room.host);
   const opponent = isHost ? room.guest : room.host;
 
-  // Subscribe to real-time updates (BroadcastChannel, localStorage, PlayFab SharedGroup)
+  // Real-time updates subscription (BroadcastChannel, localStorage, PlayFab SharedGroup)
   useEffect(() => {
     const refresh = () => {
       const latest = getX1Room(initialRoom.code);
@@ -65,7 +78,20 @@ export function X1MatchOverlay({ initialRoom, onExitX1 }: Props) {
     };
   }, [initialRoom.code]);
 
-  // Countdown timer
+  // Synchronized countdown timer (10s) transition to playing
+  useEffect(() => {
+    if (room.status !== "countdown") return;
+    const interval = window.setInterval(() => {
+      const endsAt = room.countdownEndsAt ?? (Date.now() + 10_000);
+      if (Date.now() >= endsAt) {
+        const latest = getX1Room(room.code);
+        if (latest) setRoom({ ...latest });
+      }
+    }, 500);
+    return () => window.clearInterval(interval);
+  }, [room.status, room.code, room.countdownEndsAt]);
+
+  // Main match timer
   useEffect(() => {
     if (room.status !== "playing") return;
 
@@ -78,43 +104,53 @@ export function X1MatchOverlay({ initialRoom, onExitX1 }: Props) {
       if (rem <= 0) {
         const finishedRoom = finishX1RoomByTimeout(room.code);
         if (finishedRoom) setRoom({ ...finishedRoom });
-        return;
       }
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [room]);
+  }, [room.status, room.code, room.durationSec, room.startedAt, room.createdAt]);
 
-  // For Score-Race games (non-RPG), poll `loadLastMatch(room.gameId)` so when the player finishes the underlying game, it syncs immediately to the X1 room!
+  // Campo Minado active question timer (20s)
   useEffect(() => {
-    if (room.gameId === "rpg" || room.status !== "playing") return;
-    const matchStart = room.startedAt ?? room.createdAt;
+    if (room.gameId !== "minado" || room.status !== "playing") return;
+    const activeQ = room.minadoState?.activeQuestion;
+    if (!activeQ || activeQ.answered) return;
 
-    const checkMatch = window.setInterval(() => {
-      const last = loadLastMatch(room.gameId);
-      if (last && last.at >= matchStart) {
-        const updated = updateX1PlayerProgress({
-          code: room.code,
-          playerId: myId,
-          score: last.score,
-          correct: last.correct,
-          wrong: last.wrong,
-          finished: true,
-        });
+    const timer = window.setInterval(() => {
+      if (Date.now() >= activeQ.expiresAt) {
+        playWrong();
+        const updated = timeoutX1MinadoQuestion(room.code);
         if (updated) setRoom({ ...updated });
       }
-    }, 800);
+    }, 500);
 
-    return () => window.clearInterval(checkMatch);
-  }, [room.gameId, room.status, room.code, room.startedAt, room.createdAt, myId]);
+    return () => window.clearInterval(timer);
+  }, [room.gameId, room.status, room.minadoState?.activeQuestion, room.code]);
 
-  // Save XP / victory reward once when the X1 match finishes
+  // Auto-close countdown (1 minute) on finished screen
+  useEffect(() => {
+    if (room.status !== "finished") return;
+
+    const autoCloseTimer = window.setInterval(() => {
+      const autoCloseAt = room.autoCloseAt ?? (Date.now() + 60_000);
+      if (Date.now() >= autoCloseAt) {
+        closeX1Room(room.code);
+        onExitX1();
+      }
+    }, 1000);
+
+    return () => window.clearInterval(autoCloseTimer);
+  }, [room.status, room.autoCloseAt, room.code, onExitX1]);
+
+  // Save XP / victory / defeat / draw in profile when match finishes
   useEffect(() => {
     if (room.status !== "finished" || rewardSavedRef.current) return;
     rewardSavedRef.current = true;
 
     const wonX1 = room.winnerId === myId;
+    const isDraw = room.winnerId === "draw";
     const finalScore = Math.max(me.score, wonX1 ? me.score + 40 : me.score);
+
     updateBest(room.gameId, finalScore, 2);
     saveLastMatch(room.gameId, {
       score: finalScore,
@@ -124,8 +160,22 @@ export function X1MatchOverlay({ initialRoom, onExitX1 }: Props) {
       won: wonX1,
       mode: "x1_online",
     });
-  }, [room.status, room.winnerId, room.gameId, myId, me.score, me.correct, me.wrong]);
 
+    if (auth.profile) {
+      void auth.recordMatch({
+        gameId: room.gameId,
+        mode: "x1_online",
+        won: wonX1,
+        isDraw,
+        score: finalScore,
+        level: 2,
+        correct: me.correct,
+        wrong: me.wrong,
+      });
+    }
+  }, [room.status, room.winnerId, room.gameId, myId, me.score, me.correct, me.wrong, auth]);
+
+  // Robot battle answer handler
   const handleRobotAnswer = useCallback(
     (chosen: boolean) => {
       if (room.status !== "playing" || stunned) return;
@@ -135,7 +185,7 @@ export function X1MatchOverlay({ initialRoom, onExitX1 }: Props) {
       if (!isCorrect) {
         playWrong();
         setStunned(true);
-        window.setTimeout(() => setStunned(false), 900);
+        window.setTimeout(() => setStunned(false), 800);
       } else {
         playCorrect();
       }
@@ -148,31 +198,167 @@ export function X1MatchOverlay({ initialRoom, onExitX1 }: Props) {
 
       if (res.isSuperHit) {
         playTone(980, 0.2, "sawtooth");
-        setBanner("⚡ SUPER RAIO 100%! Você tirou 3 de vida do oponente de uma vez!");
+        setBanner("⚡ SUPER RAIO! Você tirou 3 de vida do oponente de uma vez!");
         window.setTimeout(() => setBanner(null), 2200);
       }
 
       if (res.room) setRoom({ ...res.room });
 
-      const nextQ = generateClashQuestion(
-        2,
-        recentTextsRef.current,
-        recentAnsRef.current,
-      );
+      const nextQ = generateClashQuestion(2, recentTextsRef.current, recentAnsRef.current);
       recentTextsRef.current = [...recentTextsRef.current.slice(-12), nextQ.text];
       setQuestion(nextQ);
     },
     [room.status, room.code, stunned, question, myId],
   );
 
+  // Score-race deterministic question answer handler (Logica / Porcentagem)
+  const handleRaceAnswer = useCallback(
+    (chosenAnswer: string) => {
+      if (room.status !== "playing" || !room.questionList) return;
+      const curQ = room.questionList[myQuestionIdx];
+      if (!curQ) return;
+
+      const isCorrect = chosenAnswer === curQ.answer;
+      if (isCorrect) {
+        playCorrect();
+      } else {
+        playWrong();
+      }
+
+      const nextIdx = myQuestionIdx + 1;
+      setMyQuestionIdx(nextIdx);
+
+      const newScore = me.score + (isCorrect ? curQ.points : 0);
+      const newCorrect = me.correct + (isCorrect ? 1 : 0);
+      const newWrong = me.wrong + (isCorrect ? 0 : 1);
+      const finished = nextIdx >= (room.questionList.length ?? 15);
+
+      const updated = updateX1PlayerProgress({
+        code: room.code,
+        playerId: myId,
+        score: newScore,
+        correct: newCorrect,
+        wrong: newWrong,
+        finished,
+      });
+
+      if (updated) {
+        updated[isHost ? "host" : "guest"]!.currentQuestionIdx = nextIdx;
+        setRoom({ ...updated });
+      }
+    },
+    [room.status, room.questionList, room.code, myQuestionIdx, myId, me.score, me.correct, me.wrong, isHost],
+  );
+
+  // Campo Minado card click handler
+  const handleMinadoCardClick = (cardIdx: number) => {
+    if (room.status !== "playing" || !room.minadoState) return;
+    if (room.minadoState.currentTurnPlayerId !== myId) return;
+    if (room.minadoState.activeQuestion && !room.minadoState.activeQuestion.answered) return;
+
+    const card = room.minadoState.board[cardIdx];
+    if (!card || card.revealed) return;
+
+    const res = openX1MinadoCard(room.code, myId, cardIdx);
+    if (!res) return;
+    setRoom({ ...res });
+
+    const openedCard = res.minadoState?.board[cardIdx];
+    if (openedCard) {
+      if (openedCard.type === "bonus") {
+        playCorrect();
+        setMinadoFeedback(`🎁 Bônus Encontrado! +${openedCard.points} pontos.`);
+        window.setTimeout(() => setMinadoFeedback(null), 2000);
+      } else if (openedCard.type === "mine") {
+        playWrong();
+        setMinadoFeedback(`💥 MINA ATIVADA! ${openedCard.points} pontos.`);
+        window.setTimeout(() => setMinadoFeedback(null), 2000);
+      }
+    }
+  };
+
+  // Campo Minado question answer handler
+  const handleMinadoAnswer = (chosenOpt: string) => {
+    if (room.status !== "playing" || !room.minadoState?.activeQuestion) return;
+    const isCorrect = chosenOpt === room.minadoState.activeQuestion.answer;
+    if (isCorrect) {
+      playCorrect();
+      setMinadoFeedback("✅ Resposta Correta! Pontos somados.");
+    } else {
+      playWrong();
+      setMinadoFeedback("❌ Resposta Incorreta! Erro contabilizado.");
+    }
+    window.setTimeout(() => setMinadoFeedback(null), 2000);
+
+    const res = answerX1MinadoQuestion(room.code, myId, chosenOpt);
+    if (res) setRoom({ ...res });
+  };
+
   const redShare = Math.max(0, 100 - room.blueShare);
   const mins = Math.floor(secondsLeft / 60);
   const secs = String(secondsLeft % 60).padStart(2, "0");
 
-  // 1. TELA DE RESULTADO DO X1 (QUANDO A PARTIDA TERMINA)
+  // ==========================================
+  // 1. TELA DE CONTAGEM REGRESSIVA SINCRONIZADA (10s)
+  // ==========================================
+  if (room.status === "countdown") {
+    const endsAt = room.countdownEndsAt ?? (Date.now() + 10_000);
+    const countdownRem = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/90 backdrop-blur-md p-4 animate-in fade-in duration-200">
+        <div className="mx-auto max-w-lg w-full rounded-3xl border-2 border-primary/50 bg-card p-6 sm:p-8 text-center space-y-6 shadow-2xl">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/20 border border-primary/40 px-3.5 py-1 text-xs font-black uppercase text-primary animate-pulse">
+            <Swords className="h-4 w-4" /> Desafio Aceito • Arena X1
+          </span>
+
+          <div className="space-y-1">
+            <h2 className="font-display text-2xl sm:text-3xl font-black text-foreground">
+              Prepare-se para o Duelo!
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              Modalidade: <b className="text-primary">{GAME_NAMES[room.gameId]}</b> • Sala #{room.code}
+            </p>
+          </div>
+
+          {/* Confronto dos Jogadores */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-2xl border-2 border-sky-500/50 bg-sky-500/10 p-4">
+              <span className="text-[10px] font-black uppercase text-sky-400">Lado Azul</span>
+              <p className="font-display text-base font-black truncate">{room.host.nick}</p>
+              <p className="text-[11px] text-muted-foreground truncate">{room.host.school}</p>
+            </div>
+            <div className="rounded-2xl border-2 border-red-500/50 bg-red-500/10 p-4">
+              <span className="text-[10px] font-black uppercase text-red-400">Lado Vermelho</span>
+              <p className="font-display text-base font-black truncate">{room.guest?.nick ?? "Oponente"}</p>
+              <p className="text-[11px] text-muted-foreground truncate">{room.guest?.school ?? ""}</p>
+            </div>
+          </div>
+
+          {/* Contador Regressivo Gigante */}
+          <div className="relative py-4">
+            <div className="mx-auto grid h-24 w-24 place-items-center rounded-3xl border-4 border-primary bg-primary/10 text-primary shadow-xl shadow-primary/20 animate-bounce">
+              <span className="font-mono text-5xl font-black">
+                {countdownRem > 0 ? countdownRem : "VAI!"}
+              </span>
+            </div>
+            <p className="mt-3 text-xs font-bold text-muted-foreground">
+              A partida começará simultaneamente para os dois jogadores!
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // 2. TELA DE RESULTADO DO X1 (FINALIZADA)
+  // ==========================================
   if (room.status === "finished") {
     const iWon = room.winnerId === myId;
     const isDraw = room.winnerId === "draw";
+    const autoCloseAt = room.autoCloseAt ?? (Date.now() + 60_000);
+    const autoCloseRem = Math.max(0, Math.ceil((autoCloseAt - Date.now()) / 1000));
 
     return (
       <div className="mx-auto max-w-2xl rounded-3xl border-2 bg-card p-6 sm:p-8 shadow-2xl space-y-6 animate-pop-in">
@@ -188,16 +374,21 @@ export function X1MatchOverlay({ initialRoom, onExitX1 }: Props) {
           >
             <Trophy className="h-9 w-9" />
           </div>
-          <h2 className="font-display text-3xl font-extrabold">
+          <h2 className="font-display text-2xl sm:text-3xl font-extrabold">
             {iWon
               ? "🏆 Você Venceu o Desafio X1!"
               : isDraw
                 ? "🤝 Empate Épico no X1!"
                 : `💪 ${opponent?.nick ?? "Oponente"} venceu este duelo!`}
           </h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-xs sm:text-sm text-muted-foreground">
             Sala <b>#{room.code}</b> • {GAME_NAMES[room.gameId]}
           </p>
+          {room.gameId === "minado" && isDraw && (
+            <p className="text-xs text-muted-foreground italic">
+              Critério: Pontuação e erros idênticos.
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -250,21 +441,228 @@ export function X1MatchOverlay({ initialRoom, onExitX1 }: Props) {
           </div>
         </div>
 
-        <Button
-          size="lg"
-          onClick={() => {
-            closeX1Room(room.code);
-            onExitX1();
-          }}
-          className="h-14 w-full rounded-2xl font-display text-base font-extrabold"
-        >
-          Voltar para a Plataforma
-        </Button>
+        {/* Aviso de Encerramento Automático em 1 Minuto */}
+        <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground font-semibold">
+          <Clock className="h-3.5 w-3.5 text-accent" />
+          <span>Esta sala será encerrada automaticamente em <b>{autoCloseRem}s</b> (limite de 1 min).</span>
+        </div>
+
+        {/* Ações: Encerrar Partida ou Voltar */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+          <Button
+            size="lg"
+            variant="outline"
+            onClick={() => {
+              closeX1Room(room.code);
+              onExitX1();
+            }}
+            className="h-12 rounded-2xl font-bold"
+          >
+            <LogOut className="mr-2 h-4 w-4" /> Encerrar Partida
+          </Button>
+          <Button
+            size="lg"
+            onClick={() => {
+              closeX1Room(room.code);
+              onExitX1();
+            }}
+            className="h-12 rounded-2xl font-display text-base font-extrabold"
+          >
+            <RotateCcw className="mr-2 h-4 w-4" /> Voltar para o Menu
+          </Button>
+        </div>
       </div>
     );
   }
 
-  // 2. MODO CABO DE GUERRA 1V1 NA BATALHA DE ROBÔS (`gameId === "rpg"`)
+  // ==========================================
+  // 3. CAMPO MINADO 1V1 POR TURNOS (`gameId === "minado"`)
+  // ==========================================
+  if (room.gameId === "minado" && room.minadoState) {
+    const mState = room.minadoState;
+    const isMyTurn = mState.currentTurnPlayerId === myId;
+    const activeQ = mState.activeQuestion;
+    const isQActive = Boolean(activeQ && !activeQ.answered);
+    const qSecsLeft = activeQ ? Math.max(0, Math.ceil((activeQ.expiresAt - Date.now()) / 1000)) : 0;
+
+    return (
+      <div className="mx-auto max-w-3xl rounded-3xl border-2 bg-card p-4 sm:p-6 shadow-xl space-y-4">
+        {/* Header Superior com Pontuação e Vez */}
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border bg-secondary/40 px-4 py-2.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="rounded-xl bg-sky-500/15 px-3 py-1 font-display text-xs font-extrabold text-sky-500">
+              🔵 {room.host.nick}: {room.host.score} pts ({room.host.wrong} erros)
+            </span>
+            <span className="font-display text-xs font-extrabold text-muted-foreground">VS</span>
+            <span className="rounded-xl bg-red-500/15 px-3 py-1 font-display text-xs font-extrabold text-red-500">
+              🔴 {room.guest?.nick ?? "Oponente"}: {room.guest?.score ?? 0} pts ({room.guest?.wrong ?? 0} erros)
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="inline-flex items-center gap-1 rounded-full bg-card px-3 py-1 font-mono text-xs font-extrabold border">
+              <Timer className="h-3.5 w-3.5 text-accent" /> {mins}:{secs}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onExitX1}
+              className="h-8 rounded-xl text-xs"
+            >
+              <LogOut className="mr-1 h-3.5 w-3.5" /> Sair
+            </Button>
+          </div>
+        </div>
+
+        {/* Indicador de Vez */}
+        <div
+          className={`rounded-2xl border p-3 text-center transition-all ${
+            isMyTurn
+              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-extrabold"
+              : "border-border bg-secondary/30 text-muted-foreground font-semibold"
+          }`}
+        >
+          {isMyTurn ? (
+            <div className="flex items-center justify-center gap-2 text-sm sm:text-base">
+              <Sparkles className="h-4 w-4 animate-bounce" />
+              <span>🎯 SUA VEZ DE JOGAR! Escolha uma carta do tabuleiro abaixo.</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center gap-2 text-xs sm:text-sm">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Vez de <b>{opponent?.nick ?? "Oponente"}</b>... Aguardando jogada.</span>
+            </div>
+          )}
+        </div>
+
+        {minadoFeedback && (
+          <div className="rounded-2xl bg-accent/15 border border-accent/30 p-2.5 text-center font-display text-xs sm:text-sm font-extrabold text-accent animate-pop-in">
+            {minadoFeedback}
+          </div>
+        )}
+
+        {/* MODAL / OVERLAY DA QUESTÃO DE 20S */}
+        {isQActive && activeQ && (
+          <div className="rounded-3xl border-2 border-primary/50 bg-gradient-to-b from-primary/10 via-card to-card p-5 sm:p-6 shadow-xl space-y-4 animate-pop-in">
+            {isMyTurn ? (
+              <>
+                <div className="flex items-center justify-between gap-2 border-b pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-primary/20 px-2.5 py-0.5 text-xs font-black text-primary">
+                      DESAFIO DE 20 SEGUNDOS
+                    </span>
+                    <span className="text-xs text-muted-foreground">Vale +{mState.board[activeQ.cardIndex]?.points ?? 20} pts</span>
+                  </div>
+                  <div className="flex items-center gap-1 font-mono text-sm font-black text-amber-500">
+                    <Clock className="h-4 w-4" /> {qSecsLeft}s
+                  </div>
+                </div>
+
+                <div className="py-2 text-center">
+                  <p className="font-display text-xl sm:text-2xl font-extrabold text-foreground">
+                    {activeQ.question}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  {activeQ.options.map((opt) => (
+                    <Button
+                      key={opt}
+                      type="button"
+                      size="lg"
+                      onClick={() => handleMinadoAnswer(opt)}
+                      className="h-14 rounded-2xl font-display text-base font-extrabold hover:scale-[1.02] transition-transform"
+                    >
+                      {opt}
+                    </Button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="py-6 text-center space-y-3">
+                <Shield className="h-12 w-12 text-primary mx-auto animate-pulse" />
+                <h3 className="font-display text-lg sm:text-xl font-black text-foreground">
+                  🛡️ Oponente resolvendo desafio... [{qSecsLeft}s restantes]
+                </h3>
+                <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                  A questão está visível apenas para o oponente neste turno. Aguarde a resposta dele!
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* GRADE DO CAMPO MINADO (4x4 = 16 CARTAS) */}
+        {!isQActive && (
+          <div className="grid grid-cols-4 gap-2.5 sm:gap-3.5 py-2">
+            {mState.board.map((card, idx) => {
+              const isRevealed = card.revealed;
+              const isMine = card.type === "mine";
+              const isBonus = card.type === "bonus";
+              const isHostRevealed = card.revealedBy === "host";
+
+              if (isRevealed) {
+                return (
+                  <div
+                    key={idx}
+                    className={`h-20 sm:h-24 rounded-2xl border-2 flex flex-col items-center justify-center p-2 text-center transition-all ${
+                      isMine
+                        ? "border-destructive bg-destructive/15 text-destructive"
+                        : isBonus
+                          ? "border-amber-400 bg-amber-400/15 text-amber-500"
+                          : "border-primary bg-primary/10 text-primary"
+                    }`}
+                  >
+                    {isMine ? (
+                      <>
+                        <Bomb className="h-6 w-6 sm:h-7 sm:w-7 animate-bounce" />
+                        <span className="font-mono text-xs font-extrabold mt-1">{card.points} pts</span>
+                      </>
+                    ) : isBonus ? (
+                      <>
+                        <Gift className="h-6 w-6 sm:h-7 sm:w-7" />
+                        <span className="font-mono text-xs font-extrabold mt-1">+{card.points} pts</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="h-6 w-6 sm:h-7 sm:w-7" />
+                        <span className="font-mono text-xs font-extrabold mt-1">+{card.points} pts</span>
+                      </>
+                    )}
+                    <span className="text-[9px] font-bold opacity-70">
+                      {isHostRevealed ? "🔵 Azul" : "🔴 Vermelho"}
+                    </span>
+                  </div>
+                );
+              }
+
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  disabled={!isMyTurn}
+                  onClick={() => handleMinadoCardClick(idx)}
+                  className={`h-20 sm:h-24 rounded-2xl border-2 flex flex-col items-center justify-center p-2 text-center transition-all ${
+                    isMyTurn
+                      ? "border-primary/50 bg-gradient-to-br from-secondary/80 to-card hover:border-primary hover:scale-[1.03] hover:shadow-lg cursor-pointer"
+                      : "border-border bg-secondary/30 opacity-70 cursor-not-allowed"
+                  }`}
+                >
+                  <HelpCircle className="h-6 w-6 sm:h-7 sm:w-7 text-primary/70" />
+                  <span className="text-[10px] font-bold text-muted-foreground mt-1">Carta #{idx + 1}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ==========================================
+  // 4. BATALHA DOS ROBÔS (5 VIDAS / CABO DE GUERRA) (`gameId === "rpg"`)
+  // ==========================================
   if (room.gameId === "rpg") {
     return (
       <div className="rounded-3xl border-2 bg-card p-4 sm:p-6 shadow-xl space-y-5">
@@ -272,11 +670,11 @@ export function X1MatchOverlay({ initialRoom, onExitX1 }: Props) {
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border bg-secondary/40 px-4 py-3">
           <div className="flex items-center gap-2">
             <span className="rounded-xl bg-sky-500/15 px-3 py-1 font-display text-xs font-extrabold text-sky-500">
-              🔵 {room.host.nick} ({room.host.hp} HP)
+              🔵 {room.host.nick} ({room.host.hp}/5 HP)
             </span>
             <span className="font-display text-xs font-extrabold text-muted-foreground">VS</span>
             <span className="rounded-xl bg-red-500/15 px-3 py-1 font-display text-xs font-extrabold text-red-500">
-              🔴 {room.guest?.nick ?? "Oponente"} ({room.guest?.hp ?? 10} HP)
+              🔴 {room.guest?.nick ?? "Oponente"} ({room.guest?.hp ?? 5}/5 HP)
             </span>
           </div>
 
@@ -302,6 +700,40 @@ export function X1MatchOverlay({ initialRoom, onExitX1 }: Props) {
           </div>
         )}
 
+        {/* Indicador de 5 Vidas (Corações) */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="rounded-2xl border border-sky-500/30 bg-sky-500/5 p-3 flex items-center justify-between">
+            <span className="text-xs font-bold text-sky-500">{room.host.nick}</span>
+            <div className="flex items-center gap-1">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Heart
+                  key={i}
+                  className={`h-4 w-4 ${
+                    i < room.host.hp
+                      ? "text-sky-500 fill-sky-500"
+                      : "text-muted-foreground/30"
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-3 flex items-center justify-between">
+            <span className="text-xs font-bold text-red-500">{room.guest?.nick ?? "Oponente"}</span>
+            <div className="flex items-center gap-1">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Heart
+                  key={i}
+                  className={`h-4 w-4 ${
+                    i < (room.guest?.hp ?? 5)
+                      ? "text-red-500 fill-red-500"
+                      : "text-muted-foreground/30"
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
         {/* Questão Acima da Barra */}
         <div className="rounded-3xl border-2 border-primary/30 bg-gradient-to-b from-secondary/60 to-card p-5 text-center space-y-2">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-0.5 text-[11px] font-extrabold uppercase text-primary">
@@ -315,12 +747,10 @@ export function X1MatchOverlay({ initialRoom, onExitX1 }: Props) {
         <div className="rounded-3xl border-2 bg-slate-950 p-5 text-white space-y-3">
           <div className="flex items-center justify-between text-xs font-extrabold">
             <span className="text-sky-400 flex items-center gap-1">
-              <Zap className="h-4 w-4" /> {room.host.nick}: {room.host.hp}/{room.host.maxHp} Vida (
-              {room.blueShare}%)
+              <Zap className="h-4 w-4" /> {room.host.nick}: {room.host.hp}/5 Vidas ({room.blueShare}%)
             </span>
             <span className="text-red-400 flex items-center gap-1">
-              {room.guest?.nick}: {room.guest?.hp}/{room.guest?.maxHp} Vida ({redShare}%){" "}
-              <Flame className="h-4 w-4" />
+              {room.guest?.nick}: {room.guest?.hp}/5 Vidas ({redShare}%) <Flame className="h-4 w-4" />
             </span>
           </div>
 
@@ -345,7 +775,7 @@ export function X1MatchOverlay({ initialRoom, onExitX1 }: Props) {
           </div>
         </div>
 
-        {/* Botões Verdadeiro / Falso Abaixo da Barra */}
+        {/* Botões Verdadeiro / Falso */}
         <div className="grid grid-cols-2 gap-4">
           <Button
             type="button"
@@ -370,57 +800,97 @@ export function X1MatchOverlay({ initialRoom, onExitX1 }: Props) {
     );
   }
 
-  // 3. BARRA COMPACTA AO VIVO PARA OS DEMAIS 9 JOGOS (CORRIDA DE PONTOS X1)
+  // ==========================================
+  // 5. CORRIDA DETERMINÍSTICA DE QUESTÕES (LÓGICA / PORCENTAGEM)
+  // ==========================================
+  const qList = room.questionList ?? [];
+  const currentQ = qList[myQuestionIdx];
+  const totalQ = qList.length || 15;
+  const oppQIdx = isHost
+    ? (room.guest?.currentQuestionIdx ?? 0)
+    : (room.host.currentQuestionIdx ?? 0);
+
   return (
-    <div className="mb-4 rounded-3xl border-2 border-accent/50 bg-slate-950 p-3.5 text-white shadow-lg space-y-2">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-extrabold">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1 rounded-full bg-accent/20 px-2.5 py-0.5 text-[11px] text-amber-300">
-            <Swords className="h-3.5 w-3.5" /> X1 AO VIVO • Sala #{room.code}
+    <div className="mx-auto max-w-3xl rounded-3xl border-2 bg-card p-4 sm:p-6 shadow-xl space-y-4">
+      {/* Top Header */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border bg-secondary/40 px-4 py-2.5">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="rounded-xl bg-sky-500/15 px-3 py-1 font-display text-xs font-extrabold text-sky-500">
+            🔵 {room.host.nick}: {room.host.score} pts (Q{(room.host.currentQuestionIdx ?? 0) + 1}/{totalQ})
           </span>
-          <span className="text-sky-400">
-            🔵 {room.host.nick}: <b>{room.host.score} pts</b>
-          </span>
-          <span className="text-slate-400">vs</span>
-          <span className="text-red-400">
-            🔴 {room.guest?.nick ?? "Oponente"}: <b>{room.guest?.score ?? 0} pts</b>
+          <span className="font-display text-xs font-extrabold text-muted-foreground">VS</span>
+          <span className="rounded-xl bg-red-500/15 px-3 py-1 font-display text-xs font-extrabold text-red-500">
+            🔴 {room.guest?.nick ?? "Oponente"}: {room.guest?.score ?? 0} pts (Q{oppQIdx + 1}/{totalQ})
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="rounded-full bg-slate-800 px-3 py-0.5 font-mono text-xs text-amber-300 border border-white/10">
-            ⏱️ {mins}:{secs}
+        <div className="flex items-center gap-3">
+          <span className="inline-flex items-center gap-1 rounded-full bg-card px-3 py-1 font-mono text-xs font-extrabold border">
+            <Timer className="h-3.5 w-3.5 text-accent" /> {mins}:{secs}
           </span>
           <Button
             type="button"
+            variant="ghost"
             size="sm"
-            variant="secondary"
-            onClick={() => {
-              const finished = finishX1RoomByTimeout(room.code);
-              if (finished) setRoom({ ...finished });
-            }}
-            className="h-7 rounded-xl px-2.5 text-[11px] font-bold"
+            onClick={onExitX1}
+            className="h-8 rounded-xl text-xs"
           >
-            Concluir Duelo
+            <LogOut className="mr-1 h-3.5 w-3.5" /> Sair
           </Button>
         </div>
       </div>
 
-      {/* Mini barra de vantagem Azul vs Vermelho com faísca */}
-      <div className="relative h-3 w-full rounded-full bg-slate-900 overflow-visible">
-        <div
-          className="absolute inset-y-0 left-0 rounded-l-full bg-gradient-to-r from-blue-600 to-cyan-400 transition-all duration-300"
-          style={{ width: `${room.blueShare}%` }}
-        />
-        <div
-          className="absolute inset-y-0 right-0 rounded-r-full bg-gradient-to-l from-red-700 to-orange-500 transition-all duration-300"
-          style={{ width: `${redShare}%` }}
-        />
-        <Sparkles
-          className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 h-4 w-4 text-yellow-300"
-          style={{ left: `${room.blueShare}%` }}
-        />
+      {/* Barra de Progresso Comparativo */}
+      <div className="rounded-2xl border bg-secondary/20 p-3 space-y-2">
+        <div className="flex items-center justify-between text-xs font-bold">
+          <span className="text-primary font-display">
+            Você: Questão {myQuestionIdx + 1} de {totalQ}
+          </span>
+          <span className="text-muted-foreground">
+            Oponente: Questão {oppQIdx + 1} de {totalQ}
+          </span>
+        </div>
+        <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden flex">
+          <div
+            className="h-full bg-primary transition-all duration-200"
+            style={{ width: `${Math.min(100, ((myQuestionIdx + 1) / totalQ) * 100)}%` }}
+          />
+        </div>
       </div>
+
+      {/* Questão Ativa da Lista Determinística */}
+      {currentQ ? (
+        <div className="rounded-3xl border-2 border-primary/30 bg-gradient-to-b from-secondary/50 to-card p-6 text-center space-y-4">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 text-xs font-black uppercase text-primary">
+            Questão {myQuestionIdx + 1} • {GAME_NAMES[room.gameId]}
+          </span>
+          <p className="font-display text-2xl sm:text-3xl font-extrabold text-foreground">
+            {currentQ.question}
+          </p>
+
+          <div className="grid grid-cols-2 gap-3 pt-3">
+            {currentQ.options.map((opt) => (
+              <Button
+                key={opt}
+                type="button"
+                size="lg"
+                onClick={() => handleRaceAnswer(opt)}
+                className="h-14 sm:h-16 rounded-2xl font-display text-lg font-extrabold hover:scale-[1.02] transition-transform"
+              >
+                {opt}
+              </Button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="py-12 text-center space-y-3">
+          <Check className="h-12 w-12 text-success mx-auto" />
+          <h3 className="font-display text-xl font-black">Você completou todas as questões!</h3>
+          <p className="text-xs text-muted-foreground">
+            Aguardando o oponente concluir ou o tempo da sala se encerrar...
+          </p>
+        </div>
+      )}
     </div>
   );
 }

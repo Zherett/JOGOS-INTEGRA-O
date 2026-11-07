@@ -49,6 +49,7 @@ interface Props {
   requireCodeGate: boolean;
   showCodeGateCardOnHome?: boolean;
   x1Enabled?: boolean;
+  x1ArenaClosed?: boolean;
   x1OpenNow?: boolean;
   x1HoursLabel?: string;
   tournamentEnabled?: boolean;
@@ -73,6 +74,7 @@ export function Menu({
   requireCodeGate,
   showCodeGateCardOnHome = false,
   x1Enabled = true,
+  x1ArenaClosed = false,
   x1OpenNow = true,
   x1HoursLabel = "07:00 às 19:00",
   tournamentEnabled = true,
@@ -149,6 +151,7 @@ export function Menu({
   };
 
   const handleX1Click = () => {
+    if (x1ArenaClosed) return;
     if (!playerProfile) {
       if (onOpenAuth) onOpenAuth();
       return;
@@ -457,8 +460,26 @@ export function Menu({
             <button
               type="button"
               onClick={handleX1Click}
-              className="group flex flex-col justify-between rounded-3xl border-2 border-orange-500/70 bg-gradient-to-br from-orange-950/80 via-slate-900/90 to-amber-950/60 p-4.5 sm:p-5 text-left shadow-[0_4px_25px_rgba(249,115,22,0.18)] transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_30px_rgba(249,115,22,0.3)] hover:border-orange-400 cursor-pointer min-h-[160px]"
+              disabled={x1ArenaClosed}
+              className={`group relative flex flex-col justify-between overflow-hidden rounded-3xl border-2 p-4.5 sm:p-5 text-left transition-all min-h-[160px] ${
+                x1ArenaClosed
+                  ? "border-destructive/60 bg-gradient-to-br from-red-950/70 via-slate-900/95 to-neutral-950/90 cursor-not-allowed opacity-90 shadow-none"
+                  : "border-orange-500/70 bg-gradient-to-br from-orange-950/80 via-slate-900/90 to-amber-950/60 shadow-[0_4px_25px_rgba(249,115,22,0.18)] hover:-translate-y-0.5 hover:shadow-[0_8px_30px_rgba(249,115,22,0.3)] hover:border-orange-400 cursor-pointer"
+              }`}
             >
+              {/* Faixa Vermelha de Aviso quando a Arena for Fechada pela Coordenação */}
+              {x1ArenaClosed && (
+                <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-red-950/85 backdrop-blur-[2px] p-4 text-center border-2 border-destructive animate-in fade-in duration-200">
+                  <span className="rounded-full bg-destructive/30 px-3 py-1 font-mono text-xs font-black uppercase text-red-200 border border-destructive/50">
+                    ⛔ ARENA FECHADA PELA COORDENAÇÃO
+                  </span>
+                  <p className="mt-2 text-xs sm:text-sm font-extrabold text-white max-w-xs leading-snug">
+                    O modo de duelos X1 está temporariamente fechado pelo administrador.
+                  </p>
+                  <span className="mt-1 text-[11px] text-red-300 font-medium">Aguarde a reabertura para novos desafios.</span>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/20 border border-orange-400/40 px-2.5 py-0.5 text-[10px] font-black uppercase text-orange-300">
@@ -477,7 +498,9 @@ export function Menu({
               </div>
 
               <div className="mt-3.5 inline-flex items-center gap-1.5 rounded-xl bg-orange-500 hover:bg-orange-400 px-4 py-2 text-xs font-black text-white shadow-md shadow-orange-500/30 w-fit group-hover:scale-[1.02] transition-transform">
-                {!playerProfile ? (
+                {x1ArenaClosed ? (
+                  "Arena Fechada pela Coordenação"
+                ) : !playerProfile ? (
                   <>
                     <LogIn className="h-3.5 w-3.5" /> Entrar para Duelar →
                   </>

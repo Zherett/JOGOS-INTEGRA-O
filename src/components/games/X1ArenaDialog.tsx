@@ -32,9 +32,9 @@ import {
 } from "@/lib/player-profile";
 import {
   closeX1Room,
+  cancelWaitingX1Room,
   createX1Room,
   dismissX1Invite,
-  getActiveRotatedX1Game,
   getX1LobbySnapshot,
   getX1Room,
   heartbeatOnlinePlayer,
@@ -64,11 +64,10 @@ export function X1ArenaDialog({
   const profile = auth.profile;
 
   const [tab, setTab] = useState<LobbyTab>("online");
-  const x1Rotation = getActiveRotatedX1Game({
-    availableGames: auth.adminConfig.x1AvailableGames,
-    rotationMinutes: auth.adminConfig.x1RotationMinutes,
-  });
-  const [selectedGame, setSelectedGame] = useState<GameId>(x1Rotation.currentGame);
+  const allowedX1Games = (auth.adminConfig.x1AvailableGames ?? ["rpg", "logica", "porcentagem", "minado"]).filter(
+    (id) => auth.adminConfig.enabledGames[id] !== false,
+  );
+  const [selectedGame, setSelectedGame] = useState<GameId>(allowedX1Games[0] ?? "rpg");
   const [waitingRoomCode, setWaitingRoomCode] = useState<string | null>(null);
   const [joinCodeInput, setJoinCodeInput] = useState("");
   const [isJoining, setIsJoining] = useState(false);
@@ -109,16 +108,27 @@ export function X1ArenaDialog({
     };
   }, [open, profile, waitingRoomCode]);
 
-  // Watch waiting room: as soon as a guest joins (`status === "playing"`), launch the X1 match!
+  // Watch waiting room: check 2-min expiry and when guest joins (countdown/playing), launch X1 match!
   useEffect(() => {
     if (!waitingRoomCode) return;
     const room = getX1Room(waitingRoomCode);
-    if (room && room.status === "playing" && room.guest) {
+    if (!room) {
+      setWaitingRoomCode(null);
+      return;
+    }
+    const expiresAt = room.expiresAt ?? (room.createdAt + 120_000);
+    if (Date.now() >= expiresAt && room.status === "waiting") {
+      if (profile) cancelWaitingX1Room(waitingRoomCode, profile.id);
+      setWaitingRoomCode(null);
+      setError("Tempo limite de espera de 2 minutos esgotado. A sala foi removida automaticamente.");
+      return;
+    }
+    if ((room.status === "countdown" || room.status === "playing") && room.guest) {
       setWaitingRoomCode(null);
       onOpenChange(false);
       onStartX1Match(room);
     }
-  }, [waitingRoomCode, tick, onOpenChange, onStartX1Match]);
+  }, [waitingRoomCode, tick, profile, onOpenChange, onStartX1Match]);
 
   if (!profile) {
     return (
@@ -297,7 +307,7 @@ export function X1ArenaDialog({
       open={open}
       onOpenChange={(v) => {
         if (!v && waitingRoomCode) {
-          closeX1Room(waitingRoomCode);
+          cancelWaitingX1Room(waitingRoomCode, profile?.id);
           setWaitingRoomCode(null);
         }
         onOpenChange(v);
@@ -310,32 +320,20 @@ export function X1ArenaDialog({
           </DialogTitle>
         </DialogHeader>
 
-        {/* Rotação Dinâmica de Atividades da Arena X1 */}
+        {/* Modalidades Disponíveis na Arena X1 */}
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-primary/30 bg-primary/10 px-3.5 py-2 text-xs">
           <div className="flex items-center gap-1.5 font-display font-extrabold text-foreground">
             <Zap className="h-4 w-4 text-accent" />
             <span>
-              Jogo Ativo no X1:{" "}
-              <b className="text-primary font-black">{GAME_NAMES[x1Rotation.currentGame]}</b>
+              Jogos da Arena:{" "}
+              <b className="text-primary font-black">
+                {allowedX1Games.map((g) => GAME_NAMES[g]).join(" • ")}
+              </b>
             </span>
           </div>
-          {x1Rotation.totalGamesCount > 1 ? (
-            <div className="flex items-center gap-1 text-[11px] font-bold text-muted-foreground">
-              <Clock className="h-3.5 w-3.5 text-primary" />
-              <span>
-                Próxima rotação em{" "}
-                <b className="text-foreground">
-                  {Math.floor(x1Rotation.secondsUntilNextRotation / 60)}m{" "}
-                  {String(x1Rotation.secondsUntilNextRotation % 60).padStart(2, "0")}s
-                </b>{" "}
-                (Próximo: {GAME_NAMES[x1Rotation.nextGame]})
-              </span>
-            </div>
-          ) : (
-            <span className="text-[11px] text-muted-foreground font-semibold">
-              Modalidade fixa definida pela coordenação
-            </span>
-          )}
+          <span className="text-[11px] text-muted-foreground font-semibold">
+            Duelos 1v1 em tempo real
+          </span>
         </div>
 
         {/* TELA DE ESPERA DA SALA CRIADA */}
@@ -373,6 +371,20 @@ export function X1ArenaDialog({
                 </Button>
               </div>
 
+              {/* Temporizador regressivo de expiração da sala (2 minutos) */}
+              {(() => {
+                const exp = waitingRoom.expiresAt ?? (waitingRoom.createdAt + 120_000);
+                const rem = Math.max(0, Math.ceil((exp - Date.now()) / 1000));
+                const m = Math.floor(rem / 60);
+                const s = String(rem % 60).padStart(2, "0");
+                return (
+                  <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-amber-500">
+                    <Clock className="h-3.5 w-3.5" />
+                    <span>Tempo restante para oponente entrar: <b>{m}:{s}</b> (expira em 2 min)</span>
+                  </div>
+                );
+              })()}
+
               <div className="pt-1 text-xs font-bold text-foreground">
                 Modalidade escolhida:{" "}
                 <span className="text-accent">{GAME_NAMES[waitingRoom.gameId]}</span>
@@ -392,7 +404,7 @@ export function X1ArenaDialog({
               type="button"
               variant="outline"
               onClick={() => {
-                closeX1Room(waitingRoom.code);
+                cancelWaitingX1Room(waitingRoom.code, profile?.id);
                 setWaitingRoomCode(null);
               }}
               className="w-full rounded-2xl text-destructive"
@@ -559,47 +571,54 @@ export function X1ArenaDialog({
                     </div>
                   ) : (
                     <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                      {visibleOpenRooms.map((r) => (
-                        <div
-                          key={r.code}
-                          className="flex items-center justify-between gap-3 rounded-xl border bg-background p-3"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="rounded-lg bg-primary/15 px-2 py-0.5 font-mono text-xs font-extrabold text-primary">
-                                #{r.code}
-                              </span>
-                              <span className="font-display text-sm font-bold truncate">
-                                {r.host.nick}
-                              </span>
-                              <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-bold">
-                                {getAgeStageInfo(r.host.stage ?? "etapa_1").shortLabel}
-                              </span>
-                              <span className="text-[11px] text-muted-foreground">
-                                Nv. {r.host.level}
-                              </span>
-                            </div>
-                            <div className="mt-0.5 text-xs text-muted-foreground truncate">
-                              Jogo: <b className="text-foreground">{GAME_NAMES[r.gameId]}</b> •{" "}
-                              {r.host.school}
-                            </div>
-                          </div>
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={isJoining}
-                            onClick={() => void handleJoinRoomByCode(r.code)}
-                            className="rounded-xl font-bold shrink-0"
+                      {visibleOpenRooms.map((r) => {
+                        const roomExpiresAt = r.expiresAt ?? (r.createdAt + 120_000);
+                        const roomSecs = Math.max(0, Math.ceil((roomExpiresAt - Date.now()) / 1000));
+                        return (
+                          <div
+                            key={r.code}
+                            className="flex items-center justify-between gap-3 rounded-xl border bg-background p-3"
                           >
-                            {isJoining ? (
-                              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Play className="mr-1 h-3.5 w-3.5" />
-                            )}
-                            Entrar no X1
-                          </Button>
-                        </div>
-                      ))}
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="rounded-lg bg-primary/15 px-2 py-0.5 font-mono text-xs font-extrabold text-primary">
+                                  #{r.code}
+                                </span>
+                                <span className="font-display text-sm font-bold truncate">
+                                  {r.host.nick}
+                                </span>
+                                <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-bold">
+                                  {getAgeStageInfo(r.host.stage ?? "etapa_1").shortLabel}
+                                </span>
+                                <span className="text-[11px] text-muted-foreground">
+                                  Nv. {r.host.level}
+                                </span>
+                                <span className="rounded-full bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 text-[10px] font-mono font-bold text-amber-600 dark:text-amber-400">
+                                  ⏱️ {Math.floor(roomSecs / 60)}:{String(roomSecs % 60).padStart(2, "0")}
+                                </span>
+                              </div>
+                              <div className="mt-0.5 text-xs text-muted-foreground truncate">
+                                Jogo: <b className="text-foreground">{GAME_NAMES[r.gameId]}</b> •{" "}
+                                {r.host.school}
+                              </div>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={isJoining}
+                              onClick={() => void handleJoinRoomByCode(r.code)}
+                              className="rounded-xl font-bold shrink-0"
+                            >
+                              {isJoining ? (
+                                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Play className="mr-1 h-3.5 w-3.5" />
+                              )}
+                              Entrar no X1
+                            </Button>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -671,9 +690,10 @@ export function X1ArenaDialog({
                     Jogos Habilitados para a Arena X1 (Definidos pela Coordenação)
                   </Label>
                   <div className="grid sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-1">
-                    {x1Rotation.gameList.filter((id) => auth.adminConfig.enabledGames[id]).map((id) => {
+                    {allowedX1Games.map((id) => {
                       const active = selectedGame === id;
                       const isRobotClash = id === "rpg";
+                      const isMinado = id === "minado";
                       return (
                         <button
                           key={id}
@@ -691,14 +711,21 @@ export function X1ArenaDialog({
                             </span>
                             {isRobotClash && (
                               <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[10px] font-extrabold text-accent">
-                                Cabo de Guerra
+                                5 Vidas (Cabo de Guerra)
+                              </span>
+                            )}
+                            {isMinado && (
+                              <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400">
+                                1v1 por Turnos
                               </span>
                             )}
                           </div>
                           <span className="mt-0.5 text-[11px] text-muted-foreground">
                             {isRobotClash
-                              ? "Robô Azul vs Robô Vermelho na barra de poder"
-                              : "Corrida de Pontos ao vivo (90s)"}
+                              ? "5 vidas para cada! Super raio tira 3 vidas."
+                              : isMinado
+                                ? "Tabuleiro compartilhado, bombas, bônus e 20s por questão."
+                                : "Mesmas questões na mesma ordem geradas pela sala."}
                           </span>
                         </button>
                       );

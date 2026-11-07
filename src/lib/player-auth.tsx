@@ -86,6 +86,7 @@ interface AuthValue {
     wrong?: number;
     tournamentPoints?: number;
     tournamentRankId?: string;
+    isDraw?: boolean;
   }) => Promise<void>;
   awardSpecialRobotMedal: (
     medalId: "m_rpg_ametista" | "m_rpg_carmesim",
@@ -247,6 +248,7 @@ export function PlayerAuthProvider({ children }: { children: ReactNode }) {
       wrong?: number;
       tournamentPoints?: number;
       tournamentRankId?: string;
+      isDraw?: boolean;
     }) => {
       const updated = await playfabRecordMatch(args);
       if (updated) {

@@ -1851,7 +1851,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                     <Swords className="h-5 w-5 text-accent" /> Arena de Desafio X1 Online (1 vs 1)
                   </h3>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Configure os jogos disponíveis nas batalhas 1 contra 1. Escolha de 1 a 3 jogos com rotação automática programada a cada intervalo!
+                    Configure os jogos disponíveis nas batalhas 1 contra 1 e o status de funcionamento da arena.
                   </p>
                 </div>
 
@@ -1863,7 +1863,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                         Habilitar Arena X1 para os Alunos (Nível 5+)
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        Duelos em tempo real com sala e código compartilhado.
+                        Disponibiliza o recurso de duelos em tempo real para os alunos.
                       </div>
                     </div>
                     <Switch
@@ -1872,7 +1872,26 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 border-t">
+                  <div className="flex items-center justify-between gap-3 pt-3 border-t">
+                    <div>
+                      <div className="font-display text-sm font-bold text-foreground flex items-center gap-2">
+                        Status da Arena: {draft.x1ArenaClosed ? (
+                          <span className="text-destructive font-extrabold">⛔ FECHADA</span>
+                        ) : (
+                          <span className="text-emerald-500 font-extrabold">🟢 ABERTA</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Quando fechada, exibe uma faixa vermelha de aviso informando que a arena foi fechada pela coordenação.
+                      </div>
+                    </div>
+                    <Switch
+                      checked={!(draft.x1ArenaClosed ?? false)}
+                      onCheckedChange={(aberta) => setDraft({ ...draft, x1ArenaClosed: !aberta })}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t">
                     <div>
                       <Label className="text-xs font-bold">Abertura da Arena (0-23h)</Label>
                       <Input
@@ -1918,44 +1937,28 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                   </div>
                 </div>
 
-                {/* Seleção de 1 a 3 Jogos para Rotação */}
+                {/* Seleção dos Jogos Permitidos no X1 */}
                 <div className="rounded-2xl border bg-card p-4 space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <h4 className="font-display text-sm font-bold text-foreground">
-                        Jogos Ativos no X1 (Selecione de 1 a 3 Jogos)
+                        Jogos Permitidos no Modo X1
                       </h4>
                       <p className="text-xs text-muted-foreground">
-                        {(draft.x1AvailableGames ?? ["rpg", "logica", "porcentagem"]).length} jogo(s) selecionado(s) de no máximo 3.
+                        Selecione quais jogos os alunos podem escolher ao criar salas ou desafios 1v1.
                       </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Label className="text-xs font-bold whitespace-nowrap">Intervalo de Rotação (min):</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={120}
-                        value={draft.x1RotationMinutes ?? 10}
-                        onChange={(e) =>
-                          setDraft({
-                            ...draft,
-                            x1RotationMinutes: Math.max(1, Math.min(120, Number(e.target.value) || 10)),
-                          })
-                        }
-                        className="h-9 w-20 rounded-xl text-center font-bold"
-                      />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-2">
-                    {ALL_GAME_IDS.filter((id) => draft.enabledGames[id]).map((id) => {
-                      const selected = (draft.x1AvailableGames ?? ["rpg", "logica", "porcentagem"]).includes(id);
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2">
+                    {(["rpg", "logica", "porcentagem", "minado"] as const).map((id) => {
+                      const selected = (draft.x1AvailableGames ?? ["rpg", "logica", "porcentagem", "minado"]).includes(id);
                       return (
                         <button
                           key={id}
                           type="button"
                           onClick={() => {
-                            const cur = draft.x1AvailableGames ?? ["rpg", "logica", "porcentagem"];
+                            const cur = draft.x1AvailableGames ?? ["rpg", "logica", "porcentagem", "minado"];
                             if (selected) {
                               if (cur.length > 1) {
                                 setDraft({ ...draft, x1AvailableGames: cur.filter((g) => g !== id) });
@@ -1963,55 +1966,23 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                                 flashSaved("Selecione pelo menos 1 jogo para a Arena X1.");
                               }
                             } else {
-                              if (cur.length < 3) {
-                                setDraft({ ...draft, x1AvailableGames: [...cur, id] });
-                              } else {
-                                flashSaved("Limite de 3 jogos atingido. Desmarque um para adicionar outro.");
-                              }
+                              setDraft({ ...draft, x1AvailableGames: [...cur, id] });
                             }
                           }}
-                          className={`rounded-xl border p-2.5 text-xs font-extrabold text-left transition-all ${
+                          className={`rounded-xl border p-3 text-xs font-extrabold text-left transition-all ${
                             selected
                               ? "border-primary bg-primary text-primary-foreground shadow-sm"
                               : "border-border bg-background hover:bg-secondary/50 text-muted-foreground"
                           }`}
                         >
-                          <div className="truncate">{GAME_NAMES[id]}</div>
-                          <div className="text-[10px] opacity-80 mt-0.5">
-                            {selected ? "✓ Ativo no X1" : "+ Adicionar"}
+                          <div className="truncate text-sm">{GAME_NAMES[id]}</div>
+                          <div className="text-[11px] opacity-90 mt-1">
+                            {selected ? "✓ Habilitado no X1" : "+ Clique para Ativar"}
                           </div>
                         </button>
                       );
                     })}
                   </div>
-
-                  {/* Prévia da Rotação Ativa */}
-                  {(() => {
-                    const rot = getActiveRotatedX1Game({
-                      availableGames: draft.x1AvailableGames,
-                      rotationMinutes: draft.x1RotationMinutes,
-                    });
-                    return (
-                      <div className="rounded-xl border border-primary/40 bg-primary/5 p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <div className="flex items-center gap-2">
-                          <Zap className="h-4 w-4 text-accent" />
-                          <span>
-                            Jogo ativo agora: <b className="text-primary">{GAME_NAMES[rot.currentGame]}</b>
-                          </span>
-                        </div>
-                        {rot.totalGamesCount > 1 ? (
-                          <div className="flex items-center gap-1.5 text-muted-foreground">
-                            <Clock className="h-3.5 w-3.5" />
-                            <span>
-                              Próxima rotação em <b>{Math.floor(rot.secondsUntilNextRotation / 60)}m {rot.secondsUntilNextRotation % 60}s</b> (Próximo: {GAME_NAMES[rot.nextGame]})
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground font-semibold">Modalidade fixa (sem rotação)</span>
-                        )}
-                      </div>
-                    );
-                  })()}
 
                   <Button
                     type="button"

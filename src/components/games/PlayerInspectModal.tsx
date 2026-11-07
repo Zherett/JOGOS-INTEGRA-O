@@ -736,9 +736,16 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
                     <Gamepad2 className="h-4 w-4 text-primary" />
                     <span>Partidas Jogadas por Jogo</span>
                   </div>
-                  <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-bold text-primary">
-                    {matchesCount} partida{matchesCount === 1 ? "" : "s"} no total
-                  </span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-bold text-primary">
+                      {matchesCount} partida{matchesCount === 1 ? "" : "s"} no total
+                    </span>
+                    {(profile.x1Matches ?? 0) > 0 && (
+                      <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs font-bold text-accent">
+                        ⚔️ {profile.x1Matches} duelo{(profile.x1Matches ?? 0) === 1 ? "" : "s"} X1
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

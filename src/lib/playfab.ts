@@ -203,6 +203,9 @@ export interface PlayerProfile {
   levelStageProgress?: LevelStageProgress;
   wins: number;
   x1Wins?: number;
+  x1Losses?: number;
+  x1Draws?: number;
+  x1Matches?: number;
   weeklyX1Wins?: number;
   weeklyX1WeekKey?: string;
   matchesPlayed: number;
@@ -1023,6 +1026,24 @@ export function ensurePlayerSeasonAligned(acc: StoredAccount, cfg: PlatformAdmin
         return m;
       })
       .filter((m) => m.weekKey !== currentWeekKey);
+  }
+
+  // Retroverificação e Limpeza do X1:
+  // Como o sistema anterior permitia finalizar partida sem oponente real, remove medalhas de X1
+  // obtidas indevidamente antes do lançamento oficial:
+  if (Array.isArray(acc.profile.unlockedMedals)) {
+    acc.profile.unlockedMedals = acc.profile.unlockedMedals.filter((m) => {
+      const medalId = typeof m === "string" ? m : (m?.id ?? "");
+      const isX1Medal =
+        medalId.startsWith("x1_wins_") ||
+        medalId.startsWith("x1_weekly_") ||
+        medalId === "event_x1_wins";
+      return !isX1Medal;
+    });
+  }
+  if (acc.profile.x1Wins && (acc.profile.x1Matches ?? 0) === 0) {
+    acc.profile.x1Wins = 0;
+    acc.profile.weeklyX1Wins = 0;
   }
 
   const isAdminAcc = isSpecialAdminAccount(acc.profile);
@@ -3296,6 +3317,7 @@ export async function playfabRecordMatch(args: {
   wrong?: number;
   tournamentPoints?: number;
   tournamentRankId?: string;
+  isDraw?: boolean;
 }): Promise<StoredAccount | null> {
   const cfg = checkAndApplyScheduledReset();
   const session = loadStoredSession();
@@ -3378,6 +3400,7 @@ export async function playfabRecordMatch(args: {
   let earnedXp = 0;
   if (mode === "x1_online") {
     // Dedicated +100 XP/day extra cap for Arena X1 (unlimited matches per day)
+    acc.profile.x1Matches = (acc.profile.x1Matches ?? 0) + 1;
     if (won) {
       acc.profile.x1Wins = (acc.profile.x1Wins ?? 0) + 1;
       if (acc.profile.weeklyX1WeekKey !== currentWeekKey) {
@@ -3386,6 +3409,10 @@ export async function playfabRecordMatch(args: {
       } else {
         acc.profile.weeklyX1Wins = (acc.profile.weeklyX1Wins ?? 0) + 1;
       }
+    } else if (args.isDraw) {
+      acc.profile.x1Draws = (acc.profile.x1Draws ?? 0) + 1;
+    } else {
+      acc.profile.x1Losses = (acc.profile.x1Losses ?? 0) + 1;
     }
     const x1CapRes = applyDailyXpCap({
       rawEarnedXp: won ? 25 : 10,

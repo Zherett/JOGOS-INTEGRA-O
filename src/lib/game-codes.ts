@@ -118,6 +118,8 @@ export interface PlatformAdminConfig {
   resetHistory: ResetHistoryEntry[];
   /** Whether the Arena X1 Online (1v1 Versus mode) is enabled for students (Level 5+). */
   x1Enabled: boolean;
+  /** Definido pelo ADM para forçar o fechamento total da Arena X1 com faixa visual explicativa. */
+  x1ArenaClosed?: boolean;
   /** Opening hour for Arena X1 (0..23, default 7 = 07:00). */
   x1OpenHour: number;
   /** Closing hour for Arena X1 (0..23, default 19 = 19:00). */
@@ -210,10 +212,11 @@ export const DEFAULT_ADMIN_CONFIG: PlatformAdminConfig = {
   scheduledResetClearXp: false,
   resetHistory: [],
   x1Enabled: true,
+  x1ArenaClosed: false,
   x1OpenHour: 7,
   x1CloseHour: 19,
   x1ForceOpen: false,
-  x1AvailableGames: ["rpg", "logica", "porcentagem"],
+  x1AvailableGames: ["rpg", "logica", "porcentagem", "minado"],
   x1RotationMinutes: 10,
   tournamentEnabled: true,
   tournamentGameOverride: null,

@@ -27,11 +27,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Swords } from "lucide-react";
 import {
   heartbeatOnlinePlayer,
+  getX1LobbySnapshot,
+  joinX1RoomAsync,
+  rejectX1Invite,
+  subscribeX1Updates,
   syncX1WithPlayFabCloud,
   type X1Room,
+  type X1DirectInvite,
 } from "@/lib/x1-challenge";
+import { playTone } from "@/lib/sound";
 import { getLocalUserLastActiveAt, usePresenceTracker } from "@/lib/presence";
 import {
   getWeekInfo,
@@ -102,6 +111,8 @@ function Index() {
   const [activeX1Room, setActiveX1Room] = useState<X1Room | null>(null);
   const [activeRankedGameId, setActiveRankedGameId] = useState<GameId | null>(null);
   const [confirmAbandonOpen, setConfirmAbandonOpen] = useState(false);
+  const [incomingInvite, setIncomingInvite] = useState<X1DirectInvite | null>(null);
+  const [rejectNotice, setRejectNotice] = useState<string | null>(null);
   const auth = usePlayerAuth();
 
   const refreshLocal = () => {
@@ -217,6 +228,42 @@ function Index() {
     const id = window.setInterval(pulse, 12000);
     return () => window.clearInterval(id);
   }, [auth.profile, activeX1Room?.code]);
+
+  // Monitor incoming X1 challenge invites in real-time
+  useEffect(() => {
+    if (!auth.profile) return;
+    const myId = auth.profile.id;
+
+    const checkInvites = () => {
+      const snap = getX1LobbySnapshot(myId);
+      const pending = snap.myInvites.find((i) => !i.status || i.status === "pending");
+      if (pending && (!incomingInvite || incomingInvite.id !== pending.id)) {
+        playTone(880, 0.25, "sine");
+        setIncomingInvite(pending);
+      } else if (!pending && incomingInvite) {
+        setIncomingInvite(null);
+      }
+    };
+
+    checkInvites();
+    const unsub = subscribeX1Updates(checkInvites);
+    const pollId = window.setInterval(checkInvites, 3000);
+
+    const handleReject = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.rejectedByNick) {
+        setRejectNotice(`${detail.rejectedByNick} recusou o desafio X1.`);
+        window.setTimeout(() => setRejectNotice(null), 4000);
+      }
+    };
+    window.addEventListener("desafios:x1-invite-rejected", handleReject);
+
+    return () => {
+      unsub();
+      window.clearInterval(pollId);
+      window.removeEventListener("desafios:x1-invite-rejected", handleReject);
+    };
+  }, [auth.profile, incomingInvite]);
 
   useEffect(() => {
     if (auth.unlocked.length === 0) return;
@@ -335,6 +382,7 @@ function Index() {
           requireCodeGate={cfg.requireCodeGate}
           showCodeGateCardOnHome={cfg.showCodeGateCardOnHome}
           x1Enabled={cfg.x1Enabled ?? true}
+          x1ArenaClosed={cfg.x1ArenaClosed ?? false}
           x1OpenNow={x1OpenNow}
           x1HoursLabel={x1HoursLabel}
           tournamentEnabled={cfg.tournamentEnabled ?? true}
@@ -415,7 +463,7 @@ function Index() {
       )}
 
       {/* Execução Dinâmica de Qualquer Jogo Registrado */}
-      {(!activeX1Room || activeX1Room.gameId !== "rpg") && view !== "menu" && (() => {
+      {!activeX1Room && view !== "menu" && (() => {
         const reg = getGameRegistration(view);
         if (!reg) return null;
         const GameComponent = reg.component;
@@ -459,6 +507,86 @@ function Index() {
       <PlayerAuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
 
       <MedalUnlockNotification />
+
+      {/* Modal Sobreposto de Desafio Direto X1 Recebido */}
+      <Dialog
+        open={Boolean(incomingInvite)}
+        onOpenChange={(v) => {
+          if (!v && incomingInvite && auth.profile) {
+            rejectX1Invite(incomingInvite.id, auth.profile.nick);
+            setIncomingInvite(null);
+          }
+        }}
+      >
+        <DialogContent className="rounded-3xl border-2 sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 font-display text-xl sm:text-2xl font-extrabold text-foreground">
+              <Swords className="h-6 w-6 text-accent animate-bounce" /> Desafio X1 Recebido!
+            </DialogTitle>
+          </DialogHeader>
+
+          {incomingInvite && (
+            <div className="space-y-4 py-2">
+              <div className="rounded-2xl border-2 border-primary/40 bg-primary/10 p-4 text-center space-y-2">
+                <span className="rounded-full bg-accent px-2.5 py-0.5 text-xs font-black text-accent-foreground uppercase">
+                  {GAME_NAMES[incomingInvite.gameId]}
+                </span>
+                <p className="font-display text-xl font-black text-foreground">
+                  {incomingInvite.fromNick} desafiou você!
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Escola: <b>{incomingInvite.fromSchool}</b> • Sala: <b>#{incomingInvite.roomCode}</b>
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    if (auth.profile) rejectX1Invite(incomingInvite.id, auth.profile.nick);
+                    setIncomingInvite(null);
+                  }}
+                  className="h-12 rounded-2xl font-bold"
+                >
+                  Recusar
+                </Button>
+                <Button
+                  type="button"
+                  onClick={async () => {
+                    if (!auth.profile) return;
+                    const res = await joinX1RoomAsync({
+                      code: incomingInvite.roomCode,
+                      guest: {
+                        playerId: auth.profile.id,
+                        nick: auth.profile.nick,
+                        school: auth.profile.school,
+                        level: auth.profile.level,
+                      },
+                    });
+                    if (res.room) {
+                      setIncomingInvite(null);
+                      setActiveRankedGameId(null);
+                      setActiveX1Room(res.room);
+                      setView(res.room.gameId);
+                    }
+                  }}
+                  className="h-12 rounded-2xl font-display font-extrabold text-sm"
+                >
+                  Aceitar Desafio
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Alerta de Recusa de Desafio */}
+      {rejectNotice && (
+        <div className="fixed bottom-4 right-4 z-50 rounded-2xl bg-destructive text-destructive-foreground px-4 py-3 shadow-2xl text-xs font-bold animate-in fade-in slide-in-from-bottom-2 flex items-center gap-2">
+          <span>❌ {rejectNotice}</span>
+        </div>
+      )}
 
       {/* Confirmação de Abandono de Partida Ranqueada */}
       <AlertDialog open={confirmAbandonOpen} onOpenChange={setConfirmAbandonOpen}>

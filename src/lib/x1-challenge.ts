@@ -11,13 +11,24 @@ import {
 } from "./playfab.ts";
 import type { AgeStageId } from "./player-profile.ts";
 import { recordPlayerHeartbeat } from "./presence.ts";
+import { type Shape } from "./shapes-content.ts";
+import {
+  cellLabel,
+  GENERAL_SHAPES,
+  type MineCard,
+  type QuestionCard,
+  type BonusCard,
+} from "./minefield-content.ts";
 
 const X1_STORAGE_KEY = "desafios-x1-lobby-state-v1";
 const X1_CHANNEL_NAME = "desafios-x1-broadcast-v1";
 const LOBBY_SHARED_GROUP_ID = "X1_LOBBY_SEMED_V2";
 
 export const X1_MATCH_DURATION_SEC = 90;
-export const X1_ROBOT_INITIAL_HP = 10;
+export const X1_ROBOT_INITIAL_HP = 5; // 5 Vidas na Batalha dos Robôs
+export const X1_ROOM_EXPIRATION_MS = 120_000; // Sala de espera expira em 2 minutos se ninguém entrar
+export const X1_POST_MATCH_AUTOCLOSE_MS = 60_000; // Sala fechada e apagada em 1 minuto pós-partida
+export const X1_COUNTDOWN_DURATION_SEC = 10; // 10 segundos de contagem regressiva sincronizada
 export const X1_VICTORY_BONUS_XP = 50;
 export const X1_PARTICIPATION_BONUS_XP = 20;
 
@@ -49,6 +60,7 @@ export interface X1PlayerSideState {
   hp: number;
   maxHp: number;
   finished: boolean;
+  currentQuestionIdx?: number;
   isBot?: boolean;
   updatedAt: number;
 }
@@ -61,6 +73,8 @@ export interface X1ChallengeInvite {
   toPlayerId: string;
   gameId: GameId;
   createdAt: number;
+  status?: "pending" | "accepted" | "rejected";
+  rejectedByNick?: string;
 }
 
 export interface X1MatchLogEntry {
@@ -78,6 +92,61 @@ export interface X1MatchLogEntry {
   winnerNick: string;
   finishedAt: string;
   read?: boolean;
+}
+
+export interface X1MinadoActiveQuestion {
+  cardId: string;
+  openedBy: string;
+  prompt: string;
+  expr?: string;
+  shape?: Shape;
+  options: string[];
+  answer: string;
+  expiresAt: number;
+}
+
+export interface X1MinadoState {
+  board: MineCard[];
+  revealed: Record<string, { openedBy: string; openedAt: number; resultText: string }>;
+  currentTurnPlayerId: string;
+  activeQuestion?: X1MinadoActiveQuestion | null;
+  turnStartedAt: number;
+}
+
+export interface X1QuestionEntry {
+  id: string;
+  prompt: string;
+  expr?: string;
+  options: string[];
+  answer: string;
+}
+
+export interface X1Room {
+  code: string;
+  gameId: GameId;
+  status: X1RoomStatus;
+  seed: number;
+  createdAt: number;
+  expiresAt: number;
+  countdownEndsAt?: number | null;
+  startedAt: number | null;
+  finishedAt: number | null;
+  autoCloseAt?: number | null;
+  durationSec: number;
+  /** Blue share (0..100) for the 1v1 Tug-of-War bar (50 = balanced center) */
+  blueShare: number;
+  host: X1PlayerSideState;
+  guest: X1PlayerSideState | null;
+  winnerId: string | "draw" | null;
+  minadoState?: X1MinadoState | null;
+  questionList?: X1QuestionEntry[];
+}
+
+interface X1LobbyStore {
+  players: Record<string, X1OnlinePlayer>;
+  rooms: Record<string, X1Room>;
+  invites: X1ChallengeInvite[];
+  updatedAt: number;
 }
 
 const X1_MATCH_HISTORY_KEY = "desafios-x1-match-history-v1";
@@ -114,6 +183,8 @@ export function recordX1MatchFinished(room: X1Room): void {
     winnerNick = room.guest.nick;
   }
 
+  room.autoCloseAt = (room.finishedAt ?? Date.now()) + X1_POST_MATCH_AUTOCLOSE_MS;
+
   const entry: X1MatchLogEntry = {
     id: `x1_match_${room.code}_${Date.now()}`,
     roomCode: room.code,
@@ -145,30 +216,150 @@ export function clearX1MatchHistory(): void {
   saveX1MatchHistory([]);
 }
 
-export interface X1Room {
-  code: string;
-  gameId: GameId;
-  status: X1RoomStatus;
-  seed: number;
-  createdAt: number;
-  startedAt: number | null;
-  finishedAt: number | null;
-  durationSec: number;
-  /** Blue share (0..100) for the 1v1 Tug-of-War bar (50 = balanced center) */
-  blueShare: number;
-  host: X1PlayerSideState;
-  guest: X1PlayerSideState | null;
-  winnerId: string | "draw" | null;
+/* --------------------- Pure Logic & Deterministic Generators (Testable) --------------------- */
+
+export function createSeededRng(seed: number) {
+  let s = Math.abs(seed) % 2147483647;
+  if (s <= 0) s += 2147483646;
+  return () => {
+    s = (s * 16807) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
 }
 
-interface X1LobbyStore {
-  players: Record<string, X1OnlinePlayer>;
-  rooms: Record<string, X1Room>;
-  invites: X1ChallengeInvite[];
-  updatedAt: number;
+/**
+ * Constrói o tabuleiro 8x8 de Campo Minado exclusivo para o modo X1:
+ * - Determinístico baseado no seed compartilhado da sala.
+ * - ~40% de cartas bônus, sendo a maioria (~65%) minas com pontuação negativa (−1 a −3).
+ * - ~60% de desafios matemáticos e lógicos.
+ */
+export function buildX1Board(seed: number): MineCard[] {
+  const nextRnd = createSeededRng(seed);
+  const ri = (n: number) => Math.floor(nextRnd() * n);
+  const rand = <T>(arr: readonly T[]): T => arr[ri(arr.length)];
+  const shuffle = <T>(arr: T[]): T[] => {
+    const cp = [...arr];
+    for (let i = cp.length - 1; i > 0; i--) {
+      const j = ri(i + 1);
+      [cp[i], cp[j]] = [cp[j], cp[i]];
+    }
+    return cp;
+  };
+
+  const cards: MineCard[] = [];
+  for (let i = 0; i < 64; i++) {
+    const roll = nextRnd();
+    let base: QuestionCard | BonusCard;
+    if (roll < 0.40) {
+      // 40% Cartas Bônus / Minas no X1
+      const mag = 1 + ri(3); // 1, 2 ou 3
+      // 65% de chances de ser MINA negativa no modo X1
+      const isNegative = nextRnd() < 0.65;
+      base = { kind: "bonus", points: isNegative ? -mag : mag };
+    } else if (roll < 0.60) {
+      // Verdadeiro ou Falso
+      const a = 1 + ri(20), b = 1 + ri(20);
+      const op = rand([">", "<", "="] as const);
+      const expr = `${a} ${op} ${b}`;
+      const truth = op === ">" ? a > b : op === "<" ? a < b : a === b;
+      base = {
+        kind: "tf",
+        prompt: "Verdadeiro ou Falso?",
+        expr,
+        options: ["Verdadeiro", "Falso"],
+        answer: truth ? "Verdadeiro" : "Falso",
+      };
+    } else if (roll < 0.80) {
+      // Conta misteriosa
+      const x = 1 + ri(10);
+      const b = 1 + ri(10);
+      const expr = `X + ${b} = ${x + b}`;
+      const opts = new Set<number>([x]);
+      while (opts.size < 4) {
+        const d = x + (ri(2) ? 1 : -1) * (1 + ri(4));
+        if (d > 0) opts.add(d);
+      }
+      base = {
+        kind: "mystery",
+        prompt: "Qual o valor de X?",
+        expr,
+        options: shuffle([...opts]).map(String),
+        answer: String(x),
+      };
+    } else {
+      // Forma geométrica
+      const target = rand(GENERAL_SHAPES);
+      const others = shuffle(GENERAL_SHAPES.filter((s) => s.shape !== target.shape)).slice(0, 3);
+      base = {
+        kind: "shape",
+        prompt: "Qual é o nome desta forma?",
+        options: shuffle([target.label, ...others.map((s) => s.label)]),
+        answer: target.label,
+        shape: target.shape,
+      };
+    }
+    cards.push({ ...base, id: `c${i}`, label: cellLabel(i) });
+  }
+  return cards;
 }
 
-/* --------------------- Pure Logic & Evaluators (Testable) --------------------- */
+/**
+ * Gera uma lista determinística idêntica de questões a partir da semente da sala (seed).
+ * Garante que ambos os jogadores recebam os mesmos problemas na mesma ordem.
+ */
+export function generateDeterministicQuestionList(seed: number, gameId: GameId): X1QuestionEntry[] {
+  const nextRnd = createSeededRng(seed);
+  const ri = (n: number) => Math.floor(nextRnd() * n);
+  const rand = <T>(arr: readonly T[]): T => arr[ri(arr.length)];
+  const shuffle = <T>(arr: T[]): T[] => {
+    const cp = [...arr];
+    for (let i = cp.length - 1; i > 0; i--) {
+      const j = ri(i + 1);
+      [cp[i], cp[j]] = [cp[j], cp[i]];
+    }
+    return cp;
+  };
+
+  const list: X1QuestionEntry[] = [];
+  for (let i = 0; i < 25; i++) {
+    if (gameId === "porcentagem") {
+      const pct = rand([10, 20, 25, 50, 75, 100]);
+      const baseVal = rand([20, 40, 50, 60, 80, 100, 200]);
+      const correctAns = Math.round((pct / 100) * baseVal);
+      const opts = new Set<number>([correctAns]);
+      while (opts.size < 4) {
+        const delta = rand([-10, -5, -2, 2, 5, 10, 15]);
+        const cand = correctAns + delta;
+        if (cand > 0) opts.add(cand);
+      }
+      list.push({
+        id: `q_pct_${seed}_${i}`,
+        prompt: `Quanto é ${pct}% de ${baseVal}?`,
+        expr: `${pct}% de ${baseVal}`,
+        options: shuffle([...opts]).map(String),
+        answer: String(correctAns),
+      });
+    } else {
+      // logica / geral
+      const a = 1 + ri(15);
+      const b = 1 + ri(12);
+      const op = rand(["+", "−", "×"] as const);
+      const val = op === "+" ? a + b : op === "−" ? Math.max(a, b) - Math.min(a, b) : a * b;
+      const exprA = op === "−" ? Math.max(a, b) : a;
+      const exprB = op === "−" ? Math.min(a, b) : b;
+      const isCorrectShown = nextRnd() < 0.5;
+      const shownVal = isCorrectShown ? val : val + rand([-3, -2, -1, 1, 2, 3]);
+      list.push({
+        id: `q_log_${seed}_${i}`,
+        prompt: "A igualdade abaixo é Verdadeira ou Falsa?",
+        expr: `${exprA} ${op} ${exprB} = ${shownVal}`,
+        options: ["Verdadeiro", "Falso"],
+        answer: isCorrectShown ? "Verdadeiro" : "Falso",
+      });
+    }
+  }
+  return list;
+}
 
 export interface RotatedX1GameInfo {
   currentGame: GameId;
@@ -333,11 +524,27 @@ export function resolveX1Winner(room: X1Room): string | "draw" {
       return room.host.hp > room.guest.hp ? room.host.playerId : room.guest.playerId;
     }
   }
+  if (room.gameId === "minado") {
+    // No Campo Minado X1: Vence quem tiver mais pontos; persistindo empate, menos erros
+    if (room.host.score !== room.guest.score) {
+      return room.host.score > room.guest.score ? room.host.playerId : room.guest.playerId;
+    }
+    if (room.host.wrong !== room.guest.wrong) {
+      return room.host.wrong < room.guest.wrong ? room.host.playerId : room.guest.playerId;
+    }
+    if (room.host.correct !== room.guest.correct) {
+      return room.host.correct > room.guest.correct ? room.host.playerId : room.guest.playerId;
+    }
+    return "draw";
+  }
   if (room.host.score !== room.guest.score) {
     return room.host.score > room.guest.score ? room.host.playerId : room.guest.playerId;
   }
   if (room.host.correct !== room.guest.correct) {
     return room.host.correct > room.guest.correct ? room.host.playerId : room.guest.playerId;
+  }
+  if (room.host.wrong !== room.guest.wrong) {
+    return room.host.wrong < room.guest.wrong ? room.host.playerId : room.guest.playerId;
   }
   return "draw";
 }
@@ -408,7 +615,24 @@ function loadStore(): X1LobbyStore {
 
     const rooms: Record<string, X1Room> = {};
     for (const [code, r] of Object.entries(parsed.rooms ?? {})) {
-      if (now - r.createdAt < 15 * 60_000) rooms[code] = r;
+      // 1. Expira salas de espera não iniciadas após 2 minutos
+      const expiresAt = r.expiresAt ?? (r.createdAt + X1_ROOM_EXPIRATION_MS);
+      if (r.status === "waiting" && now >= expiresAt) {
+        continue;
+      }
+      // 2. Limpa salas concluídas após 1 minuto de encerramento
+      if (r.status === "finished" && r.autoCloseAt && now >= r.autoCloseAt) {
+        continue;
+      }
+      // 3. Fallback de descarte após 15 minutos
+      if (now - r.createdAt < 15 * 60_000) {
+        // Transição automática da contagem regressiva para jogo ativo
+        if (r.status === "countdown" && r.countdownEndsAt && now >= r.countdownEndsAt) {
+          r.status = "playing";
+          r.startedAt = r.startedAt ?? now;
+        }
+        rooms[code] = r;
+      }
     }
 
     const invites = (parsed.invites ?? []).filter((inv) => now - inv.createdAt < 120_000);
@@ -603,17 +827,26 @@ export function heartbeatOnlinePlayer(player: {
 
 export function getX1LobbySnapshot(currentPlayerId?: string) {
   const store = loadStore();
-  const onlinePlayers = Object.values(store.players).sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+  const onlinePlayers = Object.values(store.players)
+    .filter((p) => p.level >= 5 && (Date.now() - p.lastSeenAt) <= 60_000)
+    .sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+
   const openRooms = Object.values(store.rooms)
     .filter((r) => r.status === "waiting")
     .sort((a, b) => b.createdAt - a.createdAt);
+
+  const activeMatches = Object.values(store.rooms)
+    .filter((r) => r.status === "playing" || r.status === "countdown")
+    .sort((a, b) => b.createdAt - a.createdAt);
+
   const myInvites = currentPlayerId
-    ? store.invites.filter((inv) => inv.toPlayerId === currentPlayerId)
+    ? store.invites.filter((inv) => inv.toPlayerId === currentPlayerId && (!inv.status || inv.status === "pending"))
     : [];
 
   return {
     onlinePlayers,
     openRooms,
+    activeMatches,
     myInvites,
   };
 }
@@ -640,13 +873,16 @@ export function createX1Room(args: {
   const store = loadStore();
   const code = generateRoomCode(Object.keys(store.rooms));
   const now = Date.now();
+  const seed = Math.floor(Math.random() * 1_000_000);
 
   const room: X1Room = {
     code,
     gameId: args.gameId,
     status: "waiting",
-    seed: Math.floor(Math.random() * 1_000_000),
+    seed,
     createdAt: now,
+    expiresAt: now + X1_ROOM_EXPIRATION_MS, // Expira em 2 minutos se ninguém entrar
+    countdownEndsAt: null,
     startedAt: null,
     finishedAt: null,
     durationSec: X1_MATCH_DURATION_SEC,
@@ -664,10 +900,13 @@ export function createX1Room(args: {
       hp: X1_ROBOT_INITIAL_HP,
       maxHp: X1_ROBOT_INITIAL_HP,
       finished: false,
+      currentQuestionIdx: 0,
       updatedAt: now,
     },
     guest: null,
     winnerId: null,
+    minadoState: null,
+    questionList: undefined,
   };
 
   store.rooms[code] = room;
@@ -681,6 +920,7 @@ export function createX1Room(args: {
       toPlayerId: args.inviteTargetPlayerId,
       gameId: args.gameId,
       createdAt: now,
+      status: "pending",
     });
   }
 
@@ -695,6 +935,35 @@ export function dismissX1Invite(inviteId: string) {
   saveStore(store);
 }
 
+export function rejectX1Invite(inviteId: string, rejectedByNick: string): void {
+  const store = loadStore();
+  const inv = store.invites.find((i) => i.id === inviteId);
+  if (inv) {
+    inv.status = "rejected";
+    inv.rejectedByNick = rejectedByNick;
+    saveStore(store);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("desafios:x1-invite-rejected", {
+          detail: { inviteId, roomCode: inv.roomCode, rejectedByNick },
+        }),
+      );
+    }
+  }
+}
+
+export function cancelWaitingX1Room(code: string, hostPlayerId?: string): boolean {
+  const clean = code.trim().toUpperCase();
+  const store = loadStore();
+  const room = store.rooms[clean];
+  if (!room) return false;
+  if (hostPlayerId && room.host.playerId !== hostPlayerId) return false;
+  delete store.rooms[clean];
+  store.invites = store.invites.filter((inv) => inv.roomCode !== clean);
+  saveStore(store);
+  return true;
+}
+
 export function joinX1Room(args: {
   code: string;
   guest: { playerId: string; nick: string; school: string; level: number; isBot?: boolean };
@@ -704,13 +973,13 @@ export function joinX1Room(args: {
   const room = store.rooms[clean];
 
   if (!room) {
-    return { room: null, error: "Sala não encontrada. Verifique o código de 4 dígitos." };
+    return { room: null, error: "Sala não encontrada ou expirada (limite de 2 minutos)." };
   }
   if (room.host.playerId === args.guest.playerId) {
     return { room, error: null };
   }
   if (room.guest && room.guest.playerId !== args.guest.playerId && room.status !== "waiting") {
-    return { room: null, error: "Esta sala já está cheia e em andamento." };
+    return { room: null, error: "Esta sala já está cheia (2/2) e em andamento." };
   }
 
   const now = Date.now();
@@ -725,14 +994,32 @@ export function joinX1Room(args: {
     hp: X1_ROBOT_INITIAL_HP,
     maxHp: X1_ROBOT_INITIAL_HP,
     finished: false,
+    currentQuestionIdx: 0,
     isBot: args.guest.isBot,
     updatedAt: now,
   };
-  room.status = "playing";
-  room.startedAt = now;
+
+  // Inicia contagem regressiva sincronizada de 10 segundos
+  room.status = "countdown";
+  room.countdownEndsAt = now + 10_000;
+  room.startedAt = null;
   room.blueShare = 50;
 
-  // Remove any pending invites for this room
+  // Inicializa o tabuleiro ou lista determinística de questões para a partida
+  if (room.gameId === "minado") {
+    const firstPlayerId = room.seed % 2 === 0 ? room.host.playerId : args.guest.playerId;
+    room.minadoState = {
+      board: buildX1Board(room.seed),
+      revealed: {},
+      currentTurnPlayerId: firstPlayerId,
+      activeQuestion: null,
+      turnStartedAt: now + 10_000,
+    };
+  } else if (room.gameId === "logica" || room.gameId === "porcentagem") {
+    room.questionList = generateDeterministicQuestionList(room.seed, room.gameId);
+  }
+
+  // Remove invites pendentes desta sala
   store.invites = store.invites.filter((inv) => inv.roomCode !== clean);
   store.rooms[clean] = room;
   saveStore(store);
@@ -870,6 +1157,197 @@ export function submitX1RobotClashAnswer(args: {
   return res;
 }
 
+/**
+ * Revela uma carta no tabuleiro do Campo Minado 1v1 no X1.
+ * Se for bônus/mina: aplica imediatamente o efeito e passa o turno para o oponente.
+ * Se for questão: coloca a carta em activeQuestion com 20 segundos de limite.
+ */
+export function openX1MinadoCard(args: {
+  code: string;
+  playerId: string;
+  cardId: string;
+}): { room: X1Room | null; error?: string } {
+  const store = loadStore();
+  const room = store.rooms[args.code.trim().toUpperCase()];
+  if (!room || !room.minadoState || room.status !== "playing") {
+    return { room: null, error: "Sala não está em jogo." };
+  }
+  const minado = room.minadoState;
+  if (minado.currentTurnPlayerId !== args.playerId) {
+    return { room, error: "Não é a sua vez de jogar!" };
+  }
+  if (minado.activeQuestion) {
+    return { room, error: "Há uma pergunta em andamento para responder." };
+  }
+  if (minado.revealed[args.cardId]) {
+    return { room, error: "Esta carta já foi revelada." };
+  }
+
+  const card = minado.board.find((c) => c.id === args.cardId);
+  if (!card) return { room, error: "Carta não encontrada." };
+
+  const isHost = room.host.playerId === args.playerId;
+  const me = isHost ? room.host : room.guest;
+  const opp = isHost ? room.guest : room.host;
+  if (!me || !opp) return { room, error: "Jogadores inválidos." };
+
+  const now = Date.now();
+  me.updatedAt = now;
+
+  if (card.kind === "bonus") {
+    // Carta Bônus ou Mina: aplica pontos imediatos e passa a vez
+    me.score = Math.max(0, me.score + card.points);
+    if (card.points >= 0) {
+      me.correct += 1;
+    } else {
+      me.wrong += 1;
+    }
+    minado.revealed[card.id] = {
+      openedBy: me.nick,
+      openedAt: now,
+      resultText: `${card.points > 0 ? "+" : ""}${card.points} pts (${card.points > 0 ? "Bônus" : "Mina!"})`,
+    };
+    minado.currentTurnPlayerId = opp.playerId;
+    minado.turnStartedAt = now;
+
+    // Se todas as 64 cartas foram abertas
+    if (Object.keys(minado.revealed).length >= minado.board.length) {
+      room.status = "finished";
+      room.finishedAt = now;
+      room.winnerId = resolveX1Winner(room);
+      recordX1MatchFinished(room);
+    }
+  } else {
+    // Pergunta (V/F, mistério ou forma): abre exclusivamente para o jogador ativo por 20s
+    minado.activeQuestion = {
+      cardId: card.id,
+      openedBy: args.playerId,
+      prompt: card.prompt,
+      expr: card.expr,
+      shape: card.shape,
+      options: card.options,
+      answer: card.answer,
+      expiresAt: now + 20_000,
+    };
+  }
+
+  store.rooms[room.code] = room;
+  saveStore(store);
+  void pushRoomToPlayFab(room);
+  return { room };
+}
+
+/**
+ * Responde à questão ativa no Campo Minado 1v1.
+ */
+export function answerX1MinadoQuestion(args: {
+  code: string;
+  playerId: string;
+  option: string;
+}): { room: X1Room | null; isCorrect: boolean; error?: string } {
+  const store = loadStore();
+  const room = store.rooms[args.code.trim().toUpperCase()];
+  if (!room || !room.minadoState || room.status !== "playing") {
+    return { room: null, isCorrect: false, error: "Partida inválida." };
+  }
+  const minado = room.minadoState;
+  const q = minado.activeQuestion;
+  if (!q || q.openedBy !== args.playerId) {
+    return { room, isCorrect: false, error: "Nenhuma questão ativa para você responder." };
+  }
+
+  const isHost = room.host.playerId === args.playerId;
+  const me = isHost ? room.host : room.guest;
+  const opp = isHost ? room.guest : room.host;
+  if (!me || !opp) return { room, isCorrect: false, error: "Jogadores inválidos." };
+
+  const isCorrect = args.option === q.answer;
+  const now = Date.now();
+  me.updatedAt = now;
+
+  if (isCorrect) {
+    me.score += 5;
+    me.correct += 1;
+    minado.revealed[q.cardId] = {
+      openedBy: me.nick,
+      openedAt: now,
+      resultText: "+5 pts (Correto!)",
+    };
+  } else {
+    me.score = Math.max(0, me.score - 3);
+    me.wrong += 1;
+    minado.revealed[q.cardId] = {
+      openedBy: me.nick,
+      openedAt: now,
+      resultText: "−3 pts (Incorreto)",
+    };
+  }
+
+  minado.activeQuestion = null;
+  minado.currentTurnPlayerId = opp.playerId;
+  minado.turnStartedAt = now;
+
+  if (Object.keys(minado.revealed).length >= minado.board.length) {
+    room.status = "finished";
+    room.finishedAt = now;
+    room.winnerId = resolveX1Winner(room);
+    recordX1MatchFinished(room);
+  }
+
+  store.rooms[room.code] = room;
+  saveStore(store);
+  void pushRoomToPlayFab(room);
+  return { room, isCorrect };
+}
+
+/**
+ * Computa estouro de tempo (20s) na questão ativa do Campo Minado 1v1.
+ */
+export function timeoutX1MinadoQuestion(args: {
+  code: string;
+}): { room: X1Room | null } {
+  const store = loadStore();
+  const room = store.rooms[args.code.trim().toUpperCase()];
+  if (!room || !room.minadoState || room.status !== "playing") {
+    return { room: null };
+  }
+  const minado = room.minadoState;
+  const q = minado.activeQuestion;
+  if (!q) return { room };
+
+  const isHost = room.host.playerId === q.openedBy;
+  const me = isHost ? room.host : room.guest;
+  const opp = isHost ? room.guest : room.host;
+  if (!me || !opp) return { room };
+
+  const now = Date.now();
+  me.score = Math.max(0, me.score - 3);
+  me.wrong += 1;
+  me.updatedAt = now;
+
+  minado.revealed[q.cardId] = {
+    openedBy: me.nick,
+    openedAt: now,
+    resultText: "−3 pts (Tempo Esgotado)",
+  };
+
+  minado.activeQuestion = null;
+  minado.currentTurnPlayerId = opp.playerId;
+  minado.turnStartedAt = now;
+
+  if (Object.keys(minado.revealed).length >= minado.board.length) {
+    room.status = "finished";
+    room.finishedAt = now;
+    room.winnerId = resolveX1Winner(room);
+    recordX1MatchFinished(room);
+  }
+
+  store.rooms[room.code] = room;
+  saveStore(store);
+  void pushRoomToPlayFab(room);
+  return { room };
+}
+
 export function finishX1RoomByTimeout(code: string): X1Room | null {
   const store = loadStore();
   const room = store.rooms[code];
@@ -887,8 +1365,9 @@ export function finishX1RoomByTimeout(code: string): X1Room | null {
 }
 
 export function closeX1Room(code: string) {
+  const clean = code.trim().toUpperCase();
   const store = loadStore();
-  delete store.rooms[code];
-  store.invites = store.invites.filter((i) => i.roomCode !== code);
+  delete store.rooms[clean];
+  store.invites = store.invites.filter((i) => i.roomCode !== clean);
   saveStore(store);
 }

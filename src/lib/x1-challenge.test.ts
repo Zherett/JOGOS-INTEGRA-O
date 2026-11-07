@@ -154,4 +154,36 @@ describe("Arena de Desafio X1 Online (1v1 Versus Mode)", () => {
     room.guest!.correct = 10;
     assert.equal(resolveX1Winner(room), "draw");
   });
+
+  it("garante 5 vidas iniciais para cada jogador no Robô X1", () => {
+    assert.equal(X1_ROBOT_INITIAL_HP, 5);
+  });
+
+  it("determina vencedor no Campo Minado por pontos e desempata por MENOS erros", () => {
+    const room = makeSampleRoom();
+    room.gameId = "minado";
+
+    // Host com mais pontos vence
+    room.host.score = 50;
+    room.guest!.score = 30;
+    assert.equal(resolveX1Winner(room), "host_1");
+
+    // Empate em pontos -> vence quem cometeu MENOS erros
+    room.host.score = 40;
+    room.guest!.score = 40;
+    room.host.wrong = 2;
+    room.guest!.wrong = 1;
+    assert.equal(resolveX1Winner(room), "guest_2");
+
+    // Empate em pontos e menos erros -> vence quem tiver mais acertos
+    room.host.wrong = 1;
+    room.guest!.wrong = 1;
+    room.host.correct = 4;
+    room.guest!.correct = 3;
+    assert.equal(resolveX1Winner(room), "host_1");
+
+    // Empate em tudo -> empate
+    room.guest!.correct = 4;
+    assert.equal(resolveX1Winner(room), "draw");
+  });
 });
