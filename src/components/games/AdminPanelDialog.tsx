@@ -129,6 +129,7 @@ import {
   syncPresenceFromPlayFab,
 } from "@/lib/presence";
 import { TournamentRankBadge } from "./TournamentRankBadge";
+import { AdminInboxTab } from "./AdminInboxTab";
 import {
   AGE_STAGES,
   getTournamentRank,
@@ -143,7 +144,7 @@ interface Props {
   onConfigSaved?: () => void;
 }
 
-type AdminTab = "jogos" | "arena_x1" | "torneio" | "eventos" | "avisos" | "medalhas" | "turmas" | "resets" | "sistema" | "lixeira";
+type AdminTab = "jogos" | "arena_x1" | "torneio" | "eventos" | "avisos" | "correio" | "medalhas" | "turmas" | "resets" | "sistema" | "lixeira";
 
 function randomGameCode(prefix: string): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -885,7 +886,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
           <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
             {/* Header Tabs */}
             <div className="px-6 py-3 border-b shrink-0 bg-secondary/30">
-              <div className="grid grid-cols-4 sm:grid-cols-8 gap-1.5 rounded-2xl bg-secondary p-1">
+              <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-11 gap-1.5 rounded-2xl bg-secondary p-1">
                 <button
                   type="button"
                   onClick={() => setTab("jogos")}
@@ -938,6 +939,15 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                   }`}
                 >
                   <Sparkles className="h-4 w-4 text-primary" /> Avisos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTab("correio")}
+                  className={`flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition-colors ${
+                    tab === "correio" ? "bg-card text-primary shadow-sm" : "text-muted-foreground"
+                  }`}
+                >
+                  <Mail className="h-4 w-4 text-amber-500" /> Correio
                 </button>
                 <button
                   type="button"
@@ -3942,6 +3952,14 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                   </Button>
                 </div>
               </div>
+            )}
+
+            {/* TAB: CORREIO & TRANSMISSÃO DE MENSAGENS */}
+            {tab === "correio" && (
+              <AdminInboxTab
+                registeredStudents={registeredStudents}
+                onBroadcastSent={(msg) => flashSaved(msg)}
+              />
             )}
 
             {/* TAB 4: GESTÃO DE TURMAS & ESCOLAS (2 SUB-ABAS) */}

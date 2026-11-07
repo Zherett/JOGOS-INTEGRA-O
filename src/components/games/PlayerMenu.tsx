@@ -21,6 +21,7 @@ import {
   Sparkles,
   Send,
   RotateCw,
+  Mail,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -28,6 +29,7 @@ import { PlayerAuthDialog } from "./PlayerAuthDialog";
 import { LeaderboardDialog } from "./LeaderboardDialog";
 import { AdminPanelDialog } from "./AdminPanelDialog";
 import { PlayerMedalsInventory } from "./PlayerMedalsInventory";
+import { PlayerInboxModal } from "./PlayerInboxModal";
 import { TournamentRankBadge } from "./TournamentRankBadge";
 import { ThemeToggle } from "./ThemeToggle";
 import {
@@ -35,6 +37,7 @@ import {
   getDistinctGamesPlayed,
   getEffectivePlayerProgression,
 } from "@/lib/medals-catalog";
+import { getInboxCountsForPlayer } from "@/lib/inbox-messages";
 import { PresenceDot } from "./PresenceDot";
 import { usePlayerAuth } from "@/lib/player-auth";
 import {
@@ -107,6 +110,8 @@ export function PlayerMenu({ onConfigChanged }: Props) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [rankingOpen, setRankingOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const [inboxCounts, setInboxCounts] = useState({ unreadCount: 0, unclaimedRewardsCount: 0, totalAlerts: 0 });
 
   // Accordion collapsible states & 3D Card Flip state
   const [levelExpanded, setLevelExpanded] = useState(false);
@@ -194,6 +199,22 @@ export function PlayerMenu({ onConfigChanged }: Props) {
       .catch(() => setPlayerRank(null));
   }, [profileOpen, profile]);
 
+  // Atualiza contador de mensagens da caixa de entrada em tempo real
+  useEffect(() => {
+    if (!profile) {
+      setInboxCounts({ unreadCount: 0, unclaimedRewardsCount: 0, totalAlerts: 0 });
+      return;
+    }
+    const updateCounts = () => {
+      setInboxCounts(getInboxCountsForPlayer(profile));
+    };
+    updateCounts();
+    window.addEventListener("desafios:inbox-message-received", updateCounts);
+    return () => {
+      window.removeEventListener("desafios:inbox-message-received", updateCounts);
+    };
+  }, [profile, inboxOpen]);
+
   async function handleSaveInitialSchoolAndGrade() {
     if (!profile) return;
     setSavingInitialSetup(true);
@@ -272,6 +293,29 @@ export function PlayerMenu({ onConfigChanged }: Props) {
           <span className="hidden font-display text-xs font-bold uppercase sm:inline">Ranking</span>
         </button>
 
+        {/* Caixa de Entrada e Correio do Aluno */}
+        {profile && (
+          <button
+            type="button"
+            onClick={() => setInboxOpen(true)}
+            className="relative flex h-11 items-center gap-1.5 rounded-2xl border bg-card px-3 text-foreground shadow-sm transition-all hover:bg-secondary active:scale-95"
+            aria-label="Abrir Caixa de Entrada"
+            title="Caixa de Entrada & Correio (Comunicados e Recompensas)"
+          >
+            <Mail className="h-5 w-5 text-amber-500" />
+            <span className="hidden font-display text-xs font-bold uppercase sm:inline">Correio</span>
+            {inboxCounts.unclaimedRewardsCount > 0 ? (
+              <span className="absolute -top-1.5 -right-1.5 grid h-5 w-5 place-items-center rounded-full bg-amber-500 text-[10px] font-black text-zinc-950 shadow-md animate-bounce">
+                🎁
+              </span>
+            ) : inboxCounts.unreadCount > 0 ? (
+              <span className="absolute -top-1.5 -right-1.5 grid h-5 min-w-5 px-1 place-items-center rounded-full bg-primary text-[10px] font-black text-primary-foreground shadow-md animate-pulse">
+                {inboxCounts.unreadCount}
+              </span>
+            ) : null}
+          </button>
+        )}
+
         {/* Admin Panel Button — Only visible when Admin is already logged in */}
         {auth.isAdmin && (
           <button
@@ -322,6 +366,10 @@ export function PlayerMenu({ onConfigChanged }: Props) {
         open={adminOpen}
         onOpenChange={setAdminOpen}
         onConfigSaved={onConfigChanged}
+      />
+      <PlayerInboxModal
+        open={inboxOpen}
+        onOpenChange={setInboxOpen}
       />
 
       {/* Modal de Perfil do Jogador — Espaçoso, Estável e com Altura Fixa */}

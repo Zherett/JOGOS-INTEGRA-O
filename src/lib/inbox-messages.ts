@@ -1,19 +1,55 @@
-// Modulo Preparatorio de Mensagens e Notificacoes do Sistema (Futuro Sistema de E-mail / Correio)
-// Permite registrar alertas de seguranca (login em outro aparelho), conquistas de medalhas ouro+ e comunicados da administracao.
+// Modulo de Mensagens, Notificacoes e Correio do Aluno (Inbox System)
+// Suporta:
+// - Alertas de seguranca (login em outro dispositivo)
+// - Comunicados administrativos com texto amplo e suporte a tags de GIF ([gif1], [gif2])
+// - Transmissao em massa (Broadcast geral, por escola, por etapa ou aluno especifico com checkboxes)
+// - Recompensas em pontos e medalhas (normais e secretas com revelacao)
+// - Regra de exclusao: mensagens com recompensa nao podem ser apagadas ate o resgate
+
+import type { PlayerProfile } from "./playfab.ts";
+import { awardCareerPoints } from "./career-points.ts";
+import { getAllAvailableMedals, type PlayerUnlockedMedal } from "./medals-catalog.ts";
+import { stageFromBirthdate } from "./player-profile.ts";
+
+export type InboxRewardType = "points" | "medal" | "future_item";
+
+export interface InboxReward {
+  id: string;
+  type: InboxRewardType;
+  pointsAmount?: number;
+  medalId?: string;
+  itemData?: Record<string, unknown>; // Preparado para futuras aquisicoes
+  isSecret: boolean;
+  claimed: boolean;
+  claimedAt?: string;
+}
 
 export type InboxMessageCategory =
   | "seguranca_acesso"
   | "medalha_ouro"
   | "pioneiro_medalha"
-  | "comunicado";
+  | "comunicado"
+  | "recompensa_especial";
+
+export interface RecipientFilter {
+  school?: string;
+  stage?: string;
+  excludedStudentIds?: string[];
+  targetStudentIds?: string[];
+}
 
 export interface SystemInboxMessage {
   id: string;
-  recipientId: string; // ID / slug do aluno ou "admin"
+  broadcastId?: string;
+  recipientId: string; // ID / nick do aluno, "admin", ou "ALL" para transmissao
+  recipientFilter?: RecipientFilter;
   sender: "seguranca" | "sistema" | "adm";
+  senderName?: string;
   category: InboxMessageCategory;
   title: string;
   body: string;
+  gifLinks?: Record<string, string>; // ex: { gif1: "https://...", gif2: "https://..." }
+  reward?: InboxReward;
   metadata?: {
     deviceInfo?: string;
     attemptedAt?: string;
@@ -29,17 +65,34 @@ export interface SystemInboxMessage {
     [key: string]: unknown;
   };
   read: boolean;
+  readAt?: string;
   createdAt: string;
 }
 
-const INBOX_STORAGE_KEY = "desafios_inbox_messages_v1";
+// Chave para persistencia local de mensagens
+const INBOX_STORAGE_KEY = "desafios_inbox_messages_v2";
+const STUDENT_CLAIMS_KEY = "desafios_student_claimed_rewards_v1";
+const STUDENT_READS_KEY = "desafios_student_read_messages_v1";
+const STUDENT_DELETES_KEY = "desafios_student_deleted_messages_v1";
+
+export const BROADCAST_SHARED_GROUP_ID = "SEMED_INBOX_BROADCAST_V1";
 export const ADMIN_NOTIFICATIONS_SHARED_GROUP_ID = "SEMED_ADMIN_NOTIFICATIONS_V1";
 
 let memoryInboxMessages: SystemInboxMessage[] = [];
+let memoryStudentClaims: Record<string, Record<string, string>> = {}; // playerId -> { messageId: claimedAt }
+let memoryStudentReads: Record<string, Record<string, boolean>> = {}; // playerId -> { messageId: true }
+let memoryStudentDeletes: Record<string, Record<string, boolean>> = {}; // playerId -> { messageId: true }
 
 export function clearMemoryInboxMessages(): void {
   memoryInboxMessages = [];
+  memoryStudentClaims = {};
+  memoryStudentReads = {};
+  memoryStudentDeletes = {};
 }
+
+// ----------------------------------------------------------------------------
+// PERSISTÊNCIA BROWSER / LOCAL
+// ----------------------------------------------------------------------------
 
 export function loadAllInboxMessages(): SystemInboxMessage[] {
   if (typeof window === "undefined") {
@@ -56,7 +109,7 @@ export function loadAllInboxMessages(): SystemInboxMessage[] {
 }
 
 export function saveAllInboxMessages(messages: SystemInboxMessage[]): void {
-  const trimmed = messages.slice(0, 300);
+  const trimmed = messages.slice(0, 500);
   memoryInboxMessages = [...trimmed];
   if (typeof window === "undefined") return;
   try {
@@ -66,16 +119,45 @@ export function saveAllInboxMessages(messages: SystemInboxMessage[]): void {
   }
 }
 
+function loadStudentMap(key: string, mem: Record<string, any>): Record<string, any> {
+  if (typeof window === "undefined") return mem;
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : mem;
+  } catch {
+    return mem;
+  }
+}
+
+function saveStudentMap(key: string, data: Record<string, any>, setMem: (d: any) => void): void {
+  setMem(data);
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(data));
+  } catch {
+    /* ignore */
+  }
+}
+
+// ----------------------------------------------------------------------------
+// CRIAÇÃO DE MENSAGENS E TRANSMISSÃO
+// ----------------------------------------------------------------------------
+
 export function createInboxMessage(
   data: Omit<SystemInboxMessage, "id" | "createdAt" | "read"> & { id?: string; createdAt?: string }
 ): SystemInboxMessage {
   const msg: SystemInboxMessage = {
     id: data.id ?? `msg_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+    broadcastId: data.broadcastId,
     recipientId: data.recipientId,
+    recipientFilter: data.recipientFilter,
     sender: data.sender,
+    senderName: data.senderName ?? (data.sender === "adm" ? "Administração SEMED" : "Sistema"),
     category: data.category,
     title: data.title,
     body: data.body,
+    gifLinks: data.gifLinks ?? {},
+    reward: data.reward,
     metadata: data.metadata,
     read: false,
     createdAt: data.createdAt ?? new Date().toISOString(),
@@ -85,7 +167,6 @@ export function createInboxMessage(
   all.unshift(msg);
   saveAllInboxMessages(all);
 
-  // Dispara evento no navegador para notificacoes em tempo real
   if (typeof window !== "undefined") {
     window.dispatchEvent(
       new CustomEvent("desafios:inbox-message-received", {
@@ -97,13 +178,182 @@ export function createInboxMessage(
   return msg;
 }
 
-export function getInboxMessagesForRecipient(recipientId: string): SystemInboxMessage[] {
-  const all = loadAllInboxMessages();
-  const clean = recipientId.toLowerCase().trim();
-  return all.filter((m) => m.recipientId.toLowerCase().trim() === clean);
+export interface AdminBroadcastDraft {
+  mode: "all" | "school" | "stage" | "students";
+  targetSchool?: string;
+  targetStage?: string;
+  targetStudentIds?: string[];
+  excludedStudentIds?: string[];
+  title: string;
+  body: string;
+  gifLinks?: Record<string, string>;
+  reward?: {
+    type: InboxRewardType;
+    pointsAmount?: number;
+    medalId?: string;
+    isSecret: boolean;
+  };
 }
 
-export function markInboxMessageAsRead(messageId: string): void {
+/**
+ * Cria uma transmissão oficial pelo Administrador para múltiplos ou todos os alunos
+ */
+export function sendAdminBroadcastMessage(draft: AdminBroadcastDraft): SystemInboxMessage {
+  let rewardObj: InboxReward | undefined;
+  if (draft.reward && (draft.reward.pointsAmount || draft.reward.medalId)) {
+    rewardObj = {
+      id: `rew_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      type: draft.reward.type,
+      pointsAmount: draft.reward.pointsAmount,
+      medalId: draft.reward.medalId,
+      isSecret: Boolean(draft.reward.isSecret),
+      claimed: false,
+    };
+  }
+
+  const broadcastFilter: RecipientFilter = {
+    school: draft.mode === "school" ? draft.targetSchool : undefined,
+    stage: draft.mode === "stage" ? draft.targetStage : undefined,
+    targetStudentIds: draft.mode === "students" ? draft.targetStudentIds : undefined,
+    excludedStudentIds: draft.excludedStudentIds ?? [],
+  };
+
+  const msg = createInboxMessage({
+    recipientId: draft.mode === "students" && draft.targetStudentIds?.length === 1 ? draft.targetStudentIds[0] : "ALL",
+    recipientFilter: broadcastFilter,
+    sender: "adm",
+    senderName: "Administração SEMED",
+    category: rewardObj ? "recompensa_especial" : "comunicado",
+    title: draft.title.trim(),
+    body: draft.body.trim(),
+    gifLinks: draft.gifLinks ?? {},
+    reward: rewardObj,
+  });
+
+  return msg;
+}
+
+// ----------------------------------------------------------------------------
+// LEITURA, FILTRAGEM E RESGATE PELO ALUNO
+// ----------------------------------------------------------------------------
+
+/**
+ * Avalia se o aluno tem direito a receber uma mensagem de transmissão
+ */
+export function isMessageEligibleForPlayer(
+  msg: SystemInboxMessage,
+  player: { id: string; nick?: string; school?: string; birthdate?: string }
+): boolean {
+  const pId = player.id.toLowerCase().trim();
+  const pNick = (player.nick || "").toLowerCase().trim();
+
+  // Mensagem direta para o aluno
+  if (msg.recipientId.toLowerCase().trim() === pId || msg.recipientId.toLowerCase().trim() === pNick) {
+    return true;
+  }
+
+  // Mensagem de transmissão ("ALL")
+  if (msg.recipientId === "ALL") {
+    const filter = msg.recipientFilter;
+    if (!filter) return true;
+
+    // Se estiver explicitamente excluído
+    if (Array.isArray(filter.excludedStudentIds)) {
+      const isExcluded = filter.excludedStudentIds.some(
+        (ex) => ex.toLowerCase().trim() === pId || ex.toLowerCase().trim() === pNick
+      );
+      if (isExcluded) return false;
+    }
+
+    // Se o filtro for para alunos específicos
+    if (Array.isArray(filter.targetStudentIds) && filter.targetStudentIds.length > 0) {
+      const isTargeted = filter.targetStudentIds.some(
+        (t) => t.toLowerCase().trim() === pId || t.toLowerCase().trim() === pNick
+      );
+      if (!isTargeted) return false;
+    }
+
+    // Filtro por escola
+    if (filter.school && filter.school !== "TODAS") {
+      if (!player.school || player.school.toLowerCase().trim() !== filter.school.toLowerCase().trim()) {
+        return false;
+      }
+    }
+
+    // Filtro por etapa
+    if (filter.stage && filter.stage !== "TODAS") {
+      if (player.birthdate) {
+        const st = stageFromBirthdate(player.birthdate, new Date(), player.school);
+        if (st.id !== filter.stage && st.shortLabel !== filter.stage) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Retorna todas as mensagens da caixa de entrada do aluno, com estados de leitura e resgate aplicados
+ */
+export function getInboxMessagesForPlayer(
+  player: PlayerProfile | { id: string; nick?: string; school?: string; birthdate?: string }
+): SystemInboxMessage[] {
+  const all = loadAllInboxMessages();
+  const pId = player.id.toLowerCase().trim();
+
+  const deletesMap = loadStudentMap(STUDENT_DELETES_KEY, memoryStudentDeletes)[pId] || {};
+  const readsMap = loadStudentMap(STUDENT_READS_KEY, memoryStudentReads)[pId] || {};
+  const claimsMap = loadStudentMap(STUDENT_CLAIMS_KEY, memoryStudentClaims)[pId] || {};
+
+  const playerMessages: SystemInboxMessage[] = [];
+
+  for (const raw of all) {
+    // Se o aluno já apagou a mensagem, não exibir
+    if (deletesMap[raw.id]) continue;
+
+    if (isMessageEligibleForPlayer(raw, player)) {
+      const isRead = readsMap[raw.id] ?? raw.read;
+      const claimedAt = claimsMap[raw.id];
+
+      // Clone com estados locais do aluno
+      const cloned: SystemInboxMessage = {
+        ...raw,
+        read: Boolean(isRead),
+        reward: raw.reward
+          ? {
+              ...raw.reward,
+              claimed: Boolean(claimedAt || raw.reward.claimed),
+              claimedAt: claimedAt || raw.reward.claimedAt,
+            }
+          : undefined,
+      };
+
+      playerMessages.push(cloned);
+    }
+  }
+
+  // Ordena por data decrescente (mais recente no topo)
+  playerMessages.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  return playerMessages;
+}
+
+/**
+ * Marca uma mensagem como lida para o aluno
+ */
+export function markInboxMessageAsRead(messageId: string, playerId?: string): void {
+  if (playerId) {
+    const pId = playerId.toLowerCase().trim();
+    const reads = loadStudentMap(STUDENT_READS_KEY, memoryStudentReads);
+    if (!reads[pId]) reads[pId] = {};
+    reads[pId][messageId] = true;
+    saveStudentMap(STUDENT_READS_KEY, reads, (d) => (memoryStudentReads = d));
+  }
+
   const all = loadAllInboxMessages();
   let changed = false;
   for (const m of all) {
@@ -117,19 +367,158 @@ export function markInboxMessageAsRead(messageId: string): void {
   }
 }
 
-export function markAllInboxMessagesAsReadForRecipient(recipientId: string): void {
+/**
+ * Marca todas as mensagens de um destinatário como lidas
+ */
+export function markAllInboxMessagesAsReadForRecipient(playerId: string, profile?: PlayerProfile): void {
+  const msgs = profile ? getInboxMessagesForPlayer(profile) : getInboxMessagesForRecipient(playerId);
+  for (const m of msgs) {
+    markInboxMessageAsRead(m.id, playerId);
+  }
+}
+
+/**
+ * Recupera mensagens filtradas diretamente por recipientId simples (para ADM ou testes)
+ */
+export function getInboxMessagesForRecipient(recipientId: string): SystemInboxMessage[] {
   const all = loadAllInboxMessages();
   const clean = recipientId.toLowerCase().trim();
-  let changed = false;
-  for (const m of all) {
-    if (m.recipientId.toLowerCase().trim() === clean && !m.read) {
-      m.read = true;
-      changed = true;
+  return all.filter((m) => m.recipientId.toLowerCase().trim() === clean);
+}
+
+/**
+ * Resgata uma recompensa presente na mensagem.
+ * Atualiza pontos ou medalha do aluno e trava contra resgates duplicados.
+ */
+export function claimInboxReward(
+  messageId: string,
+  profile: PlayerProfile
+): { success: boolean; error?: string; reward?: InboxReward; profile: PlayerProfile } {
+  if (!profile) {
+    return { success: false, error: "Perfil do aluno inválido.", profile };
+  }
+
+  const pId = profile.id.toLowerCase().trim();
+  const claims = loadStudentMap(STUDENT_CLAIMS_KEY, memoryStudentClaims);
+  if (!claims[pId]) claims[pId] = {};
+
+  if (claims[pId][messageId]) {
+    return { success: false, error: "Esta recompensa já foi resgatada anteriormente.", profile };
+  }
+
+  const all = loadAllInboxMessages();
+  const msg = all.find((m) => m.id === messageId);
+  if (!msg || !msg.reward) {
+    return { success: false, error: "Nenhuma recompensa encontrada nesta mensagem.", profile };
+  }
+
+  const reward = msg.reward;
+  const nowIso = new Date().toISOString();
+
+  // 1. Conceder Pontos se houver
+  if (reward.type === "points" && reward.pointsAmount && reward.pointsAmount > 0) {
+    awardCareerPoints(profile, reward.pointsAmount, `Recompensa Correio: ${msg.title}`);
+  }
+
+  // 2. Conceder Medalha se houver
+  if (reward.type === "medal" && reward.medalId) {
+    const allMedals = getAllAvailableMedals();
+    const medalDef = allMedals.find((m) => m.id === reward.medalId);
+    if (medalDef) {
+      if (!Array.isArray(profile.unlockedMedals)) {
+        profile.unlockedMedals = [];
+      }
+      const existing = profile.unlockedMedals.find((u) => u.medalId === reward.medalId);
+      if (!existing) {
+        const newUnlocked: PlayerUnlockedMedal = {
+          medalId: medalDef.id,
+          unlockedAt: nowIso,
+          count: 1,
+          rarity: medalDef.rarity,
+        };
+        profile.unlockedMedals.push(newUnlocked);
+      } else {
+        existing.count = (existing.count ?? 1) + 1;
+      }
     }
   }
-  if (changed) {
+
+  // Salva registro de resgate individual para o aluno
+  claims[pId][messageId] = nowIso;
+  saveStudentMap(STUDENT_CLAIMS_KEY, claims, (d) => (memoryStudentClaims = d));
+
+  // Se a mensagem for direta (não ALL), atualiza o objeto global da mensagem
+  if (msg.recipientId !== "ALL") {
+    reward.claimed = true;
+    reward.claimedAt = nowIso;
     saveAllInboxMessages(all);
   }
+
+  return {
+    success: true,
+    reward: { ...reward, claimed: true, claimedAt: nowIso },
+    profile,
+  };
+}
+
+/**
+ * Apaga a mensagem para o aluno.
+ * REGRA RIGOROSA: Mensagens com recompensa NÃO podem ser apagadas antes do resgate!
+ */
+export function deleteInboxMessageForPlayer(
+  messageId: string,
+  player: PlayerProfile | { id: string }
+): { success: boolean; error?: string } {
+  const pId = player.id.toLowerCase().trim();
+  const all = loadAllInboxMessages();
+  const msg = all.find((m) => m.id === messageId);
+
+  if (!msg) {
+    return { success: true };
+  }
+
+  // Se a mensagem tiver recompensa, verificar se o aluno já resgatou
+  if (msg.reward) {
+    const claims = loadStudentMap(STUDENT_CLAIMS_KEY, memoryStudentClaims);
+    const hasClaimed = Boolean(claims[pId]?.[messageId] || (msg.recipientId !== "ALL" && msg.reward.claimed));
+    if (!hasClaimed) {
+      return {
+        success: false,
+        error: "Você precisa resgatar sua recompensa antes de apagar esta mensagem!",
+      };
+    }
+  }
+
+  // Marca como deletada para este aluno
+  const deletes = loadStudentMap(STUDENT_DELETES_KEY, memoryStudentDeletes);
+  if (!deletes[pId]) deletes[pId] = {};
+  deletes[pId][messageId] = true;
+  saveStudentMap(STUDENT_DELETES_KEY, deletes, (d) => (memoryStudentDeletes = d));
+
+  return { success: true };
+}
+
+/**
+ * Contabiliza mensagens não lidas e recompensas pendentes para badges do cabeçalho
+ */
+export function getInboxCountsForPlayer(
+  player?: PlayerProfile | null
+): { unreadCount: number; unclaimedRewardsCount: number; totalAlerts: number } {
+  if (!player) return { unreadCount: 0, unclaimedRewardsCount: 0, totalAlerts: 0 };
+  const msgs = getInboxMessagesForPlayer(player);
+  let unreadCount = 0;
+  let unclaimedRewardsCount = 0;
+
+  for (const m of msgs) {
+    if (!m.read) unreadCount++;
+    if (m.reward && !m.reward.claimed) unclaimedRewardsCount++;
+  }
+
+  return {
+    unreadCount,
+    unclaimedRewardsCount,
+    totalAlerts: unreadCount + unclaimedRewardsCount,
+  };
 }
 
 /**
@@ -150,6 +539,7 @@ export function recordDeviceSecurityAlert(args: {
   const studentMsg = createInboxMessage({
     recipientId: args.studentId,
     sender: "seguranca",
+    senderName: "Segurança do Sistema",
     category: "seguranca_acesso",
     title: "Alerta de Segurança: Acesso em outro aparelho",
     body: `Sua conta foi conectada em outro dispositivo às ${timeFormatted} de ${dateFormatted}. Se não foi você, procure a coordenação escolar ou seu professor.`,
@@ -165,6 +555,7 @@ export function recordDeviceSecurityAlert(args: {
   const adminMsg = createInboxMessage({
     recipientId: "admin",
     sender: "seguranca",
+    senderName: "Segurança do Sistema",
     category: "seguranca_acesso",
     title: `Tentativa de acesso simultâneo: ${args.studentNick}`,
     body: `O aluno ${args.studentFullName} (${args.studentNick}) registrou uma conexão em um novo aparelho às ${timeFormatted} de ${dateFormatted}, encerrando a sessão anterior.`,
