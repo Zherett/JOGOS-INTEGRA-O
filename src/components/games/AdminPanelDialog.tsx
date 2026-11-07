@@ -638,6 +638,262 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
     flashSaved("Ranking resetado e nova temporada iniciada!");
   }
 
+  const renderSeasonManagementSection = () => (
+    <>
+      {/* 1. STATUS E PROGRESSO DA TEMPORADA VIGENTE */}
+      <div className="rounded-3xl border bg-gradient-to-br from-primary/10 via-card to-accent/5 p-5 space-y-4 shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 pb-3">
+          <div className="flex items-center gap-2.5">
+            <Trophy className="h-5 w-5 text-amber-500" />
+            <span className="font-display text-base font-black text-foreground">
+              Temporada Vigente (#{draft.seasonId})
+            </span>
+          </div>
+          <span className="inline-flex items-center gap-1 rounded-full bg-secondary/80 border px-3 py-1 text-xs font-bold text-muted-foreground">
+            <Calendar className="h-3.5 w-3.5 text-primary" />
+            Último reset: {new Date(draft.lastResetAt).toLocaleDateString("pt-BR")}
+          </span>
+        </div>
+
+        {/* Nome da Temporada */}
+        <div className="space-y-1.5">
+          <Label htmlFor="season-name-input" className="text-xs font-bold text-muted-foreground">
+            Nome Oficial da Temporada
+          </Label>
+          <div className="flex gap-2">
+            <Input
+              id="season-name-input"
+              value={draft.seasonName}
+              onChange={(e) => setDraft({ ...draft, seasonName: e.target.value })}
+              placeholder="Nome da temporada (ex: Temporada 1 • SEMED Coari)"
+              className="rounded-xl font-display font-bold text-sm bg-background"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void auth.updateAdminConfig(draft).then(() => flashSaved("Nome da temporada salvo!"))}
+              className="rounded-xl shrink-0 font-bold"
+            >
+              Renomear
+            </Button>
+          </div>
+        </div>
+
+        {/* Barra de Progresso Visual e Contagem Regressiva */}
+        <div className="rounded-2xl border bg-background/80 p-3.5 space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold">
+            <span className="text-muted-foreground">
+              {seasonProgress.formattedRangeLabel}
+            </span>
+            <span className={`font-mono font-black ${seasonProgress.isExpired ? "text-rose-500" : "text-primary"}`}>
+              {seasonProgress.formattedCountdown}
+            </span>
+          </div>
+
+          <div className="h-3 w-full overflow-hidden rounded-full bg-muted border border-border/60">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                seasonProgress.isExpired
+                  ? "bg-rose-500"
+                  : "bg-gradient-to-r from-primary to-accent"
+              }`}
+              style={{ width: `${Math.min(100, Math.max(3, seasonProgress.progressPercent))}%` }}
+            />
+          </div>
+
+          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+            <span>Dia {seasonProgress.elapsedDays} de {seasonProgress.totalDays}</span>
+            <span>{Math.round(seasonProgress.progressPercent)}% concluído</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. CONFIGURADOR DE DURAÇÃO E PERÍODO (PRESETS 7, 14, 30 DIAS OU LIVRE) */}
+      <div className="rounded-3xl border bg-card p-5 space-y-4 shadow-xs">
+        <div className="flex items-center gap-2 border-b border-border/50 pb-3">
+          <CalendarClock className="h-5 w-5 text-primary" />
+          <div>
+            <h3 className="font-display text-sm font-bold text-foreground">
+              Duração da Temporada & Ciclo de Renovação
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Defina quantos dias cada temporada irá durar. Ao vencer, a temporada seguinte é criada automaticamente.
+            </p>
+          </div>
+        </div>
+
+        {/* Presets Rápidos de Duração */}
+        <div className="space-y-1.5">
+          <Label className="text-xs font-bold text-foreground">
+            Selecione a Duração Padrão da Temporada
+          </Label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {SEASON_DURATION_PRESETS.map((days) => {
+              const isSelected = seasonDurationDays === days;
+              return (
+                <button
+                  key={days}
+                  type="button"
+                  onClick={() => handleSelectPreset(days)}
+                  className={`flex flex-col items-center justify-center p-3 rounded-2xl border transition-all cursor-pointer ${
+                    isSelected
+                      ? "border-primary bg-primary/10 text-primary ring-2 ring-primary/30 shadow-xs"
+                      : "border-border/70 bg-secondary/30 text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+                  }`}
+                >
+                  <span className="font-display text-base font-black">
+                    {days === 7 ? "⚡ 7 Dias" : days === 14 ? "⭐ 14 Dias" : "🗓️ 30 Dias"}
+                  </span>
+                  <span className="text-[10px] font-semibold mt-0.5">
+                    {days === 7 ? "Semanal" : days === 14 ? "Quinzenal (Padrão)" : "Mensal"}
+                  </span>
+                </button>
+              );
+            })}
+
+            <button
+              type="button"
+              onClick={() => setSeasonDurationDays(-1)}
+              className={`flex flex-col items-center justify-center p-3 rounded-2xl border transition-all cursor-pointer ${
+                !SEASON_DURATION_PRESETS.includes(seasonDurationDays as any)
+                  ? "border-primary bg-primary/10 text-primary ring-2 ring-primary/30 shadow-xs"
+                  : "border-border/70 bg-secondary/30 text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+              }`}
+            >
+              <span className="font-display text-base font-black">✏️ Livre</span>
+              <span className="text-[10px] font-semibold mt-0.5">Personalizado</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Campos de Início e Término */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          <div className="space-y-1.5">
+            <Label htmlFor="season-start-datetime" className="text-xs font-bold text-muted-foreground">
+              Data e Hora de Início
+            </Label>
+            <Input
+              id="season-start-datetime"
+              type="datetime-local"
+              value={seasonStartInput}
+              onChange={(e) => setSeasonStartInput(e.target.value)}
+              className="rounded-xl font-mono text-xs bg-background"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="season-end-datetime" className="text-xs font-bold text-muted-foreground">
+              Data e Hora de Encerramento
+            </Label>
+            <Input
+              id="season-end-datetime"
+              type="datetime-local"
+              value={seasonEndInput}
+              onChange={(e) => {
+                setSeasonEndInput(e.target.value);
+                setScheduleInput(e.target.value);
+              }}
+              className="rounded-xl font-mono text-xs bg-background"
+            />
+          </div>
+        </div>
+
+        {/* AÇÕES DE EXTENSÃO RÁPIDA (Estender Temporada) */}
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-3.5 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+              <FastForward className="h-4 w-4 text-amber-500" />
+              Estender Temporada Atual (Empurra a Próxima)
+            </span>
+            <span className="text-[11px] text-muted-foreground hidden sm:inline">
+              Adiciona dias mantendo o término às 23:59
+            </span>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Precisa de mais tempo? Clique abaixo para estender a data final. A próxima temporada será automaticamente empurrada para iniciar após o novo prazo.
+          </p>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleExtendSeason(3)}
+              className="rounded-xl text-xs font-bold cursor-pointer border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+            >
+              +3 Dias
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleExtendSeason(7)}
+              className="rounded-xl text-xs font-bold cursor-pointer border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+            >
+              +7 Dias (1 Semana)
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleExtendSeason(14)}
+              className="rounded-xl text-xs font-bold cursor-pointer border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+            >
+              +14 Dias (2 Semanas)
+            </Button>
+          </div>
+        </div>
+
+        {/* SWITCH DE RENOVAÇÃO AUTOMÁTICA EM CADEIA */}
+        <div className="flex items-center justify-between gap-3 rounded-2xl border bg-secondary/30 p-3.5">
+          <div className="text-xs space-y-0.5">
+            <div className="font-bold text-foreground flex items-center gap-1.5">
+              <RotateCcw className="h-3.5 w-3.5 text-primary" />
+              Renovação Automática da Temporada em Cadeia
+            </div>
+            <div className="text-muted-foreground text-[11px]">
+              Ao alcançar a data final, encerra o ciclo, consolida premiações e inicia automaticamente a Temporada seguinte com a mesma quantidade de dias.
+            </div>
+          </div>
+          <Switch checked={autoRenewSeason} onCheckedChange={setAutoRenewSeason} />
+        </div>
+
+        {/* SWITCH DE RESET DE XP */}
+        <div className="flex items-center justify-between gap-3 rounded-2xl border bg-secondary/30 p-3.5">
+          <div className="text-xs space-y-0.5">
+            <div className="font-bold text-foreground">
+              Zerar também XP Total e Nível dos alunos na virada?
+            </div>
+            <div className="text-muted-foreground text-[11px]">
+              Se desmarcado (recomendado), apenas o XP de temporada e recordes são reiniciados, preservando o nível do aluno.
+            </div>
+          </div>
+          <Switch checked={scheduleClearXp} onCheckedChange={setScheduleClearXp} />
+        </div>
+
+        {/* BOTÃO SALVAR CONFIGURAÇÃO */}
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button
+            type="button"
+            onClick={handleSaveSeasonConfig}
+            className="flex-1 h-11 rounded-xl font-display font-extrabold text-sm gap-2 shadow-xs cursor-pointer"
+          >
+            <Save className="h-4 w-4" /> Salvar Configuração da Temporada
+          </Button>
+          {draft.scheduledResetAt && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={cancelScheduledReset}
+              className="h-11 rounded-xl text-destructive hover:bg-destructive/10 border-destructive/30 font-bold"
+            >
+              <Trash2 className="mr-1.5 h-4 w-4" /> Cancelar Agendamento
+            </Button>
+          )}
+        </div>
+      </div>
+    </>
+  );
+
   async function saveSystemSettings() {
     await auth.updateAdminConfig(draft);
     if (newAdminPin.trim().length >= 4) {
@@ -1136,7 +1392,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                     tab === "torneio" ? "bg-card text-primary shadow-sm" : "text-muted-foreground"
                   }`}
                 >
-                  <Trophy className="h-4 w-4 text-accent" /> Torneio
+                  <Trophy className="h-4 w-4 text-accent" /> Torneio & Ranqueada
                 </button>
                 <button
                   type="button"
@@ -1204,7 +1460,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                     tab === "resets" ? "bg-card text-primary shadow-sm" : "text-muted-foreground"
                   }`}
                 >
-                  <CalendarClock className="h-4 w-4" /> Resets
+                  <CalendarClock className="h-4 w-4" /> Temporadas & Resets
                 </button>
                 <button
                   type="button"
@@ -1973,6 +2229,9 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
                       </div>
                     </div>
                   </div>
+
+                  {/* Ciclo, Duração & Datas da Temporada do Torneio */}
+                  {renderSeasonManagementSection()}
 
                   {/* Inspeção do Ranking por Etapa Escolar */}
                   <div className="rounded-2xl border bg-card p-5 space-y-4">
@@ -4627,257 +4886,7 @@ export function AdminPanelDialog({ open, onOpenChange, onConfigSaved }: Props) {
             {/* TAB 2: RESETS PERIÓDICOS & GESTÃO DE TEMPORADAS */}
             {tab === "resets" && (
               <div className="space-y-4">
-                {/* 1. STATUS E PROGRESSO DA TEMPORADA VIGENTE */}
-                <div className="rounded-3xl border bg-gradient-to-br from-primary/10 via-card to-accent/5 p-5 space-y-4 shadow-xs">
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 pb-3">
-                    <div className="flex items-center gap-2.5">
-                      <Trophy className="h-5 w-5 text-amber-500" />
-                      <span className="font-display text-base font-black text-foreground">
-                        Temporada Vigente (#{draft.seasonId})
-                      </span>
-                    </div>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-secondary/80 border px-3 py-1 text-xs font-bold text-muted-foreground">
-                      <Calendar className="h-3.5 w-3.5 text-primary" />
-                      Último reset: {new Date(draft.lastResetAt).toLocaleDateString("pt-BR")}
-                    </span>
-                  </div>
-
-                  {/* Nome da Temporada */}
-                  <div className="space-y-1.5">
-                    <Label htmlFor="season-name-input" className="text-xs font-bold text-muted-foreground">
-                      Nome Oficial da Temporada
-                    </Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="season-name-input"
-                        value={draft.seasonName}
-                        onChange={(e) => setDraft({ ...draft, seasonName: e.target.value })}
-                        placeholder="Nome da temporada (ex: Temporada 1 • SEMED Coari)"
-                        className="rounded-xl font-display font-bold text-sm bg-background"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => void auth.updateAdminConfig(draft).then(() => flashSaved("Nome da temporada salvo!"))}
-                        className="rounded-xl shrink-0 font-bold"
-                      >
-                        Renomear
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Barra de Progresso Visual e Contagem Regressiva */}
-                  <div className="rounded-2xl border bg-background/80 p-3.5 space-y-2.5">
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold">
-                      <span className="text-muted-foreground">
-                        {seasonProgress.formattedRangeLabel}
-                      </span>
-                      <span className={`font-mono font-black ${seasonProgress.isExpired ? "text-rose-500" : "text-primary"}`}>
-                        {seasonProgress.formattedCountdown}
-                      </span>
-                    </div>
-
-                    <div className="h-3 w-full overflow-hidden rounded-full bg-muted border border-border/60">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          seasonProgress.isExpired
-                            ? "bg-rose-500"
-                            : "bg-gradient-to-r from-primary to-accent"
-                        }`}
-                        style={{ width: `${Math.min(100, Math.max(3, seasonProgress.progressPercent))}%` }}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                      <span>Dia {seasonProgress.elapsedDays} de {seasonProgress.totalDays}</span>
-                      <span>{Math.round(seasonProgress.progressPercent)}% concluído</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 2. CONFIGURADOR DE DURAÇÃO E PERÍODO (PRESETS 7, 14, 30 DIAS OU LIVRE) */}
-                <div className="rounded-3xl border bg-card p-5 space-y-4 shadow-xs">
-                  <div className="flex items-center gap-2 border-b border-border/50 pb-3">
-                    <CalendarClock className="h-5 w-5 text-primary" />
-                    <div>
-                      <h3 className="font-display text-sm font-bold text-foreground">
-                        Duração da Temporada & Ciclo de Renovação
-                      </h3>
-                      <p className="text-xs text-muted-foreground">
-                        Defina quantos dias cada temporada irá durar. Ao vencer, a temporada seguinte é criada automaticamente.
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Presets Rápidos de Duração */}
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-bold text-foreground">
-                      Selecione a Duração Padrão da Temporada
-                    </Label>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {SEASON_DURATION_PRESETS.map((days) => {
-                        const isSelected = seasonDurationDays === days;
-                        return (
-                          <button
-                            key={days}
-                            type="button"
-                            onClick={() => handleSelectPreset(days)}
-                            className={`flex flex-col items-center justify-center p-3 rounded-2xl border transition-all cursor-pointer ${
-                              isSelected
-                                ? "border-primary bg-primary/10 text-primary ring-2 ring-primary/30 shadow-xs"
-                                : "border-border/70 bg-secondary/30 text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
-                            }`}
-                          >
-                            <span className="font-display text-base font-black">
-                              {days === 7 ? "⚡ 7 Dias" : days === 14 ? "⭐ 14 Dias" : "🗓️ 30 Dias"}
-                            </span>
-                            <span className="text-[10px] font-semibold mt-0.5">
-                              {days === 7 ? "Semanal" : days === 14 ? "Quinzenal (Padrão)" : "Mensal"}
-                            </span>
-                          </button>
-                        );
-                      })}
-
-                      <button
-                        type="button"
-                        onClick={() => setSeasonDurationDays(-1)}
-                        className={`flex flex-col items-center justify-center p-3 rounded-2xl border transition-all cursor-pointer ${
-                          !SEASON_DURATION_PRESETS.includes(seasonDurationDays as any)
-                            ? "border-primary bg-primary/10 text-primary ring-2 ring-primary/30 shadow-xs"
-                            : "border-border/70 bg-secondary/30 text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
-                        }`}
-                      >
-                        <span className="font-display text-base font-black">✏️ Livre</span>
-                        <span className="text-[10px] font-semibold mt-0.5">Personalizado</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Campos de Início e Término */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="season-start-datetime" className="text-xs font-bold text-muted-foreground">
-                        Data e Hora de Início
-                      </Label>
-                      <Input
-                        id="season-start-datetime"
-                        type="datetime-local"
-                        value={seasonStartInput}
-                        onChange={(e) => setSeasonStartInput(e.target.value)}
-                        className="rounded-xl font-mono text-xs bg-background"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label htmlFor="season-end-datetime" className="text-xs font-bold text-muted-foreground">
-                        Data e Hora de Encerramento
-                      </Label>
-                      <Input
-                        id="season-end-datetime"
-                        type="datetime-local"
-                        value={seasonEndInput}
-                        onChange={(e) => {
-                          setSeasonEndInput(e.target.value);
-                          setScheduleInput(e.target.value);
-                        }}
-                        className="rounded-xl font-mono text-xs bg-background"
-                      />
-                    </div>
-                  </div>
-
-                  {/* AÇÕES DE EXTENSÃO RÁPIDA (Estender Temporada) */}
-                  <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-3.5 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                        <FastForward className="h-4 w-4 text-amber-500" />
-                        Estender Temporada Atual (Empurra a Próxima)
-                      </span>
-                      <span className="text-[11px] text-muted-foreground hidden sm:inline">
-                        Adiciona dias mantendo o término às 23:59
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      Precisa de mais tempo? Clique abaixo para estender a data final. A próxima temporada será automaticamente empurrada para iniciar após o novo prazo.
-                    </p>
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleExtendSeason(3)}
-                        className="rounded-xl text-xs font-bold cursor-pointer border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
-                      >
-                        +3 Dias
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleExtendSeason(7)}
-                        className="rounded-xl text-xs font-bold cursor-pointer border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
-                      >
-                        +7 Dias (1 Semana)
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleExtendSeason(14)}
-                        className="rounded-xl text-xs font-bold cursor-pointer border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
-                      >
-                        +14 Dias (2 Semanas)
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* SWITCH DE RENOVAÇÃO AUTOMÁTICA EM CADEIA */}
-                  <div className="flex items-center justify-between gap-3 rounded-2xl border bg-secondary/30 p-3.5">
-                    <div className="text-xs space-y-0.5">
-                      <div className="font-bold text-foreground flex items-center gap-1.5">
-                        <RotateCcw className="h-3.5 w-3.5 text-primary" />
-                        Renovação Automática da Temporada em Cadeia
-                      </div>
-                      <div className="text-muted-foreground text-[11px]">
-                        Ao alcançar a data final, encerra o ciclo, consolida premiações e inicia automaticamente a Temporada seguinte com a mesma quantidade de dias.
-                      </div>
-                    </div>
-                    <Switch checked={autoRenewSeason} onCheckedChange={setAutoRenewSeason} />
-                  </div>
-
-                  {/* SWITCH DE RESET DE XP */}
-                  <div className="flex items-center justify-between gap-3 rounded-2xl border bg-secondary/30 p-3.5">
-                    <div className="text-xs space-y-0.5">
-                      <div className="font-bold text-foreground">
-                        Zerar também XP Total e Nível dos alunos na virada?
-                      </div>
-                      <div className="text-muted-foreground text-[11px]">
-                        Se desmarcado (recomendado), apenas o XP de temporada e recordes são reiniciados, preservando o nível do aluno.
-                      </div>
-                    </div>
-                    <Switch checked={scheduleClearXp} onCheckedChange={setScheduleClearXp} />
-                  </div>
-
-                  {/* BOTÃO SALVAR CONFIGURAÇÃO */}
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    <Button
-                      type="button"
-                      onClick={handleSaveSeasonConfig}
-                      className="flex-1 h-11 rounded-xl font-display font-extrabold text-sm gap-2 shadow-xs cursor-pointer"
-                    >
-                      <Save className="h-4 w-4" /> Salvar Configuração da Temporada
-                    </Button>
-                    {draft.scheduledResetAt && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={cancelScheduledReset}
-                        className="h-11 rounded-xl text-destructive hover:bg-destructive/10 border-destructive/30 font-bold"
-                      >
-                        <Trash2 className="mr-1.5 h-4 w-4" /> Cancelar Agendamento
-                      </Button>
-                    )}
-                  </div>
-                </div>
+                {renderSeasonManagementSection()}
 
                 {/* Reset Imediato */}
                 <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 space-y-3">
