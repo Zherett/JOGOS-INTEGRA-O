@@ -323,7 +323,7 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
             </div>
           </div>
 
-          {/* Carteira e Pontos de Conquista do Aluno (Saldos e Total de Carreira) */}
+          {/* Carteira e Pontos de Conquista do Aluno */}
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border-2 border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent p-3">
             <div className="flex items-center gap-2">
               <span className="grid h-8 w-8 place-items-center rounded-xl bg-amber-500/20 text-base">
@@ -331,10 +331,10 @@ export function PlayerInspectModal({ playerId, open, onOpenChange, onStudentUpda
               </span>
               <div>
                 <div className="text-xs font-black text-foreground">
-                  {profile.pointsBalance ?? 0} Pontos Disponíveis
+                  {profile.pointsBalance ?? 0} Pontos Conquistados
                 </div>
                 <div className="text-[10px] text-muted-foreground font-medium">
-                  {isMe ? "Seu saldo atual para futuras aquisições" : "Saldo disponível para compras"}
+                  Pontuação acumulada em partidas e desafios
                 </div>
               </div>
             </div>

@@ -451,10 +451,10 @@ export function PlayerMenu({ onConfigChanged }: Props) {
                         </span>
                         <div>
                           <div className="text-xs font-black text-foreground">
-                            {profile.pointsBalance ?? 0} Pontos Disponíveis
+                            {profile.pointsBalance ?? 0} Pontos Conquistados
                           </div>
                           <div className="text-[10px] text-muted-foreground font-medium">
-                            Saldo atual para futuras aquisições
+                            Pontuação acumulada em partidas e desafios
                           </div>
                         </div>
                       </div>
